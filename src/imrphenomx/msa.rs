@@ -297,7 +297,14 @@ impl MsaSystem {
             31. / 24.,
             7. / 1296.,
         ];
-        let l_spinorbit: [f64; 6] = [-14. / 6., -3. / 2., -11. / 2., 133. / 72., -33. / 8., 7. / 4.];
+        let l_spinorbit: [f64; 6] = [
+            -14. / 6.,
+            -3. / 2.,
+            -11. / 2.,
+            133. / 72.,
+            -33. / 8.,
+            7. / 4.,
+        ];
 
         // Chatziioannou et al use q = m2 / m1 < 1.
         let q = m2 / m1;
@@ -335,7 +342,11 @@ impl MsaSystem {
         let constants_l = [
             fma(eta, l_nonspin[1], l_nonspin[0]),
             pn_beta(l_spinorbit[0], l_spinorbit[1]),
-            fma(eta * eta, l_nonspin[4], fma(eta, l_nonspin[3], l_nonspin[2])),
+            fma(
+                eta * eta,
+                l_nonspin[4],
+                fma(eta, l_nonspin[3], l_nonspin[2]),
+            ),
             pn_beta(
                 fma(l_spinorbit[3], eta, l_spinorbit[2]),
                 fma(l_spinorbit[5], eta, l_spinorbit[4]),
@@ -343,7 +354,11 @@ impl MsaSystem {
             fma(
                 l_nonspin[8] * eta * eta,
                 eta,
-                fma(l_nonspin[7] * eta, eta, fma(l_nonspin[6], eta, l_nonspin[5])),
+                fma(
+                    l_nonspin[7] * eta,
+                    eta,
+                    fma(l_nonspin[6], eta, l_nonspin[5]),
+                ),
             ),
         ];
 
@@ -761,7 +776,8 @@ impl MsaSystem {
         // Eqs. D22 - D27
         let phiz_0_coeff = fms(
             j_norm * self.inveta4,
-            fms(0.5, c12, c1 * self.eta2 * invv / 6.0) - sav2 * self.eta2 / 3.0
+            fms(0.5, c12, c1 * self.eta2 * invv / 6.0)
+                - sav2 * self.eta2 / 3.0
                 - self.eta4 * invv2 / 3.0,
             c1 * 0.5 * self.inveta * fms(c12, self.inveta4, sav2 * self.inveta2) * log1,
         );
@@ -862,8 +878,8 @@ impl MsaSystem {
         let c4 = j_norm * (0.75 * self.inveta * (spl2 - smi2) * (spl2 - smi2) * one_m_seff_v * v6);
 
         // Eqs. B9 - B11 (IMRPhenomX_Return_Constants_d_MSA)
-        let d0 = -fnms(l_norm + spl, l_norm + spl, j_norm2)
-            * fnms(l_norm - spl, l_norm - spl, j_norm2);
+        let d0 =
+            -fnms(l_norm + spl, l_norm + spl, j_norm2) * fnms(l_norm - spl, l_norm - spl, j_norm2);
         let d2 = -2.0 * (spl2 - smi2) * (j_norm2 + l_norm2 - spl2);
         let d4 = -(spl2 - smi2) * (spl2 - smi2);
 
@@ -922,8 +938,7 @@ impl MsaSystem {
                     c2 * d0 * (fma(2., d4, d2) + sd),
                 ),
             );
-            num.abs() / c2den
-                * (sqrt_nd / (nd - 1.) * (atan_psi - (sqrt_nd * tan_psi).atan()))
+            num.abs() / c2den * (sqrt_nd / (nd - 1.) * (atan_psi - (sqrt_nd * tan_psi).atan()))
                 / psi_dot
         };
         let mut phiz_msa = cphi_term + dphi_term;
@@ -1198,7 +1213,13 @@ mod tests {
     #[test]
     fn elliptic_functions() {
         // sn(u | m) = sin(am(u | m)) and F(am(u | m), sqrt(m)) = u
-        for &(u, m) in &[(0.3, 0.2), (-1.7, 0.9), (4.2, 0.5), (12.0, 0.01), (0.8, 0.999)] {
+        for &(u, m) in &[
+            (0.3, 0.2),
+            (-1.7, 0.9),
+            (4.2, 0.5),
+            (12.0, 0.01),
+            (0.8, 0.999),
+        ] {
             let sn = elljac_sn(u, m);
             let phi = sn.asin();
             // F inverts sn on the principal branch |u| < K

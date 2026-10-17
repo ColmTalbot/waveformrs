@@ -90,8 +90,8 @@ impl IMRPhenomD {
     #[inline(always)]
     fn evaluate(&self, mf: f64, amplitude_scale: f64, phase_shift: f64) -> Complex<f64> {
         let powers = MfPowers::new(mf);
-        let amplitude = amplitude_scale
-            * imrphenomd_amplitude_from_powers(&powers, &self.amplitude_prefactors);
+        let amplitude =
+            amplitude_scale * imrphenomd_amplitude_from_powers(&powers, &self.amplitude_prefactors);
         let phase = imrphenomd_phase_from_powers(&powers, &self.coeffs, &self.phase_prefactors)
             - phase_shift
             - self.t0 * (mf - self.reference_mf);

@@ -72,8 +72,8 @@ fn phenomd_inspiral_amplitude_pn(params: &Params) -> PNAmplitude {
         + 24.0 * (-1975055.0 + 857304.0 * chi12 - 994896.0 * chi1 * chi2 + 857304.0 * chi22) * eta
         + 35371056.0 * eta2)
         / 8.128512e6;
-    v[5] = (chi2 * (-285197.0 * (-1.0 + seta) + 4.0 * (-91902.0 + 1579.0 * seta) * eta
-        - 35632.0 * eta2)
+    v[5] = (chi2
+        * (-285197.0 * (-1.0 + seta) + 4.0 * (-91902.0 + 1579.0 * seta) * eta - 35632.0 * eta2)
         + chi1 * (285197.0 * seta_plus_1 - 4.0 * (91902.0 + 1579.0 * seta) * eta - 35632.0 * eta2)
         + 42840.0 * (-1.0 + 4.0 * eta) * pi)
         / 32256.0;
@@ -88,7 +88,8 @@ fn phenomd_inspiral_amplitude_pn(params: &Params) -> PNAmplitude {
                 + 11087290368.0 * (chi1 + chi2 + chi1 * seta - chi2 * seta) * pi)
         + 12.0
             * eta
-            * (-545384828789.0 - 176491177632.0 * chi1 * chi2 + 202603761360.0 * chi22
+            * (-545384828789.0 - 176491177632.0 * chi1 * chi2
+                + 202603761360.0 * chi22
                 + 77616.0 * chi12 * (2610335.0 + 995766.0 * seta)
                 - 77287373856.0 * chi22 * seta
                 + 5841690624.0 * (chi1 + chi2) * pi
@@ -116,10 +117,7 @@ fn inspiral_amplitude_from_speed(orbital_speed: f64, prefactors: &AmplitudePrefa
     p0 + (p1 + p2 * v4) * v4
 }
 
-pub fn inspiral_amplitude_derivative(
-    frequency: f64,
-    prefactors: &AmplitudePrefactors,
-) -> f64 {
+pub fn inspiral_amplitude_derivative(frequency: f64, prefactors: &AmplitudePrefactors) -> f64 {
     let orbital_speed = (frequency * POWERS_OF_PI.one).cbrt();
     let mut cumulative_power_frequency = 1.0;
     let mut amplitude = 0.0;

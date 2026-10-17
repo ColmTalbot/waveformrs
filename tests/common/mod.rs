@@ -125,7 +125,11 @@ pub fn compare(frequencies: &[f64], test: &[C64], reference: &[C64]) -> Comparis
         1.0 - ab / (aa * bb).sqrt()
     };
     Comparison {
-        max_relative_error: if max_ref > 0.0 { max_diff / max_ref } else { max_diff },
+        max_relative_error: if max_ref > 0.0 {
+            max_diff / max_ref
+        } else {
+            max_diff
+        },
         mismatch,
     }
 }

@@ -59,6 +59,6 @@ pub use internals::IMRPhenomXError;
 pub use precession::{PrecessingBinary, PrecessionVersion};
 pub use spintaylor_angles::EulerAngles;
 pub use xas::IMRPhenomXAS;
-pub use xp::{IMRPhenomXP, Polarizations};
 pub use xhm::{IMRPhenomXHM, IMRPHENOMXHM_MODES};
+pub use xp::{IMRPhenomXP, Polarizations};
 pub use xphm::IMRPhenomXPHM;

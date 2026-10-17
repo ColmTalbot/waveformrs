@@ -1,9 +1,11 @@
 use std::f64::consts::PI;
 
 use crate::imrphenomd::coefficients::{ALPHA_COEFFS, BETA_COEFFS, SIGMA_COEFFS};
-use crate::imrphenomd::constants::POWERS_OF_PI;
 use crate::imrphenomd::constants::PHI_FJOIN_INS;
-use crate::imrphenomd::utils::{fdamp, final_spin_0815, fring, phenomenological_function, MfPowers};
+use crate::imrphenomd::constants::POWERS_OF_PI;
+use crate::imrphenomd::utils::{
+    fdamp, final_spin_0815, fring, phenomenological_function, MfPowers,
+};
 use crate::pn::{chi_pn, taylor_3pn_ss, PNPhasing, Params};
 
 #[derive(Clone, Copy, Debug)]
@@ -186,11 +188,7 @@ pub(crate) fn mrd_phase_derivative(frequency: f64, prefactors: &PhaseCoefficient
         * prefactors.eta_inv
 }
 
-pub fn imrphenomd_phase(
-    frequency: f64,
-    coeffs: &PhaseCoefficients,
-    prefactors: &PNPhasing,
-) -> f64 {
+pub fn imrphenomd_phase(frequency: f64, coeffs: &PhaseCoefficients, prefactors: &PNPhasing) -> f64 {
     imrphenomd_phase_from_powers(&MfPowers::new(frequency), coeffs, prefactors)
 }
 
