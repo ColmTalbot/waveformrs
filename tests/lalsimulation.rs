@@ -8,8 +8,7 @@ use serde::Deserialize;
 use waveformrs::{
     imrphenomd::IMRPhenomD,
     imrphenomx::{
-        IMRPhenomXAS, IMRPhenomXHM, IMRPhenomXP, IMRPhenomXPHM, PrecessingBinary,
-        PrecessionVersion,
+        IMRPhenomXAS, IMRPhenomXHM, IMRPhenomXP, IMRPhenomXPHM, PrecessingBinary, PrecessionVersion,
     },
     taylor::TaylorF2,
     waveform::Waveform,
