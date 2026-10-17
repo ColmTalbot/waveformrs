@@ -32,6 +32,18 @@ pub enum IMRPhenomXError {
     UnphysicalFinalSpin(f64),
     /// The MECO frequency exceeds the ISCO frequency of the remnant.
     MecoAboveIsco { f_meco: f64, f_isco: f64 },
+    /// A spin vector exceeds the Kerr bound, |chi| > 1 (precessing models).
+    UnphysicalSpinMagnitude(f64),
+    /// The frequency grid is invalid (empty, non-positive or not increasing
+    /// where LALSimulation requires it).
+    InvalidFrequencies(&'static str),
+    /// The numerical SpinTaylor Euler angles could not be computed in a
+    /// case where LALSimulation silently falls back to the MSA angles
+    /// (`PhenomXPrecVersion` 223), which are not implemented here.
+    SpinTaylorFallbackToMsa(&'static str),
+    /// The numerical SpinTaylor Euler angles could not be computed in a
+    /// case where LALSimulation raises an error.
+    SpinTaylorAngles(&'static str),
 }
 
 impl fmt::Display for IMRPhenomXError {
@@ -55,6 +67,16 @@ impl fmt::Display for IMRPhenomXError {
                 f,
                 "f_MECO ({f_meco}) cannot be greater than f_ISCO ({f_isco})"
             ),
+            Self::UnphysicalSpinMagnitude(chi) => {
+                write!(f, "spin magnitude {chi} violates the Kerr bound |chi| <= 1")
+            }
+            Self::InvalidFrequencies(why) => write!(f, "invalid frequencies: {why}"),
+            Self::SpinTaylorFallbackToMsa(why) => write!(
+                f,
+                "SpinTaylor Euler angles failed ({why}); lalsimulation falls back to the \
+                 MSA angles (PrecVersion 223), which are not implemented"
+            ),
+            Self::SpinTaylorAngles(why) => write!(f, "SpinTaylor Euler angles: {why}"),
         }
     }
 }

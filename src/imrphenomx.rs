@@ -17,6 +17,10 @@
 //! | `qnm`          | `LALSimIMRPhenomX_qnm.c`                               |
 //! | `utilities`    | `LALSimIMRPhenomXUtilities.c`                          |
 //! | `linalg`       | the GSL LU solves used for the collocation systems     |
+//! | `xp`           | `LALSimIMRPhenomX.c` (IMRPhenomXP driver)              |
+//! | `precession`   | `LALSimIMRPhenomX_precession.c` (precession struct, J frame, NNLO angles) |
+//! | `spintaylor_angles` | `LALSimIMRPhenomX_precession.c` (SpinTaylor Euler angles) |
+//! | `wigner`       | Wigner-d matrices and twisting up, spherical harmonics |
 
 mod amplitude;
 mod inspiral;
@@ -24,10 +28,17 @@ mod intermediate;
 mod internals;
 mod linalg;
 mod phase;
+mod precession;
 mod qnm;
 mod ringdown;
+mod spintaylor_angles;
 mod utilities;
+mod wigner;
 mod xas;
+mod xp;
 
 pub use internals::IMRPhenomXError;
+pub use precession::{PrecessingBinary, PrecessionVersion};
+pub use spintaylor_angles::EulerAngles;
 pub use xas::IMRPhenomXAS;
+pub use xp::{IMRPhenomXP, Polarizations};
