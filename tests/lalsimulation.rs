@@ -4,7 +4,9 @@
 //! `SimInspiralChooseFDWaveformSequence` and stored in `tests/data`.
 mod common;
 
-use waveformrs::{imrphenomd::IMRPhenomD, taylor::TaylorF2, waveform::Waveform};
+use waveformrs::{
+    imrphenomd::IMRPhenomD, imrphenomx::IMRPhenomXAS, taylor::TaylorF2, waveform::Waveform,
+};
 
 #[test]
 fn taylorf2_matches_lalsimulation() {
@@ -33,6 +35,22 @@ fn imrphenomd_matches_lalsimulation() {
         )
         .with_reference_frequency(case.f_ref)
         // IMRPhenomD's phi_c is the GW phase, twice the orbital phase.
+        .waveform_modes(&case.frequencies, 2.0 * case.phi_ref, case.inclination)
+    });
+}
+
+#[test]
+fn imrphenomxas_matches_lalsimulation() {
+    common::check_all("imrphenomxas", 1e-9, 1e-12, |case| {
+        IMRPhenomXAS::new(
+            case.total_mass(),
+            case.mass_ratio(),
+            case.spin_1[2],
+            case.spin_2[2],
+            case.luminosity_distance,
+        )
+        .with_reference_frequency(case.f_ref)
+        // As for IMRPhenomD, phi_c is twice the orbital reference phase.
         .waveform_modes(&case.frequencies, 2.0 * case.phi_ref, case.inclination)
     });
 }
