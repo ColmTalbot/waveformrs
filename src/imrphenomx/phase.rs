@@ -6,7 +6,7 @@
 use std::f64::consts::{LN_2, PI};
 
 use crate::constants::EGAMMA;
-use crate::imrphenomx::internals::{UsefulPowers, WaveformStruct, POWERS_OF_LALPI};
+use crate::imrphenomx::internals::{fma, UsefulPowers, WaveformStruct, POWERS_OF_LALPI};
 use crate::imrphenomx::linalg::lu_solve;
 use crate::imrphenomx::utilities::{linb, psi4_to_strain};
 use crate::imrphenomx::{inspiral, intermediate, ringdown};
@@ -163,7 +163,7 @@ impl PhaseCoefficients {
         let f_phase_ins_min = 0.0026;
         let f_phase_ins_max = 1.020 * wf.f_meco;
         let f_phase_rd_min = f_im_match;
-        let f_phase_rd_max = f_ring + 1.25 * f_damp;
+        let f_phase_rd_max = fma(1.25, f_damp, f_ring);
 
         let phi_norm = -(3.0 * pi.m_five_thirds) / (128.0);
 
@@ -185,7 +185,7 @@ impl PhaseCoefficients {
         let xmin = f_phase_rd_min;
         let mut points_rd = [0.0; 5];
         for (point, g) in points_rd.iter_mut().zip(gpoints5) {
-            *point = g * deltax + xmin;
+            *point = fma(g, deltax, xmin);
         }
         // Collocation point 4 is set to the ringdown frequency ~ dip in Lorentzian.
         points_rd[3] = f_ring;
@@ -212,7 +212,7 @@ impl PhaseCoefficients {
             let ff1 = invff.cbrt();
             let ff2 = invff * invff;
             let ff3 = ff2 * ff2;
-            let ff4 = -dphase0 / (f_damp * f_damp + (ff - f_ring) * (ff - f_ring));
+            let ff4 = -dphase0 / fma(f_damp, f_damp, (ff - f_ring) * (ff - f_ring));
             *row = [1.0, ff1, ff2, ff3, ff4];
         }
         let [c0, c1, c2, c4, c_rd] = lu_solve(matrix, values_rd);
@@ -223,7 +223,7 @@ impl PhaseCoefficients {
         let xmin = f_phase_ins_min;
         let mut points_ins = [0.0; 4];
         for (point, g) in points_ins.iter_mut().zip(GPOINTS4) {
-            *point = g * deltax + xmin;
+            *point = fma(g, deltax, xmin);
         }
         let s_ins = wf.chi_pn_hat;
         let v3 = inspiral::phase_22_v3(eta, s_ins, dchi, wf.delta);
@@ -254,92 +254,173 @@ impl PhaseCoefficients {
         /* --------------------- TaylorF2 PN coefficients --------------------- */
         // Normalised by 3 / (128 eta [pi M f]^{5/3}), including powers of pi.
         let phi0_ns = 1.0;
-        let phi2_ns = (3715. / 756. + (55. * eta) / 9.) * pi.two_thirds;
+        let phi2_ns = (3715.0 / 756.0 + 55.0 * eta / 9.0) * pi.two_thirds;
         let phi3_ns = -16.0 * pi.two;
-        let phi3_s = ((113. * (chi1l + chi2l + chi1l * delta - chi2l * delta)
-            - 76. * (chi1l + chi2l) * eta)
-            / 6.)
+        let phi3_s = fma(
+            113.0,
+            fma(-chi2l, delta, fma(chi1l, delta, chi1l + chi2l)),
+            -(76.0 * (chi1l + chi2l) * eta),
+        ) / 6.0
             * pi.itself;
         let phi4_ns =
-            (15293365. / 508032. + (27145. * eta) / 504. + (3085. * eta2) / 72.) * pi.four_thirds;
-        let phi4_s = ((-5.
-            * (81. * chi1l2 * (1. + delta - 2. * eta) + 316. * chi1l2l * eta
-                - 81. * chi2l2 * (-1. + delta + 2. * eta)))
-            / 16.)
-            * pi.four_thirds;
-        let phi5l_ns = ((5. * (46374. - 6552. * eta) * PI) / 4536.) * pi.five_thirds;
-        let phi5l_s = ((-732985. * (chi1l + chi2l + chi1l * delta - chi2l * delta)
-            - 560. * (-1213. * (chi1l + chi2l) + 63. * (chi1l - chi2l) * delta) * eta
-            + 85680. * (chi1l + chi2l) * eta2)
-            / 4536.)
+            (15293365.0 / 508032.0 + 27145.0 * eta / 504.0 + 3085.0 * eta2 / 72.0) * pi.four_thirds;
+        let phi4_s =
+            -5.0 * fma(
+                -(81.0 * chi2l2),
+                fma(2.0, eta, -1.0 + delta),
+                fma(
+                    81.0 * chi1l2,
+                    fma(-2.0, eta, 1.0 + delta),
+                    316.0 * chi1l2l * eta,
+                ),
+            ) / 16.0
+                * pi.four_thirds;
+        let phi5l_ns = 5.0 * fma(-6552.0, eta, 46374.0) * PI / 4536.0 * pi.five_thirds;
+        let phi5l_s = fma(
+            85680.0 * (chi1l + chi2l),
+            eta2,
+            fma(
+                -732985.0,
+                fma(-chi2l, delta, fma(chi1l, delta, chi1l + chi2l)),
+                -(560.0 * fma(-1213.0, chi1l + chi2l, 63.0 * (chi1l - chi2l) * delta) * eta),
+            ),
+        ) / 4536.0
             * pi.five_thirds;
-        let phi6_ns = (11583231236531. / 4.69421568e9
-            - (5. * eta * (3147553127. + 588. * eta * (-45633. + 102260. * eta))) / 3.048192e6
-            - (6848. * EGAMMA) / 21.
-            - (640. * pi.two) / 3.
-            + (2255. * eta * pi.two) / 12.
-            - (13696. * LN_2) / 21.
-            - (6848. * pi.log) / 63.)
+        let phi6_ns = (11583231236531.0 / 4.69421568e9
+            - 5.0 * eta * fma(588.0 * eta, fma(102260.0, eta, -45633.0), 3147553127.0)
+                / 3.048192e6
+            - 6848.0 * EGAMMA / 21.0
+            - 640.0 * pi.two / 3.0
+            + 2255.0 * eta * pi.two / 12.0
+            - 13696.0 * LN_2 / 21.0
+            - 6848.0 * pi.log / 63.0)
             * pi.two;
-        let mut phi6_s = ((5.
-            * (227. * (chi1l + chi2l + chi1l * delta - chi2l * delta)
-                - 156. * (chi1l + chi2l) * eta)
-            * PI)
-            / 3.)
-            * pi.two;
-        phi6_s += ((5.
-            * (20. * chi1l2l * eta * (11763. + 12488. * eta)
-                + 7. * chi2l2
-                    * (-15103. * (-1. + delta) + 2. * (-21683. + 6580. * delta) * eta
-                        - 9808. * eta2)
-                - 7. * chi1l2
-                    * (-15103. * (1. + delta)
-                        + 2. * (21683. + 6580. * delta) * eta
-                        + 9808. * eta2)))
-            / 4032.)
-            * pi.two;
-        let phi6l_ns = (-6848. / 63.) * pi.two;
-        let phi6l_s = 0.0;
-        let phi7_ns = ((5. * (15419335. + 168. * (75703. - 29618. * eta) * eta) * PI) / 254016.)
+        let mut phi6_s =
+            5.0 * fma(
+                227.0,
+                fma(-chi2l, delta, fma(chi1l, delta, chi1l + chi2l)),
+                -(156.0 * (chi1l + chi2l) * eta),
+            ) * PI
+                / 3.0
+                * pi.two;
+        phi6_s = fma(
+            5.0 * fma(
+                -(7.0 * chi1l2),
+                fma(
+                    9808.0,
+                    eta2,
+                    fma(
+                        -15103.0,
+                        1.0 + delta,
+                        2.0 * fma(6580.0, delta, 21683.0) * eta,
+                    ),
+                ),
+                fma(
+                    20.0 * chi1l2l * eta,
+                    fma(12488.0, eta, 11763.0),
+                    7.0 * chi2l2
+                        * fma(
+                            -9808.0,
+                            eta2,
+                            fma(
+                                -15103.0,
+                                -1.0 + delta,
+                                2.0 * fma(6580.0, delta, -21683.0) * eta,
+                            ),
+                        ),
+                ),
+            ) / 4032.0,
+            pi.two,
+            phi6_s,
+        );
+        let phi6l_ns = -6848.0 / 63.0 * pi.two;
+        let phi7_ns = 5.0 * fma(168.0 * fma(-29618.0, eta, 75703.0), eta, 15419335.0) * PI
+            / 254016.0
             * pi.seven_thirds;
-        let mut phi7_s = ((5.
-            * (-5030016755. * (chi1l + chi2l + chi1l * delta - chi2l * delta)
-                + 4. * (2113331119. * (chi1l + chi2l) + 675484362. * (chi1l - chi2l) * delta)
-                    * eta
-                - 1008. * (208433. * (chi1l + chi2l) + 25011. * (chi1l - chi2l) * delta) * eta2
-                + 90514368. * (chi1l + chi2l) * eta3))
-            / 6.096384e6)
-            * pi.seven_thirds;
-        phi7_s += (-5.
-            * (57. * chi1l2 * (1. + delta - 2. * eta) + 220. * chi1l2l * eta
-                - 57. * chi2l2 * (-1. + delta + 2. * eta))
-            * PI)
-            * pi.seven_thirds;
-        phi7_s += ((14585. * (-(chi2l3 * (-1. + delta)) + chi1l3 * (1. + delta))
-            - 5. * (chi2l3 * (8819. - 2985. * delta) + 8439. * chi1l * chi2l2 * (-1. + delta)
-                - 8439. * chi1l2 * chi2l * (1. + delta)
-                + chi1l3 * (8819. + 2985. * delta))
-                * eta
-            + 40. * (chi1l + chi2l) * (17. * chi1l2 - 14. * chi1l2l + 17. * chi2l2) * eta2)
-            / 48.)
-            * pi.seven_thirds;
-        let phi8_ns = 0.0;
-        let phi8_s = ((-5.
-            * (1263141. * (chi1l + chi2l + chi1l * delta - chi2l * delta)
-                - 2. * (794075. * (chi1l + chi2l) + 178533. * (chi1l - chi2l) * delta) * eta
-                + 94344. * (chi1l + chi2l) * eta2)
-            * PI
-            * (-1. + pi.log))
-            / 9072.)
-            * pi.eight_thirds;
-        let phi8l_ns = 0.0;
-        let phi8l_s = ((-5.
-            * (1263141. * (chi1l + chi2l + chi1l * delta - chi2l * delta)
-                - 2. * (794075. * (chi1l + chi2l) + 178533. * (chi1l - chi2l) * delta) * eta
-                + 94344. * (chi1l + chi2l) * eta2)
-            * PI)
-            / 9072.)
-            * pi.eight_thirds;
+        let mut phi7_s =
+            5.0 * fma(
+                90514368.0 * (chi1l + chi2l),
+                eta3,
+                fma(
+                    -(1008.0 * fma(208433.0, chi1l + chi2l, 25011.0 * (chi1l - chi2l) * delta)),
+                    eta2,
+                    fma(
+                        -5030016755.0,
+                        fma(-chi2l, delta, fma(chi1l, delta, chi1l + chi2l)),
+                        4.0 * fma(
+                            2113331119.0,
+                            chi1l + chi2l,
+                            675484362.0 * (chi1l - chi2l) * delta,
+                        ) * eta,
+                    ),
+                ),
+            ) / 6.096384e6
+                * pi.seven_thirds;
+        phi7_s = fma(
+            -5.0 * fma(
+                -(57.0 * chi2l2),
+                fma(2.0, eta, -1.0 + delta),
+                fma(
+                    57.0 * chi1l2,
+                    fma(-2.0, eta, 1.0 + delta),
+                    220.0 * chi1l2l * eta,
+                ),
+            ) * PI,
+            pi.seven_thirds,
+            phi7_s,
+        );
+        phi7_s = fma(
+            fma(
+                40.0 * (chi1l + chi2l) * fma(17.0, chi2l2, fma(17.0, chi1l2, -(14.0 * chi1l2l))),
+                eta2,
+                fma(
+                    14585.0,
+                    fma(-chi2l3, -1.0 + delta, chi1l3 * (1.0 + delta)),
+                    -(5.0
+                        * fma(
+                            chi1l3,
+                            fma(2985.0, delta, 8819.0),
+                            fma(
+                                -(8439.0 * chi1l2 * chi2l),
+                                1.0 + delta,
+                                fma(
+                                    chi2l3,
+                                    fma(-2985.0, delta, 8819.0),
+                                    8439.0 * chi1l * chi2l2 * (-1.0 + delta),
+                                ),
+                            ),
+                        )
+                        * eta),
+                ),
+            ) / 48.0,
+            pi.seven_thirds,
+            phi7_s,
+        );
+        let phi8_s =
+            -5.0 * fma(
+                94344.0 * (chi1l + chi2l),
+                eta2,
+                fma(
+                    1263141.0,
+                    fma(-chi2l, delta, fma(chi1l, delta, chi1l + chi2l)),
+                    -(2.0 * fma(794075.0, chi1l + chi2l, 178533.0 * (chi1l - chi2l) * delta) * eta),
+                ),
+            ) * PI
+                * (-1.0 + pi.log)
+                / 9072.0
+                * pi.eight_thirds;
+        let phi8l_s =
+            -5.0 * fma(
+                94344.0 * (chi1l + chi2l),
+                eta2,
+                fma(
+                    1263141.0,
+                    fma(-chi2l, delta, fma(chi1l, delta, chi1l + chi2l)),
+                    -(2.0 * fma(794075.0, chi1l + chi2l, 178533.0 * (chi1l - chi2l) * delta) * eta),
+                ),
+            ) * PI
+                / 9072.0
+                * pi.eight_thirds;
 
         let phi0 = phi0_ns;
         let phi1 = 0.0;
@@ -349,10 +430,10 @@ impl PhaseCoefficients {
         let phi5 = 0.0;
         let phi5l = phi5l_ns + phi5l_s;
         let phi6 = phi6_ns + phi6_s;
-        let phi6l = phi6l_ns + phi6l_s;
+        let phi6l = phi6l_ns;
         let phi7 = phi7_ns + phi7_s;
-        let phi8 = phi8_ns + phi8_s;
-        let phi8l = phi8l_ns + phi8l_s;
+        let phi8 = phi8_s;
+        let phi8l = phi8l_s;
         let phi9 = 0.0;
         let phi9l = 0.0;
 
@@ -363,35 +444,35 @@ impl PhaseCoefficients {
         let dphi3 = 2.0 / 5.0 * phi3;
         let dphi4 = 1.0 / 5.0 * phi4;
         let dphi5 = -3.0 / 5.0 * phi5l;
-        let dphi6 = -1.0 / 5.0 * phi6 - 3.0 / 5.0 * phi6l;
+        let dphi6 = fma(-(1.0 / 5.0), phi6, -(3.0 / 5.0 * phi6l));
         let dphi6l = -1.0 / 5.0 * phi6l;
         let dphi7 = -2.0 / 5.0 * phi7;
-        let dphi8 = -3.0 / 5.0 * phi8 - 3.0 / 5.0 * phi8l;
+        let dphi8 = fma(-(3.0 / 5.0), phi8, -(3.0 / 5.0 * phi8l));
         let dphi8l = -3.0 / 5.0 * phi8l;
-        let dphi9 = -4.0 / 5.0 * phi9 - 3.0 / 5.0 * phi9l;
+        let dphi9 = fma(-(4.0 / 5.0), phi9, -(3.0 / 5.0 * phi9l));
         let dphi9l = -3.0 / 5.0 * phi9l;
 
         // Phase derivative at the inspiral-intermediate transition, the first
         // collocation point of the intermediate fit.
         let p = UsefulPowers::new(f_phase_match_in);
         let mut phase_in = dphi0;
-        phase_in += dphi1 * p.one_third;
-        phase_in += dphi2 * p.two_thirds;
-        phase_in += dphi3 * p.itself;
-        phase_in += dphi4 * p.four_thirds;
-        phase_in += dphi5 * p.five_thirds;
-        phase_in += dphi6 * p.two;
-        phase_in += dphi6l * p.two * p.log;
-        phase_in += dphi7 * p.seven_thirds;
-        phase_in += dphi8 * p.eight_thirds;
-        phase_in += dphi8l * p.eight_thirds * p.log;
-        phase_in += dphi9 * p.three;
-        phase_in += dphi9l * p.three * p.log;
-        phase_in += a0 * p.eight_thirds
-            + a1 * p.three
-            + a2 * p.eight_thirds * p.two_thirds
-            + a3 * p.eight_thirds * p.itself
-            + a4 * p.eight_thirds * p.four_thirds;
+        phase_in = fma(dphi1, p.one_third, phase_in);
+        phase_in = fma(dphi2, p.two_thirds, phase_in);
+        phase_in = fma(dphi3, p.itself, phase_in);
+        phase_in = fma(dphi4, p.four_thirds, phase_in);
+        phase_in = fma(dphi5, p.five_thirds, phase_in);
+        phase_in = fma(dphi6, p.two, phase_in);
+        phase_in = fma(dphi6l * p.two, p.log, phase_in);
+        phase_in = fma(dphi7, p.seven_thirds, phase_in);
+        phase_in = fma(dphi8, p.eight_thirds, phase_in);
+        phase_in = fma(dphi8l * p.eight_thirds, p.log, phase_in);
+        phase_in = fma(dphi9, p.three, phase_in);
+        phase_in = fma(dphi9l * p.three, p.log, phase_in);
+        let mut pseudo = fma(a0, p.eight_thirds, a1 * p.three);
+        pseudo = fma(a2 * p.eight_thirds, p.two_thirds, pseudo);
+        pseudo = fma(a3 * p.eight_thirds, p.itself, pseudo);
+        pseudo = fma(a4 * p.eight_thirds, p.four_thirds, pseudo);
+        phase_in += pseudo;
         phase_in = phase_in * p.m_eight_thirds * dphase0;
 
         /* -------------------------- Intermediate -------------------------- */
@@ -399,7 +480,7 @@ impl PhaseCoefficients {
         let xmin = f_phase_match_in;
         let mut points_int = [0.0; 5];
         for (point, g) in points_int.iter_mut().zip(gpoints5) {
-            *point = g * deltax + xmin;
+            *point = fma(g, deltax, xmin);
         }
         let v2_im_m_rd_v4 = intermediate::phase_22_v2m_rdv4(eta, s, dchi, wf.delta);
         let v3_im_m_rd_v4 = intermediate::phase_22_v3m_rdv4(eta, s, dchi, wf.delta);
@@ -407,7 +488,7 @@ impl PhaseCoefficients {
         let mut values_int = [
             phase_in,
             // Weighted average of the direct and conditioned fits.
-            0.75 * (v2_im_m_rd_v4 + rd_v4) + 0.25 * v2_im,
+            fma(0.75, v2_im_m_rd_v4 + rd_v4, 0.25 * v2_im),
             v3_im_m_rd_v4 + rd_v4,
             intermediate::phase_22_d43(eta, s, dchi, wf.delta),
             phase_rd,
@@ -423,9 +504,9 @@ impl PhaseCoefficients {
             let ff3 = ff1 * ff2;
             let ff4 = ff2 * ff2;
             let ff0 = if i == 0 {
-                (4.0 * c_l) / ((2.0 * f_damp) * (2.0 * f_damp) + (ff - f_ring) * (ff - f_ring))
+                (4.0 * c_l) / fma(2.0 * f_damp, 2.0 * f_damp, (ff - f_ring) * (ff - f_ring))
             } else {
-                (4. * c_l) / (4.0 * f_damp * f_damp + (ff - f_ring) * (ff - f_ring))
+                (4. * c_l) / fma(4.0 * f_damp, f_damp, (ff - f_ring) * (ff - f_ring))
             };
             matrix[i] = [1.0, ff1, ff2, ff3, ff4];
             rhs[i] = values_int[i] - ff0;
@@ -547,46 +628,58 @@ pub(crate) fn phase_22_connection_coefficients(phase: &mut PhaseCoefficients) {
 
     // phi_Inspiral(f) = phi_Intermediate(f) + C1 + C2 f at f_ins
     let powers_of_f_ins = UsefulPowers::new(f_ins);
-    let dphi_ins = inspiral::phase_22_ansatz(f_ins, &powers_of_f_ins, phase);
-    let dphi_int = intermediate::phase_22_ansatz(f_ins, &powers_of_f_ins, phase);
+    let dphi_ins = inspiral::phase_22_ansatz_exact(f_ins, &powers_of_f_ins, phase);
+    let dphi_int = intermediate::phase_22_ansatz_exact(f_ins, &powers_of_f_ins, phase);
     phase.c2_int = dphi_ins - dphi_int;
-    let phi_in = inspiral::phase_22_ansatz_int(f_ins, &powers_of_f_ins, phase);
-    let phi_im = intermediate::phase_22_ansatz_int(f_ins, &powers_of_f_ins, phase);
-    phase.c1_int = phi_in - phi_im - (phase.c2_int * f_ins);
+    let phi_in = inspiral::phase_22_ansatz_int_exact(f_ins, &powers_of_f_ins, phase);
+    let phi_im = intermediate::phase_22_ansatz_int_exact(f_ins, &powers_of_f_ins, phase);
+    phase.c1_int = fma(-phase.c2_int, f_ins, phi_in - phi_im);
 
     // phi_Intermediate(f) = phi_Ringdown(f) + C1 + C2 f at f_int
     let powers_of_f_int = UsefulPowers::new(f_int);
-    let phi_imc = intermediate::phase_22_ansatz_int(f_int, &powers_of_f_int, phase)
-        + phase.c1_int
-        + phase.c2_int * f_int;
-    let phi_rd = ringdown::phase_22_ansatz_int(f_int, &powers_of_f_int, phase);
-    let dphi_intc = intermediate::phase_22_ansatz(f_int, &powers_of_f_int, phase) + phase.c2_int;
-    let dphi_rd = ringdown::phase_22_ansatz(f_int, &powers_of_f_int, phase);
+    let phi_imc = fma(
+        phase.c2_int,
+        f_int,
+        intermediate::phase_22_ansatz_int_exact(f_int, &powers_of_f_int, phase) + phase.c1_int,
+    );
+    let phi_rd = ringdown::phase_22_ansatz_int_exact(f_int, &powers_of_f_int, phase);
+    let dphi_intc =
+        intermediate::phase_22_ansatz_exact(f_int, &powers_of_f_int, phase) + phase.c2_int;
+    let dphi_rd = ringdown::phase_22_ansatz_exact(f_int, &powers_of_f_int, phase);
     phase.c2_mrd = dphi_intc - dphi_rd;
-    phase.c1_mrd = phi_imc - phi_rd - phase.c2_mrd * f_int;
+    phase.c1_mrd = fma(-phase.c2_mrd, f_int, phi_imc - phi_rd);
 }
 
 /// `IMRPhenomX_Phase_22`: the phase before scaling by 1/eta, with the
-/// region boundaries of LAL (`IMRPhenomX_StepFuncBool`, i.e. `mf >= f`).
-#[allow(dead_code)]
+/// region boundaries of LAL (`IMRPhenomX_StepFuncBool`, i.e. `mf >= f`),
+/// evaluated operation by operation as in LALSimulation.
 pub(crate) fn phase_22(mf: f64, powers: &UsefulPowers, phase: &PhaseCoefficients) -> f64 {
     if mf < phase.f_phase_match_in {
-        inspiral::phase_22_ansatz_int(mf, powers, phase)
+        inspiral::phase_22_ansatz_int_exact(mf, powers, phase)
     } else if mf >= phase.f_phase_match_im {
-        ringdown::phase_22_ansatz_int(mf, powers, phase) + phase.c1_mrd + phase.c2_mrd * mf
+        fma(
+            phase.c2_mrd,
+            mf,
+            ringdown::phase_22_ansatz_int_exact(mf, powers, phase) + phase.c1_mrd,
+        )
     } else {
-        intermediate::phase_22_ansatz_int(mf, powers, phase) + phase.c1_int + phase.c2_int * mf
+        fma(
+            phase.c2_int,
+            mf,
+            intermediate::phase_22_ansatz_int_exact(mf, powers, phase) + phase.c1_int,
+        )
     }
 }
 
-/// `IMRPhenomX_dPhase_22`: the phase derivative before scaling by 1/eta.
+/// `IMRPhenomX_dPhase_22`: the phase derivative before scaling by 1/eta,
+/// evaluated operation by operation as in LALSimulation.
 pub(crate) fn dphase_22(mf: f64, powers: &UsefulPowers, phase: &PhaseCoefficients) -> f64 {
     if mf < phase.f_phase_match_in {
-        inspiral::phase_22_ansatz(mf, powers, phase)
+        inspiral::phase_22_ansatz_exact(mf, powers, phase)
     } else if mf >= phase.f_phase_match_im {
-        ringdown::phase_22_ansatz(mf, powers, phase) + phase.c2_mrd
+        ringdown::phase_22_ansatz_exact(mf, powers, phase) + phase.c2_mrd
     } else {
-        intermediate::phase_22_ansatz(mf, powers, phase) + phase.c2_int
+        intermediate::phase_22_ansatz_exact(mf, powers, phase) + phase.c2_int
     }
 }
 
@@ -600,5 +693,5 @@ pub(crate) fn time_shift_22(phase: &PhaseCoefficients, wf: &WaveformStruct) -> f
     let dphi22_ref = 1.0 / wf.eta * dphase_22(f_ref_fit, &powers_of_f_ref_fit, phase);
     // Align the peak of psi4, then correct to align the peak of the strain.
     let psi4_to_strain = psi4_to_strain(wf.eta, wf.s_tot_r, wf.dchi);
-    linb - dphi22_ref - 2. * PI * (500. + psi4_to_strain)
+    fma(-(2. * PI), 500. + psi4_to_strain, linb - dphi22_ref)
 }

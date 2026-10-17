@@ -6,7 +6,18 @@
 //! and the solve applies the row permutation followed by unit lower and
 //! upper triangular substitution. The operations below follow the GSL
 //! reference implementation (including scaling the pivot column by the
-//! reciprocal of the pivot) so that results agree to rounding.
+//! reciprocal of the pivot).
+//!
+//! GSL delegates the level-2 BLAS operations to the CBLAS it is linked
+//! against (OpenBLAS in the conda-forge builds). Its `dger` rank-one update
+//! accumulates `a_ik += (-l_ij) u_jk` with fused multiply-adds, and its
+//! `dtrsv` subtracts a dot product that is accumulated left to right with
+//! fused multiply-adds starting from zero. Reproducing these (with
+//! [`fma`], fused on the arm64 targets whose LAL builds fuse) makes the
+//! solution agree with LALSimulation to the last bit (verified on random
+//! 4x4 to 8x8 systems against `gsl_linalg_LU_solve`).
+
+use crate::spintaylor::fp::fma;
 
 /// Solve `a x = b` for an `N x N` system using LU decomposition with
 /// partial pivoting, replicating `gsl_linalg_LU_decomp` + `gsl_linalg_LU_solve`.
@@ -48,7 +59,7 @@ pub(crate) fn lu_solve<const N: usize>(mut a: [[f64; N]; N], mut b: [f64; N]) ->
         for row in a.iter_mut().skip(j + 1) {
             let tmp = -row[j];
             for k in (j + 1)..N {
-                row[k] += pivot_row[k] * tmp;
+                row[k] = fma(tmp, pivot_row[k], row[k]);
             }
         }
     }
@@ -61,21 +72,21 @@ pub(crate) fn lu_solve<const N: usize>(mut a: [[f64; N]; N], mut b: [f64; N]) ->
 
     // Forward substitution with the unit lower triangle (cblas_dtrsv).
     for i in 1..N {
-        let mut tmp = b[i];
-        for (aij, bj) in a[i][..i].iter().zip(&b[..i]) {
-            tmp -= aij * bj;
-        }
-        b[i] = tmp;
+        let dot = a[i][..i]
+            .iter()
+            .zip(&b[..i])
+            .fold(0.0, |acc, (aij, bj)| fma(*aij, *bj, acc));
+        b[i] -= dot;
     }
 
     // Back substitution with the upper triangle (cblas_dtrsv).
     b[N - 1] /= a[N - 1][N - 1];
     for i in (0..N - 1).rev() {
-        let mut tmp = b[i];
-        for (aij, bj) in a[i][i + 1..].iter().zip(&b[i + 1..]) {
-            tmp -= aij * bj;
-        }
-        b[i] = tmp / a[i][i];
+        let dot = a[i][i + 1..]
+            .iter()
+            .zip(&b[i + 1..])
+            .fold(0.0, |acc, (aij, bj)| fma(*aij, *bj, acc));
+        b[i] = (b[i] - dot) / a[i][i];
     }
     b
 }
@@ -98,5 +109,28 @@ mod tests {
         for (s, x) in solution.iter().zip(x) {
             assert!((s - x).abs() < 1e-14, "{s} != {x}");
         }
+    }
+
+    #[test]
+    fn matches_gsl_openblas_bitwise() {
+        // gsl_linalg_LU_decomp + gsl_linalg_LU_solve (GSL 2.8, OpenBLAS
+        // 0.3.34) for a collocation-like system.
+        let a = [
+            [1.0, 0.5, 0.25, 0.125, 0.0625],
+            [1.0, 0.25, 0.0625, 0.015625, 0.00390625],
+            [1.0, 2.0, 4.0, 8.0, 16.0],
+            [1.0, 3.0, 9.0, 27.0, 81.0],
+            [1.0, -1.5, 2.25, -3.375, 5.0625],
+        ];
+        let b = [0.3, -1.7, 2.9, 4.1, -0.6];
+        let x = lu_solve(a, b);
+        let expected = [
+            -3.873704390847249,
+            8.711915069057929,
+            0.6889095031952177,
+            -3.2225520511234795,
+            0.7734157905586476,
+        ];
+        assert_eq!(x, expected);
     }
 }

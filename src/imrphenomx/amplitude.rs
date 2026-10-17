@@ -4,7 +4,7 @@
 
 use std::f64::consts::PI;
 
-use crate::imrphenomx::internals::{UsefulPowers, WaveformStruct, POWERS_OF_LALPI};
+use crate::imrphenomx::internals::{fma, UsefulPowers, WaveformStruct, POWERS_OF_LALPI};
 use crate::imrphenomx::{inspiral, intermediate, ringdown};
 
 /// Equivalent of `IMRPhenomXAmpCoefficients` for the default versions
@@ -102,7 +102,11 @@ impl AmpCoefficients {
 
         // Solving linear equation: ansatzRD(F1) == v1
         let gamma1 = (v1_rd / (f_damp * gamma3))
-            * (f1 * f1 - 2.0 * f1 * f_ring + f_ring * f_ring + f_damp * f_damp * gamma3 * gamma3)
+            * fma(
+                f_damp * f_damp * gamma3,
+                gamma3,
+                fma(f_ring, f_ring, fma(f1, f1, -(2.0 * f1 * f_ring))),
+            )
             * (((f1 - f_ring) * gamma2) / (f_damp * gamma3)).exp();
 
         let gamma_r = gamma2 / (f_damp * gamma3);
@@ -118,51 +122,116 @@ impl AmpCoefficients {
         // TaylorF2 PN amplitude coefficients from the PN re-expansion of the Hlm.
         let pn_initial = 1.0;
         let pn_one_third = 0.0;
-        let pn_two_thirds = ((-969. + 1804. * eta) / 672.) * pi.two_thirds;
-        let pn_three_thirds = ((81. * (chi1l + chi2l) + 81. * chi1l * delta
-            - 81. * chi2l * delta
-            - 44. * (chi1l + chi2l) * eta)
-            / 48.)
+        let pn_two_thirds = fma(1804.0, eta, -969.0) / 672.0 * pi.two_thirds;
+        let pn_three_thirds = fma(
+            -(44.0 * (chi1l + chi2l)),
+            eta,
+            fma(
+                -(81.0 * chi2l),
+                delta,
+                fma(81.0, chi1l + chi2l, 81.0 * chi1l * delta),
+            ),
+        ) / 48.0
             * pi.itself;
-        let pn_four_thirds = ((-27312085. - 10287648. * chi1l2 * (1. + delta)
-            + 24.
-                * (428652. * chi2l2 * (-1. + delta)
-                    + (-1975055. + 10584. * (81. * chi1l2 - 94. * chi1l * chi2l + 81. * chi2l2))
-                        * eta
-                    + 1473794. * eta2))
-            / 8.128512e6)
+        let pn_four_thirds = fma(
+            24.0,
+            fma(
+                1473794.0,
+                eta2,
+                fma(
+                    428652.0 * chi2l2,
+                    -1.0 + delta,
+                    fma(
+                        10584.0,
+                        fma(81.0, chi2l2, fma(81.0, chi1l2, -(94.0 * chi1l * chi2l))),
+                        -1975055.0,
+                    ) * eta,
+                ),
+            ),
+            fma(-(10287648.0 * chi1l2), 1.0 + delta, -27312085.0),
+        ) / 8.128512e6
             * pi.one_third
             * pi.itself;
-        let pn_five_thirds = ((-6048. * chi1l3 * (-1. - delta + (3. + delta) * eta)
-            + chi2l
-                * (-((287213. + 6048. * chi2l2) * (-1. + delta))
-                    + 4. * (-93414. + 1512. * chi2l2 * (-3. + delta) + 2083. * delta) * eta
-                    - 35632. * eta2)
-            + chi1l
-                * (287213. * (1. + delta) - 4. * eta * (93414. + 2083. * delta + 8908. * eta))
-            + 42840. * (-1. + 4. * eta) * PI)
-            / 32256.)
+        let pn_five_thirds = fma(
+            42840.0 * fma(4.0, eta, -1.0),
+            PI,
+            fma(
+                chi1l,
+                fma(
+                    287213.0,
+                    1.0 + delta,
+                    -(4.0 * eta * fma(8908.0, eta, fma(2083.0, delta, 93414.0))),
+                ),
+                fma(
+                    -6048.0 * chi1l3,
+                    fma(3.0 + delta, eta, -1.0 - delta),
+                    chi2l
+                        * fma(
+                            -35632.0,
+                            eta2,
+                            fma(
+                                -fma(6048.0, chi2l2, 287213.0),
+                                -1.0 + delta,
+                                4.0 * fma(
+                                    2083.0,
+                                    delta,
+                                    fma(1512.0 * chi2l2, -3.0 + delta, -93414.0),
+                                ) * eta,
+                            ),
+                        ),
+                ),
+            ),
+        ) / 32256.0
             * pi.five_thirds;
-        let pn_six_thirds = ((-1242641879927.
-            + 12.0
-                * (28.0
-                    * (-3248849057.0
-                        + 11088.
-                            * (163199. * chi1l2 - 266498. * chi1l * chi2l + 163199. * chi2l2))
-                    * eta2
-                    + 27026893936. * eta3
-                    - 116424.
-                        * (147117. * (-(chi2l2 * (-1.0 + delta)) + chi1l2 * (1.0 + delta))
-                            + 60928. * (chi1l + chi2l + chi1l * delta - chi2l * delta) * PI)
-                    + eta
-                        * (545384828789.0
-                            - 77616.
-                                * (638642. * chi1l * chi2l
-                                    + chi1l2 * (-158633. + 282718. * delta)
-                                    - chi2l2 * (158633.0 + 282718.0 * delta)
-                                    - 107520.0 * (chi1l + chi2l) * PI
-                                    + 275520. * pi.two))))
-            / 6.0085960704e10)
+        let pn_six_thirds = fma(
+            12.0,
+            fma(
+                eta,
+                fma(
+                    -77616.0,
+                    fma(
+                        275520.0,
+                        pi.two,
+                        fma(
+                            -(107520.0 * (chi1l + chi2l)),
+                            PI,
+                            fma(
+                                -chi2l2,
+                                fma(282718.0, delta, 158633.0),
+                                fma(
+                                    638642.0 * chi1l,
+                                    chi2l,
+                                    chi1l2 * fma(282718.0, delta, -158633.0),
+                                ),
+                            ),
+                        ),
+                    ),
+                    545384828789.0,
+                ),
+                fma(
+                    -116424.0,
+                    fma(
+                        147117.0,
+                        fma(-chi2l2, -1.0 + delta, chi1l2 * (1.0 + delta)),
+                        60928.0 * fma(-chi2l, delta, fma(chi1l, delta, chi1l + chi2l)) * PI,
+                    ),
+                    fma(
+                        28.0 * fma(
+                            11088.0,
+                            fma(
+                                163199.0,
+                                chi2l2,
+                                fma(163199.0, chi1l2, -(266498.0 * chi1l * chi2l)),
+                            ),
+                            -3248849057.0,
+                        ),
+                        eta2,
+                        27026893936.0 * eta3,
+                    ),
+                ),
+            ),
+            -1242641879927.0,
+        ) / 6.0085960704e10
             * pi.two;
 
         // Pseudo-PN coefficients from the collocation points (version 103).
@@ -234,8 +303,8 @@ impl AmpCoefficients {
 
         let d1 = inspiral::amp_22_dansatz(f1, wf, &amp);
         let d4 = ringdown::amp_22_dansatz(f4, f_ring, f_damp, &amp);
-        let insp_f1 = inspiral::amp_22_ansatz(f1, &powers_of_f1, &amp);
-        let rd_f4 = ringdown::amp_22_ansatz(f4, &amp);
+        let insp_f1 = inspiral::amp_22_ansatz_exact(f1, &powers_of_f1, &amp);
+        let rd_f4 = ringdown::amp_22_ansatz_exact(f4, f_ring, f_damp, &amp);
 
         // D[f^{7/6} Ah^{-1}[f], f] = (7/6) f^{1/6} / Ah[f] - f^{7/6} Ah'[f] / Ah[f]^2
         let d1 = ((7.0 / 6.0) * powers_of_f1.one_sixth / insp_f1)

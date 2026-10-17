@@ -83,6 +83,17 @@ impl fmt::Display for IMRPhenomXError {
 
 impl std::error::Error for IMRPhenomXError {}
 
+/// `a * b + c` as compiled from the C expression, see
+/// [`crate::spintaylor::fp`].
+///
+/// LALSimulation's arm64 builds contract `a * b + c` and `c +- a * b`
+/// within a single C expression into fused multiply-adds (clang's default
+/// `-ffp-contract=on`). The parameter-space fits and the coefficient
+/// computations use `fma` at exactly those places so that they agree with
+/// LAL to the last bit: several IMRPhenomXHM coefficients are computed by
+/// finite differences that amplify rounding differences by up to 1e14.
+pub(crate) use crate::spintaylor::fp::fma;
+
 /// Cached powers of a number, `IMRPhenomX_UsefulPowers`.
 ///
 /// [`UsefulPowers::new`] reproduces `IMRPhenomX_Initialize_Powers`
@@ -481,8 +492,8 @@ impl WaveformStruct {
             s_tot_r: s_tot_r(eta, chi1l, chi2l),
             dchi,
             dchi_half: dchi * 0.5,
-            sigma_l: (chi2l * m2) - (chi1l * m1),
-            sl: chi1l * (m1 * m1) + chi2l * (m2 * m2),
+            sigma_l: fma(chi2l, m2, -(chi1l * m1)),
+            sl: fma(chi1l, m1 * m1, chi2l * (m2 * m2)),
             lambda1: 0.0,
             lambda2: 0.0,
             quadparam1: 1.0,
