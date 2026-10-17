@@ -46,8 +46,8 @@ impl PhaseCoefficients {
             phenomenological_function(eta, xi, &ALPHA_COEFFS[4]),
         ];
         let final_spin = final_spin_0815(params);
-        let f_ringdown = fring(final_spin);
-        let f_damping = fdamp(final_spin);
+        let f_ringdown = fring(params, final_spin);
+        let f_damping = fdamp(params, final_spin);
 
         let mut new = Self {
             eta_inv,

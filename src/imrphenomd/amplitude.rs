@@ -1,4 +1,5 @@
-// use autodiff::*;
+use std::f64::consts::PI;
+
 use ndarray::array;
 use ndarray_linalg::Solve;
 
@@ -25,7 +26,7 @@ impl AmplitudePrefactors {
         let eta = params.eta;
         let xi = chi_pn(params) - 1.0;
         let final_spin = final_spin_0815(params);
-        let mut pn = PNAmplitude::new(&params);
+        let mut pn = phenomd_inspiral_amplitude_pn(params);
         pn.v[7] = phenomenological_function(eta, xi, &RHO_COEFFS[0]) / POWERS_OF_PI.seven_thirds;
         pn.v[8] = phenomenological_function(eta, xi, &RHO_COEFFS[1]) / POWERS_OF_PI.eight_thirds;
         pn.v[9] = phenomenological_function(eta, xi, &RHO_COEFFS[2]) / POWERS_OF_PI.three;
@@ -33,8 +34,8 @@ impl AmplitudePrefactors {
         let mut new = Self {
             amp0: (2.0 / 3.0 * eta).sqrt() * POWERS_OF_PI.minus_one_sixth,
             pn,
-            f_ringdown: fring(final_spin),
-            f_damping: fdamp(final_spin),
+            f_ringdown: fring(params, final_spin),
+            f_damping: fdamp(params, final_spin),
             f_peak: 0.0,
             gamma1: phenomenological_function(eta, xi, &GAMMA_COEFFS[0]),
             gamma2: phenomenological_function(eta, xi, &GAMMA_COEFFS[1]),
@@ -45,6 +46,56 @@ impl AmplitudePrefactors {
         new.deltas = deltas(params, &new);
         new
     }
+}
+
+/// PN amplitude coefficients used in the IMRPhenomD inspiral ansatz
+/// (`init_amp_ins_prefactors` in LALSimulation), expressed as coefficients of
+/// powers of the orbital speed v = (pi M f)^(1/3).
+fn phenomd_inspiral_amplitude_pn(params: &Params) -> PNAmplitude {
+    let eta = params.eta;
+    let eta2 = eta * eta;
+    let eta3 = eta2 * eta;
+    let chi1 = params.chi_1;
+    let chi2 = params.chi_2;
+    let chi12 = chi1 * chi1;
+    let chi22 = chi2 * chi2;
+    let seta = params.seta;
+    let seta_plus_1 = 1.0 + seta;
+    let pi = PI;
+    let pi2 = PI * PI;
+    let mut v = [0.0; 10];
+    v[0] = 1.0;
+    v[2] = (-969.0 + 1804.0 * eta) / 672.0;
+    v[3] = (chi1 * (81.0 * seta_plus_1 - 44.0 * eta) + chi2 * (81.0 - 81.0 * seta - 44.0 * eta))
+        / 48.0;
+    v[4] = (-27312085.0 - 10287648.0 * chi22 - 10287648.0 * chi12 * seta_plus_1
+        + 10287648.0 * chi22 * seta
+        + 24.0 * (-1975055.0 + 857304.0 * chi12 - 994896.0 * chi1 * chi2 + 857304.0 * chi22) * eta
+        + 35371056.0 * eta2)
+        / 8.128512e6;
+    v[5] = (chi2 * (-285197.0 * (-1.0 + seta) + 4.0 * (-91902.0 + 1579.0 * seta) * eta
+        - 35632.0 * eta2)
+        + chi1 * (285197.0 * seta_plus_1 - 4.0 * (91902.0 + 1579.0 * seta) * eta - 35632.0 * eta2)
+        + 42840.0 * (-1.0 + 4.0 * eta) * pi)
+        / 32256.0;
+    v[6] = -(-336.0
+        * (-3248849057.0 + 2943675504.0 * chi12 - 3339284256.0 * chi1 * chi2
+            + 2943675504.0 * chi22)
+        * eta2
+        - 324322727232.0 * eta3
+        - 7.0
+            * (-177520268561.0 + 107414046432.0 * chi22 + 107414046432.0 * chi12 * seta_plus_1
+                - 107414046432.0 * chi22 * seta
+                + 11087290368.0 * (chi1 + chi2 + chi1 * seta - chi2 * seta) * pi)
+        + 12.0
+            * eta
+            * (-545384828789.0 - 176491177632.0 * chi1 * chi2 + 202603761360.0 * chi22
+                + 77616.0 * chi12 * (2610335.0 + 995766.0 * seta)
+                - 77287373856.0 * chi22 * seta
+                + 5841690624.0 * (chi1 + chi2) * pi
+                + 21384760320.0 * pi2))
+        / 6.0085960704e10;
+    PNAmplitude { v }
 }
 
 pub fn inspiral_amplitude(

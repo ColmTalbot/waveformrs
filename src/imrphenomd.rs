@@ -10,6 +10,7 @@ mod amplitude;
 mod coefficients;
 mod constants;
 mod phase;
+mod qnm_data;
 mod utils;
 
 use amplitude::{imrphenomd_amplitude, AmplitudePrefactors};
@@ -23,6 +24,10 @@ pub struct IMRPhenomD {
     phase_prefactors: PNPhasing,
     amplitude_prefactors: AmplitudePrefactors,
     t0: f64,
+    /// Dimensionless frequency at which the linear time shift vanishes.
+    reference_mf: f64,
+    /// Phase subtracted so that the phase at the reference frequency is `-phi_c`.
+    reference_phase: f64,
 }
 
 impl IMRPhenomD {
@@ -45,7 +50,23 @@ impl IMRPhenomD {
             phase_prefactors,
             amplitude_prefactors,
             t0: mrd_phase_derivative(amplitude_prefactors.f_peak, &coeffs),
+            reference_mf: amplitude_prefactors.f_peak,
+            reference_phase: 0.0,
         }
+    }
+
+    /// Define the phase relative to a reference frequency (in Hz) following
+    /// the LALSimulation convention: with `phi_c = 2 * phi_ref` the waveform
+    /// matches `XLALSimIMRPhenomDGenerateFD` with reference frequency `f_ref`
+    /// and orbital phase `phi_ref`.
+    ///
+    /// Without calling this the phase is not shifted and the time shift
+    /// vanishes at the peak frequency.
+    pub fn with_reference_frequency(mut self, reference_frequency: f64) -> Self {
+        let mf_ref = self.orbital_speed(reference_frequency);
+        self.reference_mf = mf_ref;
+        self.reference_phase = imrphenomd_phase(mf_ref, &self.coeffs, &self.phase_prefactors);
+        self
     }
 }
 
@@ -53,7 +74,8 @@ impl Waveform for IMRPhenomD {
     fn phase(&self, v: f64, phi_c: f64) -> f64 {
         imrphenomd_phase(v, &self.coeffs, &self.phase_prefactors)
             - phi_c
-            - self.t0 * (v - self.amplitude_prefactors.f_peak)
+            - self.reference_phase
+            - self.t0 * (v - self.reference_mf)
     }
 
     fn amplitude(&self, v: f64) -> f64 {

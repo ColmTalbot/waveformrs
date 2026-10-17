@@ -1,6 +1,8 @@
-use crate::imrphenomd::coefficients::{
-    DAMPING_COEFFICIENTS, FINAL_SPIN_COEFFS, RINGDOWN_COEFFICIENTS,
-};
+use once_cell::sync::Lazy;
+
+use crate::imrphenomd::coefficients::FINAL_SPIN_COEFFS;
+use crate::imrphenomd::qnm_data::{QNM_FDAMP, QNM_FRING, QNM_SPIN};
+use crate::interpolate::CubicSpline;
 use crate::pn::Params;
 
 #[derive(Debug)]
@@ -53,37 +55,34 @@ pub fn final_spin_0815(params: &Params) -> f64 {
         .sum()
 }
 
-fn _evaluate_pade(x: f64, num_coeffs: &[f64], den_coeffs: &[f64], order: usize) -> f64 {
-    let powers: Vec<f64> = (0..order).map(|i| x.powi(i as i32)).collect();
-    let num = num_coeffs
-        .iter()
-        .zip(&powers)
-        .map(|(c, p)| c * p)
-        .sum::<f64>();
-    let den = den_coeffs
-        .iter()
-        .zip(&powers)
-        .map(|(c, p)| c * p)
-        .sum::<f64>();
-    num / den
+/// Fraction of the total mass radiated, `EradRational0815` in LALSimulation.
+pub fn erad_rational_0815(params: &Params) -> f64 {
+    let eta = params.eta;
+    let eta2 = eta * eta;
+    let eta3 = eta2 * eta;
+    let m1s = params.m1_on_m * params.m1_on_m;
+    let m2s = params.m2_on_m * params.m2_on_m;
+    let s = (m1s * params.chi_1 + m2s * params.chi_2) / (m1s + m2s);
+    (eta * (0.055974469826360077 + 0.5809510763115132 * eta - 0.9606726679372312 * eta2
+        + 3.352411249771192 * eta3)
+        * (1. + (-0.0030302335878845507 - 2.0066110851351073 * eta + 7.7050567802399215 * eta2)
+            * s))
+        / (1. + (-0.6714403054720589 - 1.4756929437702908 * eta + 7.304676214885011 * eta2) * s)
 }
 
-pub fn fring(final_spin: f64) -> f64 {
-    _evaluate_pade(
-        final_spin,
-        &RINGDOWN_COEFFICIENTS[0],
-        &RINGDOWN_COEFFICIENTS[1],
-        8,
-    )
+static FRING_SPLINE: Lazy<CubicSpline> = Lazy::new(|| CubicSpline::new(&QNM_SPIN, &QNM_FRING));
+static FDAMP_SPLINE: Lazy<CubicSpline> = Lazy::new(|| CubicSpline::new(&QNM_SPIN, &QNM_FDAMP));
+
+/// Ringdown frequency (in units of the total mass) interpolated from the QNM
+/// tables and rescaled by the remnant mass.
+pub fn fring(params: &Params, final_spin: f64) -> f64 {
+    FRING_SPLINE.eval(final_spin) / (1.0 - erad_rational_0815(params))
 }
 
-pub fn fdamp(final_spin: f64) -> f64 {
-    _evaluate_pade(
-        final_spin,
-        &DAMPING_COEFFICIENTS[0],
-        &DAMPING_COEFFICIENTS[1],
-        7,
-    )
+/// Damping frequency (in units of the total mass) interpolated from the QNM
+/// tables and rescaled by the remnant mass.
+pub fn fdamp(params: &Params, final_spin: f64) -> f64 {
+    FDAMP_SPLINE.eval(final_spin) / (1.0 - erad_rational_0815(params))
 }
 
 pub(crate) fn phenomenological_function(eta: f64, xi: f64, coeffs: &[[f64; 3]; 4]) -> f64 {
