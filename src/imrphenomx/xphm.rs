@@ -21,7 +21,8 @@ use crate::imrphenomx::xp::Polarizations;
 
 /// `pPrec->sqrt*` as hard-coded in `IMRPhenomXGetAndSetPrecessionVariables`
 /// (`sqrt10` is only accurate to 15 digits there).
-const SQRT2: f64 = 1.414_213_562_373_095_1;
+// LAL's literal 1.4142135623730951 is the double nearest to sqrt(2).
+const SQRT2: f64 = std::f64::consts::SQRT_2;
 const SQRT5: f64 = 2.236_067_977_499_79;
 const SQRT6: f64 = 2.449_489_742_783_178;
 const SQRT7: f64 = 2.645_751_311_064_590_7;
@@ -373,7 +374,14 @@ impl Setup {
             ));
         }
         let mut angles = SpinTaylorAngles::new(wf, prec, &arrays)?;
-        angles.interpolate_gamma(wf, f_min_angles, f_max_angles, None)?;
+        // gamma is evaluated at Mf' = 2 Mf / m' up to the cutoff, at f_ref
+        // and at ftrans_MRD: the integration can stop beyond these (see
+        // SpinTaylorAngles::interpolate_gamma), which leaves the spline
+        // unchanged where it is used.
+        let mf_needed = (wf.f_max_prime * wf.m_sec * (2.0 / prec.m_min as f64))
+            .max(wf.mf_ref)
+            .max(angles.ftrans_mrd);
+        angles.interpolate_gamma(wf, f_min_angles, f_max_angles, Some(mf_needed))?;
         angles.set_alpha_ref(wf.mf_ref)?;
         // alpha, cos(beta) and gamma are evaluated at ftrans_MRD (used by
         // the versions with constant angles in the ringdown).

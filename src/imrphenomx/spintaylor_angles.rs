@@ -546,11 +546,35 @@ impl SpinTaylorAngles {
         delta_mf: f64,
         hint: &mut usize,
     ) -> Result<f64, IMRPhenomXError> {
+        self.gamma_step_cached(mf, delta_mf, hint, &mut BooleCache::default())
+    }
+
+    /// [`Self::gamma_step`] reusing the integrand at the last point of the
+    /// previous step when it is the first point of this one (on a uniform
+    /// grid `Mf_i + 4 (dMf / 4)` often equals `Mf_{i+1}` exactly), which
+    /// gives the same result with fewer evaluations.
+    #[inline]
+    fn gamma_step_cached(
+        &self,
+        mf: f64,
+        delta_mf: f64,
+        hint: &mut usize,
+        cache: &mut BooleCache,
+    ) -> Result<f64, IMRPhenomXError> {
         let mf_high = mf + delta_mf;
         let step = (mf_high - mf) * 0.25;
         let mut alphadotcosbeta = [0.0; 5];
-        if mf <= self.ftrans_mrd {
+        let inspiral = mf <= self.ftrans_mrd;
+        // fma(0, step, mf) = mf
+        let first = cache.lookup(mf, inspiral);
+        if inspiral {
             for (j, value) in alphadotcosbeta.iter_mut().enumerate() {
+                if j == 0 {
+                    if let Some(cached) = first {
+                        *value = cached;
+                        continue;
+                    }
+                }
                 let mf_aux = fma(j as f64, step, mf);
                 if !self.alpha_spline.contains(mf_aux) {
                     return Err(IMRPhenomXError::SpinTaylorAngles(
@@ -565,12 +589,24 @@ impl SpinTaylorAngles {
             }
         } else {
             for (j, value) in alphadotcosbeta.iter_mut().enumerate() {
+                if j == 0 {
+                    if let Some(cached) = first {
+                        *value = cached;
+                        continue;
+                    }
+                }
                 let mf_aux = fma(j as f64, step, mf);
                 let cosbeta = self.beta_mrd.beta(mf_aux).cos();
                 let alphadot = self.alpha_mrd.dalpha(mf_aux);
                 *value = cosbeta * alphadot;
             }
         }
+        *cache = BooleCache {
+            mf: fma(4., step, mf),
+            inspiral,
+            value: alphadotcosbeta[4],
+            valid: true,
+        };
         let a = alphadotcosbeta;
         // 7 a0 + 32 a1 + 12 a2 + 32 a3 + 7 a4 as contracted by clang
         let sum = fma(
@@ -634,12 +670,13 @@ impl SpinTaylorAngles {
         frequencies.push(mf_min);
         gamma.push(0.);
         let mut hint = 0;
+        let mut cache = BooleCache::default();
         for i in 1..n_knots {
             let mf = fma(i as f64, delta_mf, mf_min);
             frequencies.push(mf);
             let previous = gamma[i - 1];
             let deltagamma = if mf < self.ftrans_mrd || self.continues_analytically() {
-                self.gamma_step(mf, delta_mf, &mut hint)?
+                self.gamma_step_cached(mf, delta_mf, &mut hint, &mut cache)?
             } else {
                 0.0
             };
@@ -762,6 +799,26 @@ impl SpinTaylorAngles {
             }
         }
         Ok(angles)
+    }
+}
+
+/// The integrand of the minimal rotation condition at the last point of a
+/// Boole step of `gamma_from_alpha_cosbeta`.
+#[derive(Clone, Copy, Debug, Default)]
+struct BooleCache {
+    mf: f64,
+    inspiral: bool,
+    value: f64,
+    valid: bool,
+}
+
+impl BooleCache {
+    /// The cached integrand if it was evaluated at exactly `mf` in the same
+    /// branch (spline or merger-ringdown continuation).
+    #[inline]
+    fn lookup(&self, mf: f64, inspiral: bool) -> Option<f64> {
+        (self.valid && self.inspiral == inspiral && self.mf.to_bits() == mf.to_bits())
+            .then_some(self.value)
     }
 }
 
