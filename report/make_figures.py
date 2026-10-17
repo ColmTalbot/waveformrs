@@ -42,12 +42,16 @@ ORDER = [
     "IMRPhenomXP_NNLO",
     "IMRPhenomXP_MSA",
     "IMRPhenomXP",
+    "IMRPhenomXPHM_NNLO",
+    "IMRPhenomXPHM_MSA",
     "IMRPhenomXPHM",
 ]
 LABELS = {
     "IMRPhenomXP_NNLO": "IMRPhenomXP (102)",
     "IMRPhenomXP_MSA": "IMRPhenomXP (223)",
     "IMRPhenomXP": "IMRPhenomXP (320)",
+    "IMRPhenomXPHM_NNLO": "IMRPhenomXPHM (102)",
+    "IMRPhenomXPHM_MSA": "IMRPhenomXPHM (223)",
     "IMRPhenomXPHM": "IMRPhenomXPHM (320)",
 }
 # Mid-tone colours that read on both light and dark backgrounds.
@@ -60,6 +64,8 @@ COLOURS = [
     "#d1477a",
     "#2a9bb3",
     "#7a8b2e",
+    "#b8662d",
+    "#5a6fd6",
 ]
 
 
@@ -86,6 +92,7 @@ def style():
             "axes.facecolor": "none",
             "savefig.facecolor": "none",
             "legend.frameon": False,
+            "svg.hashsalt": "waveformrs",
         }
     )
 
@@ -103,7 +110,7 @@ def load():
 def save(fig, name):
     FIGURES.mkdir(exist_ok=True)
     path = FIGURES / f"{name}.svg"
-    fig.savefig(path, bbox_inches="tight")
+    fig.savefig(path, bbox_inches="tight", metadata={"Date": None})
     plt.close(fig)
     text = path.read_text()
     for sentinel, variable in REPLACEMENTS.items():
@@ -122,10 +129,10 @@ def total_mass(record):
 
 def accuracy(results):
     names = list(results)
-    ncols = 4
+    ncols = 5
     nrows = int(np.ceil(len(names) / ncols))
     fig, axes = plt.subplots(
-        nrows, ncols, figsize=(7.2, 1.9 * nrows), sharex=True, sharey=True
+        nrows, ncols, figsize=(8.0, 1.75 * nrows), sharex=True, sharey=True
     )
     axes = np.atleast_2d(axes)
     for ax, name in zip(axes.flat, names):
@@ -143,7 +150,7 @@ def accuracy(results):
         ax.axhline(1e-10, color=MUTED, linewidth=0.6, linestyle="--")
     for ax in axes.flat[len(names):]:
         ax.set_visible(False)
-    axes[0, 0].set_ylim(1e-15, 1e-8)
+    axes[0, 0].set_ylim(1e-17, 1e-9)
     for ax in axes[-1]:
         ax.set_xlabel(r"total mass [$M_\odot$]")
     for ax in axes[:, 0]:
