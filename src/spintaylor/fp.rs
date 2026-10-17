@@ -41,6 +41,16 @@ pub(crate) fn fma(a: f64, b: f64, c: f64) -> f64 {
     }
 }
 
+/// `a * b - c` as compiled from the C expression `a * b - c`.
+#[inline(always)]
+pub(crate) fn fms(a: f64, b: f64, c: f64) -> f64 {
+    if FUSED_MULTIPLY_ADD {
+        a.mul_add(b, -c)
+    } else {
+        a * b - c
+    }
+}
+
 /// `c - a * b` as compiled from the C expression `c - a * b`.
 #[inline(always)]
 pub(crate) fn fnms(a: f64, b: f64, c: f64) -> f64 {
@@ -49,4 +59,20 @@ pub(crate) fn fnms(a: f64, b: f64, c: f64) -> f64 {
     } else {
         c - a * b
     }
+}
+
+/// Dot product as written in LAL, `ax*bx + ay*by + az*bz`.
+#[inline(always)]
+pub(crate) fn dot(a: &[f64; 3], b: &[f64; 3]) -> f64 {
+    fma(a[2], b[2], fma(a[0], b[0], a[1] * b[1]))
+}
+
+/// Cross product as written in `XLALSimInspiralVectorCrossProduct`.
+#[inline(always)]
+pub(crate) fn cross(a: &[f64; 3], b: &[f64; 3]) -> [f64; 3] {
+    [
+        fms(a[1], b[2], a[2] * b[1]),
+        fms(a[2], b[0], a[0] * b[2]),
+        fms(a[0], b[1], a[1] * b[0]),
+    ]
 }
