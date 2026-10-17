@@ -202,7 +202,8 @@ impl Setup {
                 for (i, &f) in frequencies.iter().enumerate() {
                     let mf = wf.m_sec * f;
                     if mf <= mf_cut {
-                        let h22 = xas.h22(mf, phif_ref, mf_cut);
+                        // LAL's powers of Mf (IMRPhenomX_Initialize_Powers)
+                        let h22 = xas.h22_with_powers(mf, &UsefulPowers::new(mf), phif_ref);
                         let (alpha, epsilon, cos_beta) =
                             prec.msa_angles((std::f64::consts::PI * mf).cbrt());
                         (hp[i], hc[i]) = twist_up_22(h22, alpha, cos_beta, epsilon, y2);
