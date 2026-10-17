@@ -186,10 +186,11 @@ pub(crate) struct MsaSystem {
     s1_norm_2: f64,
     s2_norm_2: f64,
     s_0_norm_2: f64,
-    /// Cosines of the angles between the spins and L at the reference
-    /// frequency.
-    dot_s1_ln: f64,
-    dot_s2_ln: f64,
+    /// Whether the roots of the spin magnitude cubic take their degenerate
+    /// values for all frequencies: a spin (anti-)aligned with L or
+    /// vanishing (`dotS1Ln == +-1`, ..., `S1_norm_2 == 0`, ... in
+    /// `IMRPhenomX_Return_Roots_MSA`).
+    degenerate_roots: bool,
     /// Effective spin `xi`.
     seff: f64,
     /// Coefficients of the 3PN orbital angular momentum.
@@ -372,8 +373,12 @@ impl MsaSystem {
             s1_norm_2,
             s2_norm_2,
             s_0_norm_2,
-            dot_s1_ln,
-            dot_s2_ln,
+            degenerate_roots: dot_s1_ln == 1.
+                || dot_s2_ln == 1.
+                || dot_s1_ln == -1.
+                || dot_s2_ln == -1.
+                || s1_norm_2 == 0.
+                || s2_norm_2 == 0.,
             seff,
             constants_l,
             c1: 0.0,
@@ -641,6 +646,18 @@ impl MsaSystem {
     /// `IMRPhenomX_Return_Roots_MSA` with
     /// `IMRPhenomX_Return_Spin_Evolution_Coefficients_MSA`.
     fn roots(&self, l_norm: f64, j_norm: f64) -> Roots {
+        let degenerate = || {
+            let smi2 = self.s_0_norm_2;
+            // numerical perturbation to keep alpha from diverging
+            Roots {
+                s32: 0.0,
+                smi2,
+                spl2: smi2 + 1e-9,
+            }
+        };
+        if self.degenerate_roots {
+            return degenerate();
+        }
         let j_norm2 = j_norm * j_norm;
         let l_norm2 = l_norm * l_norm;
         let s1 = self.s1_norm_2;
@@ -682,22 +699,8 @@ impl MsaSystem {
         // clamp keeps NaN, as the comparisons in LAL do
         let theta = acosarg.acos() / 3.0;
 
-        if theta.is_nan()
-            || sqrtarg.is_nan()
-            || self.dot_s1_ln == 1.
-            || self.dot_s2_ln == 1.
-            || self.dot_s1_ln == -1.
-            || self.dot_s2_ln == -1.
-            || s1 == 0.
-            || s2 == 0.
-        {
-            let smi2 = self.s_0_norm_2;
-            // numerical perturbation to keep alpha from diverging
-            Roots {
-                s32: 0.0,
-                smi2,
-                spl2: smi2 + 1e-9,
-            }
+        if theta.is_nan() || sqrtarg.is_nan() {
+            degenerate()
         } else {
             let cos_theta = theta.cos();
             let tmp1 = fms(2.0 * sqrtarg, (theta - 2.0 * TAU / 3.0).cos(), b / 3.0);
@@ -1054,7 +1057,8 @@ fn elljac_sn(u: f64, m: f64) -> f64 {
     let mut d = [0.0f64; N];
     let mut n = 0;
     mu[0] = 1.0;
-    nu[0] = (1.0 - m).sqrt();
+    let sqrt_1mm = (1.0 - m).sqrt();
+    nu[0] = sqrt_1mm;
     while (mu[n] - nu[n]).abs() > 4.0 * GSL_DBL_EPSILON * (mu[n] + nu[n]).abs() {
         mu[n + 1] = 0.5 * (mu[n] + nu[n]);
         nu[n + 1] = (mu[n] * nu[n]).sqrt();
@@ -1081,9 +1085,9 @@ fn elljac_sn(u: f64, m: f64) -> f64 {
     };
     if sin_umu.abs() < cos_umu.abs() {
         let (c0, d0) = descend(sin_umu / cos_umu, &mu, &nu, &mut c, &mut d);
-        let dn = (1.0 - m).sqrt() / d0;
+        let dn = sqrt_1mm / d0;
         let cn = dn * gsl_sign(cos_umu) / gsl_hypot(1.0, c0);
-        cn * c0 / (1.0 - m).sqrt()
+        cn * c0 / sqrt_1mm
     } else {
         let (c0, _) = descend(cos_umu / sin_umu, &mu, &nu, &mut c, &mut d);
         gsl_sign(sin_umu) / gsl_hypot(1.0, c0)
