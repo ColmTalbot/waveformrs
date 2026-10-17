@@ -394,8 +394,9 @@ impl WaveformStruct {
 
         // Symmetric mass ratio
         let delta = ((m1 - m2) / (m1 + m2)).abs();
-        // use fabs to prevent negative sign due to roundoff
-        let mut eta = (0.25 * (1.0 - delta * delta)).abs();
+        // use fabs to prevent negative sign due to roundoff; 1 - delta^2 is
+        // contracted to a fused multiply-add like LAL's arm64 build.
+        let mut eta = (0.25 * crate::spintaylor::fp::fnms(delta, delta, 1.0)).abs();
         let mut q = if m1 > m2 { m1 / m2 } else { m2 / m1 };
         if eta > 0.25 {
             eta = 0.25;

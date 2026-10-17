@@ -3,7 +3,12 @@
 //! This reproduces `gsl_interp_cspline` (natural boundary conditions) as used
 //! throughout LALSimulation, including the order of floating point operations
 //! in the tridiagonal solve, so that interpolated values agree with LAL to
-//! rounding precision.
+//! rounding precision. Like the SpinTaylor integrator, the fused
+//! multiply-adds that clang emits for the arm64 builds of GSL are mirrored
+//! (see [`crate::spintaylor::fp`]), which makes the spline values and
+//! derivatives agree bit for bit on that platform.
+
+use crate::spintaylor::fp::{fma, fms, fnms};
 
 /// A natural cubic spline through `(x_i, y_i)`.
 #[derive(Clone, Debug)]
@@ -36,7 +41,7 @@ impl CubicSpline {
             let g_ip1 = if h_ip1 != 0.0 { 1.0 / h_ip1 } else { 0.0 };
             offdiag[i] = h_ip1;
             diag[i] = 2.0 * (h_ip1 + h_i);
-            g[i] = 3.0 * (ydiff_ip1 * g_ip1 - ydiff_i * g_i);
+            g[i] = 3.0 * fms(ydiff_ip1, g_ip1, ydiff_i * g_i);
         }
         if sys_size == 1 {
             c[1] = g[0] / diag[0];
@@ -72,7 +77,7 @@ impl CubicSpline {
         let dy = self.y[index + 1] - self.y[index];
         let c_i = self.c[index];
         let c_ip1 = self.c[index + 1];
-        let b = dy / dx - dx * (c_ip1 + 2.0 * c_i) / 3.0;
+        let b = dy / dx - dx * fma(2.0, c_i, c_ip1) / 3.0;
         let d = (c_ip1 - c_i) / (3.0 * dx);
         (self.y[index], b, c_i, d)
     }
@@ -92,7 +97,7 @@ impl CubicSpline {
         let index = self.find(value);
         let (a, b, c, d) = self.coefficients(index);
         let delx = value - self.x[index];
-        a + delx * (b + delx * (c + delx * d))
+        fma(delx, fma(delx, fma(delx, d, c), b), a)
     }
 
     /// Evaluate the first derivative of the spline.
@@ -100,7 +105,7 @@ impl CubicSpline {
         let index = self.find(value);
         let (_, b, c, d) = self.coefficients(index);
         let delx = value - self.x[index];
-        b + delx * (2.0 * c + 3.0 * d * delx)
+        fma(delx, fma(2.0, c, 3.0 * d * delx), b)
     }
 
     /// Evaluate the spline at a sorted sequence of points, walking the knots
@@ -114,12 +119,52 @@ impl CubicSpline {
             }
             let (a, b, c, d) = self.coefficients(index);
             let delx = value - self.x[index];
-            *out = a + delx * (b + delx * (c + delx * d));
+            *out = fma(delx, fma(delx, fma(delx, d, c), b), a);
         }
     }
 
     pub fn x(&self) -> &[f64] {
         &self.x
+    }
+
+    /// Whether `value` lies within the knots, i.e. GSL would evaluate the
+    /// spline without a domain error.
+    #[inline]
+    pub fn contains(&self, value: f64) -> bool {
+        value >= self.x[0] && value <= self.x[self.x.len() - 1]
+    }
+
+    /// Index `i` of the interval with `x[i] <= value < x[i + 1]` (clamped to
+    /// the table), searching from the interval `hint` as
+    /// `gsl_interp_accel_find` does. The result does not depend on `hint`.
+    #[inline]
+    pub fn locate(&self, value: f64, hint: usize) -> usize {
+        let last = self.x.len() - 2;
+        let mut index = hint.min(last);
+        while index < last && self.x[index + 1] <= value {
+            index += 1;
+        }
+        while index > 0 && self.x[index] > value {
+            index -= 1;
+        }
+        index
+    }
+
+    /// Evaluate the spline polynomial of interval `index` at `value`.
+    #[inline]
+    pub fn eval_in(&self, index: usize, value: f64) -> f64 {
+        let (a, b, c, d) = self.coefficients(index);
+        let delx = value - self.x[index];
+        fma(delx, fma(delx, fma(delx, d, c), b), a)
+    }
+
+    /// Evaluate the derivative of the spline polynomial of interval `index`
+    /// at `value`.
+    #[inline]
+    pub fn derivative_in(&self, index: usize, value: f64) -> f64 {
+        let (_, b, c, d) = self.coefficients(index);
+        let delx = value - self.x[index];
+        fma(delx, fma(2.0, c, 3.0 * d * delx), b)
     }
 }
 
@@ -132,22 +177,22 @@ fn solve_symmetric_tridiagonal(diag: &[f64], offdiag: &[f64], b: &[f64], x: &mut
     alpha[0] = diag[0];
     gamma[0] = offdiag[0] / alpha[0];
     for i in 1..n - 1 {
-        alpha[i] = diag[i] - offdiag[i - 1] * gamma[i - 1];
+        alpha[i] = fnms(offdiag[i - 1], gamma[i - 1], diag[i]);
         gamma[i] = offdiag[i] / alpha[i];
     }
     if n > 1 {
-        alpha[n - 1] = diag[n - 1] - offdiag[n - 2] * gamma[n - 2];
+        alpha[n - 1] = fnms(offdiag[n - 2], gamma[n - 2], diag[n - 1]);
     }
     z[0] = b[0];
     for i in 1..n {
-        z[i] = b[i] - gamma[i - 1] * z[i - 1];
+        z[i] = fnms(gamma[i - 1], z[i - 1], b[i]);
     }
     for i in 0..n {
         z[i] /= alpha[i];
     }
     x[n - 1] = z[n - 1];
     for i in (0..n - 1).rev() {
-        x[i] = z[i] - gamma[i] * x[i + 1];
+        x[i] = fnms(gamma[i], x[i + 1], z[i]);
     }
 }
 

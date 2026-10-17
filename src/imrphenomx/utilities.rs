@@ -4,8 +4,22 @@
 //! the time alignment, together with the spin parameterisations. All take
 //! the symmetric mass ratio and the aligned spins with the convention
 //! `m1 >= m2`.
+//!
+//! The spin parameterisations and the final mass and spin fits are written
+//! with the fused multiply-adds that clang emits for the arm64 builds of
+//! LALSimulation (see [`crate::spintaylor::fp`]): they set the ringdown
+//! frequencies, which amplify last-bit differences, and the time step of
+//! the SpinTaylor evolution used by the precessing models.
 
 use std::f64::consts::PI;
+
+use crate::spintaylor::fp::{fma, fms, fnms};
+
+/// `sqrt(1 - 4 eta)` as contracted by clang.
+#[inline]
+fn delta_of_eta(eta: f64) -> f64 {
+    fnms(4.0, eta, 1.0).sqrt()
+}
 
 /// `XLALSimIMRPhenomXsign`: sign of `x`, zero for zero.
 pub(crate) fn sign(x: f64) -> f64 {
@@ -20,29 +34,29 @@ pub(crate) fn sign(x: f64) -> f64 {
 
 /// `XLALSimIMRPhenomXchiEff`: effective aligned spin.
 pub(crate) fn chi_eff(eta: f64, chi1l: f64, chi2l: f64) -> f64 {
-    let delta = (1.0 - 4.0 * eta).sqrt();
+    let delta = delta_of_eta(eta);
     let mm1 = 0.5 * (1.0 + delta);
     let mm2 = 0.5 * (1.0 - delta);
-    mm1 * chi1l + mm2 * chi2l
+    fma(mm1, chi1l, mm2 * chi2l)
 }
 
 /// `XLALSimIMRPhenomXchiPNHat`: normalised PN reduced spin parameter.
 pub(crate) fn chi_pn_hat(eta: f64, chi1l: f64, chi2l: f64) -> f64 {
-    let delta = (1.0 - 4.0 * eta).sqrt();
+    let delta = delta_of_eta(eta);
     let mm1 = 0.5 * (1.0 + delta);
     let mm2 = 0.5 * (1.0 - delta);
-    let chi_eff = mm1 * chi1l + mm2 * chi2l;
-    (chi_eff - (38.0 / 113.0) * eta * (chi1l + chi2l)) / (1.0 - (76.0 * eta / 113.0))
+    let chi_eff = fma(mm1, chi1l, mm2 * chi2l);
+    fnms((38.0 / 113.0) * eta, chi1l + chi2l, chi_eff) / (1.0 - (76.0 * eta / 113.0))
 }
 
 /// `XLALSimIMRPhenomXSTotR`: total spin normalised to [-1, 1].
 pub(crate) fn s_tot_r(eta: f64, chi1l: f64, chi2l: f64) -> f64 {
-    let delta = (1.0 - 4.0 * eta).sqrt();
+    let delta = delta_of_eta(eta);
     let m1 = 0.5 * (1.0 + delta);
     let m2 = 0.5 * (1.0 - delta);
     let m1s = m1 * m1;
     let m2s = m2 * m2;
-    (m1s * chi1l + m2s * chi2l) / (m1s + m2s)
+    fma(m1s, chi1l, m2s * chi2l) / (m1s + m2s)
 }
 
 /// `XLALSimIMRPhenomXdchi`: spin difference.
@@ -56,61 +70,104 @@ pub(crate) fn f_meco(eta: f64, chi1l: f64, chi2l: f64) -> f64 {
     let eta2 = eta * eta;
     let eta3 = eta2 * eta;
     let eta4 = eta3 * eta;
-    let delta = (1.0 - 4.0 * eta).sqrt();
+    let delta = delta_of_eta(eta);
     let s = chi_pn_hat(eta, chi1l, chi2l);
     let s2 = s * s;
     let s3 = s2 * s;
     let dchi = chi1l - chi2l;
     let dchi2 = dchi * dchi;
 
-    let no_spin =
-        (0.018744340279608845 + 0.0077903147004616865 * eta + 0.003940354686136861 * eta2
-            - 0.00006693930988501673 * eta3)
-            / (1. - 0.10423384680638834 * eta);
+    let no_spin = fnms(
+        0.00006693930988501673,
+        eta3,
+        fma(
+            0.003940354686136861,
+            eta2,
+            fma(0.0077903147004616865, eta, 0.018744340279608845),
+        ),
+    ) / fnms(0.10423384680638834, eta, 1.);
 
-    let eq_spin = (s
-        * (0.00027180386951683135 - 0.00002585252361022052 * s
-            + eta4
-                * (-0.0006807631931297156 + 0.022386313074011715 * s - 0.0230825153005985 * s2)
-            + eta2
-                * (0.00036556167661117023
-                    - 0.000010021140796150737 * s
-                    - 0.00038216081981505285 * s2)
-            + eta
-                * (0.00024422562796266645
-                    - 0.00001049013062611254 * s
-                    - 0.00035182990586857726 * s2)
-            + eta3
-                * (-0.0005418851224505745
-                    + 0.000030679548774047616 * s
-                    + 4.038390455349854e-6 * s2)
-            - 0.00007547517256664526 * s2))
-        / (0.026666543809890402
-            + (-0.014590539285641243 - 0.012429476486138982 * eta
-                + 1.4861197211952053 * eta4
-                + 0.025066696514373803 * eta2
-                + 0.005146809717492324 * eta3)
-                * s
-            + (-0.0058684526275074025
-                - 0.02876774751921441 * eta
-                - 2.551566872093786 * eta4
-                - 0.019641378027236502 * eta2
-                - 0.001956646166089053 * eta3)
-                * s2
-            + (0.003507640638496499
-                + 0.014176504653145768 * eta
-                + 1. * eta4
-                + 0.012622225233586283 * eta2
-                - 0.00767768214056772 * eta3)
-                * s3);
+    let p4 = fnms(
+        0.0230825153005985,
+        s2,
+        fma(0.022386313074011715, s, -0.0006807631931297156),
+    );
+    let p2 = fnms(
+        0.00038216081981505285,
+        s2,
+        fnms(0.000010021140796150737, s, 0.00036556167661117023),
+    );
+    let p1 = fnms(
+        0.00035182990586857726,
+        s2,
+        fnms(0.00001049013062611254, s, 0.00024422562796266645),
+    );
+    let p3 = fma(
+        4.038390455349854e-6,
+        s2,
+        fma(0.000030679548774047616, s, -0.0005418851224505745),
+    );
+    let mut e = fnms(0.00002585252361022052, s, 0.00027180386951683135);
+    e = fma(eta4, p4, e);
+    e = fma(eta2, p2, e);
+    e = fma(eta, p1, e);
+    e = fma(eta3, p3, e);
+    e = fnms(0.00007547517256664526, s2, e);
+    let d1 = fma(
+        0.005146809717492324,
+        eta3,
+        fma(
+            0.025066696514373803,
+            eta2,
+            fma(
+                1.4861197211952053,
+                eta4,
+                fnms(0.012429476486138982, eta, -0.014590539285641243),
+            ),
+        ),
+    );
+    let d2 = fnms(
+        0.001956646166089053,
+        eta3,
+        fnms(
+            0.019641378027236502,
+            eta2,
+            fnms(
+                2.551566872093786,
+                eta4,
+                fnms(0.02876774751921441, eta, -0.0058684526275074025),
+            ),
+        ),
+    );
+    let d3 = fnms(
+        0.00767768214056772,
+        eta3,
+        fma(
+            0.012622225233586283,
+            eta2,
+            fma(
+                1.,
+                eta4,
+                fma(0.014176504653145768, eta, 0.003507640638496499),
+            ),
+        ),
+    );
+    let eq_spin = (s * e) / fma(d3, s3, fma(d2, s2, fma(d1, s, 0.026666543809890402)));
 
-    let uneq_spin = dchi2 * (0.00034375176678815234 + 0.000016343732281057392 * eta) * eta2
-        + dchi
-            * delta
-            * eta
-            * (0.08064665214195679 * eta2
-                + eta * (-0.028476219509487793 - 0.005746537021035632 * s)
-                - 0.0011713735642446144 * s);
+    let inner = fnms(
+        0.0011713735642446144,
+        s,
+        fma(
+            0.08064665214195679,
+            eta2,
+            eta * fnms(0.005746537021035632, s, -0.028476219509487793),
+        ),
+    );
+    let uneq_spin = fma(
+        dchi2 * fma(0.000016343732281057392, eta, 0.00034375176678815234),
+        eta2,
+        dchi * delta * eta * inner,
+    );
 
     no_spin + eq_spin + uneq_spin
 }
@@ -134,7 +191,7 @@ pub(crate) fn f_isco(chif: f64) -> f64 {
 /// Shared body of `XLALSimIMRPhenomXErad2017` and
 /// `XLALSimIMRPhenomXFinalMass2017` (Jimenez-Forteza et al. 2017).
 fn erad_2017_terms(eta: f64, chi1l: f64, chi2l: f64) -> f64 {
-    let delta = (1.0 - 4.0 * eta).sqrt();
+    let delta = delta_of_eta(eta);
     let eta2 = eta * eta;
     let eta3 = eta2 * eta;
     let eta4 = eta3 * eta;
@@ -144,21 +201,47 @@ fn erad_2017_terms(eta: f64, chi1l: f64, chi2l: f64) -> f64 {
     let dchi = chi1l - chi2l;
     let dchi2 = dchi * dchi;
 
-    let no_spin = 0.057190958417936644 * eta + 0.5609904135313374 * eta2 - 0.84667563764404 * eta3
-        + 3.145145224278187 * eta4;
+    let no_spin_terms = || {
+        fma(
+            3.145145224278187,
+            eta4,
+            fnms(
+                0.84667563764404,
+                eta3,
+                fma(0.057190958417936644, eta, 0.5609904135313374 * eta2),
+            ),
+        )
+    };
+    let no_spin = no_spin_terms();
     // Because of the way this is written, we need to subtract the noSpin term.
-    let mut eq_spin = ((0.057190958417936644 * eta + 0.5609904135313374 * eta2
-        - 0.84667563764404 * eta3
-        + 3.145145224278187 * eta4)
-        * (1.0
-            + (-0.13084389181783257 - 1.1387311580238488 * eta + 5.49074464410971 * eta2) * s
-            + (-0.17762802148331427 + 2.176667900182948 * eta2) * s2
-            + (-0.6320191645391563 + 4.952698546796005 * eta - 10.023747993978121 * eta2) * s3))
-        / (1.0 + (-0.9919475346968611 + 0.367620218664352 * eta + 4.274567337924067 * eta2) * s);
+    let p1 = fma(
+        5.49074464410971,
+        eta2,
+        fnms(1.1387311580238488, eta, -0.13084389181783257),
+    );
+    let p2 = fma(2.176667900182948, eta2, -0.17762802148331427);
+    let p3 = fnms(
+        10.023747993978121,
+        eta2,
+        fma(4.952698546796005, eta, -0.6320191645391563),
+    );
+    let q = fma(
+        4.274567337924067,
+        eta2,
+        fma(0.367620218664352, eta, -0.9919475346968611),
+    );
+    let mut eq_spin =
+        (no_spin_terms() * fma(p3, s3, fma(p2, s2, fma(p1, s, 1.0)))) / fma(q, s, 1.0);
     eq_spin -= no_spin;
-    let uneq_spin = -0.09803730445895877 * dchi * delta * (1.0 - 3.2283713377939134 * eta) * eta2
-        + 0.01118530335431078 * dchi2 * eta3
-        - 0.01978238971523653 * dchi * delta * (1.0 - 4.91667749015812 * eta) * eta * s;
+    let uneq_spin = fnms(
+        ((0.01978238971523653 * dchi) * delta) * fnms(4.91667749015812, eta, 1.0) * eta,
+        s,
+        fma(
+            ((-0.09803730445895877 * dchi) * delta) * fnms(3.2283713377939134, eta, 1.0),
+            eta2,
+            (0.01118530335431078 * dchi2) * eta3,
+        ),
+    );
     no_spin + eq_spin + uneq_spin
 }
 
@@ -176,7 +259,7 @@ pub(crate) fn final_mass_2017(eta: f64, chi1l: f64, chi2l: f64) -> f64 {
 /// `XLALSimIMRPhenomXFinalSpin2017`: dimensionless remnant spin
 /// (Jimenez-Forteza et al. 2017).
 pub(crate) fn final_spin_2017(eta: f64, chi1l: f64, chi2l: f64) -> f64 {
-    let delta = (1.0 - 4.0 * eta).sqrt();
+    let delta = delta_of_eta(eta);
     let m1 = 0.5 * (1.0 + delta);
     let m2 = 0.5 * (1.0 - delta);
     let m1_sq = m1 * m1;
@@ -189,19 +272,45 @@ pub(crate) fn final_spin_2017(eta: f64, chi1l: f64, chi2l: f64) -> f64 {
     let dchi = chi1l - chi2l;
     let dchi2 = dchi * dchi;
 
-    let no_spin = (3.4641016151377544 * eta + 20.0830030082033 * eta2 - 12.333573402277912 * eta3)
-        / (1.0 + 7.2388440419467335 * eta);
-    let eq_spin = (m1_sq + m2_sq) * s
-        + ((-0.8561951310209386 * eta - 0.09939065676370885 * eta2 + 1.668810429851045 * eta3) * s
-            + (0.5881660363307388 * eta - 2.149269067519131 * eta2 + 3.4768263932898678 * eta3)
-                * s2
-            + (0.142443244743048 * eta - 0.9598353840147513 * eta2 + 1.9595643107593743 * eta3)
-                * s3)
-            / (1.0
-                + (-0.9142232693081653 + 2.3191363426522633 * eta - 9.710576749140989 * eta3) * s);
-    let uneq_spin = 0.3223660562764661 * dchi * delta * (1.0 + 9.332575956437443 * eta) * eta2
-        - 0.059808322561702126 * dchi2 * eta3
-        + 2.3170397514509933 * dchi * delta * (1.0 - 3.2624649875884852 * eta) * eta3 * s;
+    let no_spin = fnms(
+        12.333573402277912,
+        eta3,
+        fma(3.4641016151377544, eta, 20.0830030082033 * eta2),
+    ) / fma(7.2388440419467335, eta, 1.0);
+    let p1 = fma(
+        1.668810429851045,
+        eta3,
+        fms(-0.8561951310209386, eta, 0.09939065676370885 * eta2),
+    );
+    let p2 = fma(
+        3.4768263932898678,
+        eta3,
+        fms(0.5881660363307388, eta, 2.149269067519131 * eta2),
+    );
+    let p3 = fma(
+        1.9595643107593743,
+        eta3,
+        fms(0.142443244743048, eta, 0.9598353840147513 * eta2),
+    );
+    let q = fnms(
+        9.710576749140989,
+        eta3,
+        fma(2.3191363426522633, eta, -0.9142232693081653),
+    );
+    let eq_spin = fma(
+        m1_sq + m2_sq,
+        s,
+        fma(p3, s3, fma(p1, s, p2 * s2)) / fma(q, s, 1.0),
+    );
+    let uneq_spin = fma(
+        ((2.3170397514509933 * dchi) * delta) * fnms(3.2624649875884852, eta, 1.0) * eta3,
+        s,
+        fms(
+            ((0.3223660562764661 * dchi) * delta) * fma(9.332575956437443, eta, 1.0),
+            eta2,
+            (0.059808322561702126 * dchi2) * eta3,
+        ),
+    );
     no_spin + eq_spin + uneq_spin
 }
 
@@ -305,11 +414,23 @@ mod tests {
             for ((name, value), expected) in values.iter().zip(expected) {
                 // The QNM fits use fused multiply-adds like LAL's build and
                 // agree exactly.
-                let ulps = if name.starts_with("fring") || name.starts_with("fdamp") {
-                    0.0
-                } else {
-                    8.0
-                };
+                // The QNM fits use fused multiply-adds like LAL's build and
+                // agree exactly; so do the final-state fits and the spin
+                // parameterisations where the target fuses like LAL's arm64
+                // build (see `crate::spintaylor::fp`).
+                let qnm = name.starts_with("fring") || name.starts_with("fdamp");
+                let final_state = [
+                    "final spin",
+                    "final mass",
+                    "erad",
+                    "fMECO",
+                    "chiPNHat",
+                    "STotR",
+                    "chiEff",
+                ];
+                let exact = qnm
+                    || (crate::spintaylor::fp::FUSED_MULTIPLY_ADD && final_state.contains(name));
+                let ulps = if exact { 0.0 } else { 8.0 };
                 assert_close(name, *value, expected, ulps);
             }
         }
