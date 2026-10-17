@@ -120,14 +120,14 @@ pub fn taylor_f2_amplitude_2(args: &Params) -> f64 {
 }
 
 pub fn taylor_f2_amplitude_3(args: &Params) -> f64 {
-    args.chi_1 * (27.0 * args.mass_ratio / 16.0 - 11.0 * args.eta / 12.0 + 27.0 / 16.0)
-        + args.chi_2 * (-27.0 * args.mass_ratio / 16.0 - 11.0 * args.eta / 12.0 + 27.0 / 16.0)
+    args.chi_1 * (27.0 * args.seta / 16.0 - 11.0 * args.eta / 12.0 + 27.0 / 16.0)
+        + args.chi_2 * (-27.0 * args.seta / 16.0 - 11.0 * args.eta / 12.0 + 27.0 / 16.0)
 }
 
 pub fn taylor_f2_amplitude_4(args: &Params) -> f64 {
-    args.chi_1.powi(2) * (-81.0 * args.mass_ratio / 64.0 + 81.0 * args.eta / 32.0 - 81.0 / 64.0)
+    args.chi_1.powi(2) * (-81.0 * args.seta / 64.0 + 81.0 * args.eta / 32.0 - 81.0 / 64.0)
         + args.chi_2.powi(2)
-            * (81.0 * args.mass_ratio / 64.0 + 81.0 * args.eta / 32.0 - 81.0 / 64.0)
+            * (81.0 * args.seta / 64.0 + 81.0 * args.eta / 32.0 - 81.0 / 64.0)
         + (105271.0 / 24192.0 * args.eta.powi(2)
             - 1975055.0 / 338688.0 * args.eta
             - 27312085.0 / 8128512.0)
@@ -136,18 +136,18 @@ pub fn taylor_f2_amplitude_4(args: &Params) -> f64 {
 
 pub fn taylor_f2_amplitude_5(args: &Params) -> f64 {
     args.chi_1.powi(3)
-        * (args.mass_ratio * (3.0 / 16.0 - 3.0 * args.eta / 16.0) - 9.0 * args.eta / 16.0
+        * (args.seta * (3.0 / 16.0 - 3.0 * args.eta / 16.0) - 9.0 * args.eta / 16.0
             + 3.0 / 16.0)
         + args.chi_1
-            * (args.mass_ratio * (287213.0 / 32256.0 - 2083.0 * args.eta / 8064.0)
+            * (args.seta * (287213.0 / 32256.0 - 2083.0 * args.eta / 8064.0)
                 - 2227.0 * args.eta.powi(2) / 2016.0
                 - 15569.0 * args.eta / 1344.0
                 + 287213.0 / 32256.0)
         + args.chi_2.powi(3)
-            * (args.mass_ratio * (3.0 * args.eta / 16.0 - 3.0 / 16.0) - 9.0 * args.eta / 16.0
+            * (args.seta * (3.0 * args.eta / 16.0 - 3.0 / 16.0) - 9.0 * args.eta / 16.0
                 + 3.0 / 16.0)
         + args.chi_2
-            * (args.mass_ratio * (2083.0 * args.eta / 8064.0 - 287213.0 / 32256.0)
+            * (args.seta * (2083.0 * args.eta / 8064.0 - 287213.0 / 32256.0)
                 - 2227.0 * args.eta.powi(2) / 2016.0
                 - 15569.0 * args.eta / 1344.0
                 + 287213.0 / 32256.0)
@@ -157,19 +157,19 @@ pub fn taylor_f2_amplitude_5(args: &Params) -> f64 {
 
 pub fn taylor_f2_amplitude_6(args: &Params) -> f64 {
     args.chi_1
-        * (-17.0 * PI * args.mass_ratio / 12.0 + 5.0 * PI * args.eta / 3.0 - 17.0 * PI / 12.0)
+        * (-17.0 * PI * args.seta / 12.0 + 5.0 * PI * args.eta / 3.0 - 17.0 * PI / 12.0)
         + args.chi_2
-            * (17.0 * PI * args.mass_ratio / 12.0 + 5.0 * PI * args.eta / 3.0 - 17.0 * PI / 12.0)
+            * (17.0 * PI * args.seta / 12.0 + 5.0 * PI * args.eta / 3.0 - 17.0 * PI / 12.0)
         + args.chi_1
             * args.chi_2
             * (-133249.0 * args.eta.powi(2) / 8064.0 - 319321.0 * args.eta / 32256.0)
         + args.chi_1.powi(2)
-            * (args.mass_ratio * (-14139.0 * args.eta / 32256.0 - 49039.0 / 14336.0)
+            * (args.seta * (-14139.0 * args.eta / 32256.0 - 49039.0 / 14336.0)
                 + 163199.0 * args.eta.powi(2) / 16128.0
                 + 158633.0 * args.eta / 64512.0
                 - 49039.0 / 14336.0)
         + args.chi_2.powi(2)
-            * (args.mass_ratio * (14139.0 * args.eta / 32256.0 + 49039.0 / 14336.0)
+            * (args.seta * (14139.0 * args.eta / 32256.0 + 49039.0 / 14336.0)
                 + 163199.0 * args.eta.powi(2) / 16128.0
                 + 158633.0 * args.eta / 64512.0
                 - 49039.0 / 14336.0)
@@ -237,7 +237,8 @@ pub fn taylor_f2_phase_6(args: &Params) -> f64 {
 }
 
 pub fn taylor_3pn_ss(args: &Params) -> f64 {
-    let mut phase = (32675.0 / 112.0 + 5575.0 / 18.0 * args.eta) * args.chi_1 * args.chi_2;
+    let mut phase =
+        (32675.0 / 112.0 + 5575.0 / 18.0 * args.eta) * args.eta * args.chi_1 * args.chi_2;
     for (m_on_m, chi, qm_def) in vec![
         (args.m1_on_m, args.chi_1, args.qm_def_1),
         (args.m2_on_m, args.chi_2, args.qm_def_2),

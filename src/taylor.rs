@@ -12,6 +12,8 @@ pub struct TaylorF2 {
     pub phasing: PNPhasing,
     pub total_mass: f64,
     pub luminosity_distance: f64,
+    /// SPA phase at the reference frequency, zero for reference at coalescence.
+    reference_phase: f64,
 }
 
 impl TaylorF2 {
@@ -32,6 +34,7 @@ impl TaylorF2 {
             },
             total_mass,
             luminosity_distance: luminosity_distance * MPC_SI,
+            reference_phase: 0.0,
         };
         new.phasing = new.phasing_coefficients();
         new
@@ -39,6 +42,18 @@ impl TaylorF2 {
 
     fn phasing_coefficients(&self) -> PNPhasing {
         PNPhasing::new(&self.params)
+    }
+
+    /// Define `phi_c` as the orbital phase at the reference frequency (in Hz)
+    /// rather than at coalescence, matching the `f_ref` argument of
+    /// `XLALSimInspiralTaylorF2`.
+    pub fn with_reference_frequency(mut self, reference_frequency: f64) -> Self {
+        self.reference_phase = 0.0;
+        if reference_frequency > 0.0 {
+            let v_ref = self.orbital_speed(reference_frequency);
+            self.reference_phase = self.phase(v_ref, -PI / 8.0);
+        }
+        self
     }
 }
 
@@ -66,7 +81,7 @@ impl Waveform for TaylorF2 {
             phasing += self.phasing.vlogv[ii] * cumulative_power_frequency * log_orbital_speed;
             cumulative_power_frequency *= v;
         }
-        phasing -= 2.0 * phi_c + PI / 4.0;
+        phasing -= 2.0 * phi_c + PI / 4.0 + self.reference_phase;
 
         return phasing;
     }
