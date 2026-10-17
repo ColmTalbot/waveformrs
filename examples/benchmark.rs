@@ -13,7 +13,7 @@ use std::time::Instant;
 use waveformrs::{
     imrphenomd::IMRPhenomD,
     imrphenomx::{
-        IMRPhenomXAS, IMRPhenomXHM, IMRPhenomXP, PrecessingBinary, PrecessionVersion,
+        IMRPhenomXAS, IMRPhenomXHM, IMRPhenomXP, IMRPhenomXPHM, PrecessingBinary, PrecessionVersion,
     },
     taylor::TaylorF2,
     waveform::Waveform,
@@ -108,6 +108,16 @@ fn main() {
     ] {
         run(name, &mut || {
             let wf = IMRPhenomXP::with_version(&binary, version).unwrap();
+            black_box(wf.polarizations(black_box(&freqs)).unwrap());
+        });
+    }
+    for (name, version) in [
+        ("IMRPhenomXPHM (102)", PrecessionVersion::Nnlo),
+        ("IMRPhenomXPHM (223)", PrecessionVersion::Msa),
+        ("IMRPhenomXPHM (320)", PrecessionVersion::SpinTaylor),
+    ] {
+        run(name, &mut || {
+            let wf = IMRPhenomXPHM::with_version(&binary, version).unwrap();
             black_box(wf.polarizations(black_box(&freqs)).unwrap());
         });
     }
