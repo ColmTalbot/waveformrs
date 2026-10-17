@@ -1,6 +1,7 @@
 //! Timing of IMRPhenomXPHM on a 0.25 Hz grid from 20 to 1500 Hz (the
 //! configuration of `examples/imrxp.rs`: M = 60 Msun, q = 0.5, generic
-//! spins), for the SpinTaylor (PrecVersion 320) and NNLO (102) Euler angles.
+//! spins), for the SpinTaylor (PrecVersion 320), MSA (223) and NNLO (102)
+//! Euler angles.
 //!
 //! Compare with lalsimulation (single thread, `OMP_NUM_THREADS=1`):
 //!
@@ -44,6 +45,7 @@ fn main() {
 
     for (name, version) in [
         ("SpinTaylor (320)", PrecessionVersion::SpinTaylor),
+        ("MSA (223)", PrecessionVersion::Msa),
         ("NNLO (102)", PrecessionVersion::Nnlo),
     ] {
         let model = IMRPhenomXPHM::with_version(&binary, version).unwrap();
