@@ -8,7 +8,9 @@ case holding the input parameters, a frequency array and the plus/cross
 polarizations computed with ``SimInspiralChooseFDWaveformSequence`` (or with
 ``SimInspiralChooseFDWaveform`` on a uniform grid starting at zero frequency
 for cases with ``delta_f > 0``).  The ``imrphenomxp_spintaylor_angles`` suite
-instead stores the Euler angles of ``SimIMRPhenomXPSpinTaylorAngles``.
+instead stores the Euler angles of ``SimIMRPhenomXPSpinTaylorAngles`` and the
+``imrphenomxhm_modes`` suite the individual modes of
+``SimIMRPhenomXHMFrequencySequenceOneMode``.
 
 Usage
 -----
@@ -99,9 +101,46 @@ def generate_spintaylor_angles(case):
     return case
 
 
+def generate_modes(case, n_frequencies):
+    """Individual IMRPhenomXHM modes from SimIMRPhenomXHMFrequencySequenceOneMode."""
+    frequencies = np.geomspace(case["f_min"], case["f_max"], n_frequencies)
+    if case["f_ref"] > 0:
+        frequencies = np.unique(np.concatenate([frequencies, [case["f_ref"]]]))
+    freq_vector = lal.CreateREAL8Vector(len(frequencies))
+    freq_vector.data = frequencies
+    case = dict(case)
+    case["frequencies"] = frequencies.tolist()
+    case["modes"] = list()
+    for ell, emm in case.pop("mode_list"):
+        hlm = lalsim.SimIMRPhenomXHMFrequencySequenceOneMode(
+            freq_vector,
+            case["mass_1"] * lal.MSUN_SI,
+            case["mass_2"] * lal.MSUN_SI,
+            case["chi_1"],
+            case["chi_2"],
+            ell,
+            emm,
+            case["luminosity_distance"] * 1e6 * lal.PC_SI,
+            case["phi_ref"],
+            case["f_ref"],
+            lal_dict(case.get("lal_flags")),
+        )
+        case["modes"].append(
+            dict(
+                ell=ell,
+                emm=emm,
+                real=hlm.data.data.real.tolist(),
+                imag=hlm.data.data.imag.tolist(),
+            )
+        )
+    return case
+
+
 def generate(case, n_frequencies):
     if "stride" in case:
         return generate_spintaylor_angles(case)
+    if "mode_list" in case:
+        return generate_modes(case, n_frequencies // 2)
     if case.get("delta_f", 0.0) > 0.0:
         return generate_uniform(case)
     f_min = case["f_min"]
@@ -274,6 +313,42 @@ def f_max_imr(mf_max):
 
 NO_MULTIBANDING = dict(PhenomXHMThresholdMband=0.0, PhenomXPHMThresholdMband=0.0)
 
+
+def xhm_mode_cases():
+    """Each mode of IMRPhenomXHM separately, including equal masses and
+    spins (vanishing odd modes), extreme mass ratios and high spins."""
+    negative = [(2, -2), (2, -1), (3, -3), (3, -2), (4, -4)]
+    configs = [
+        # mass_1, mass_2, chi_1, chi_2, phi_ref, f_min, f_ref, modes
+        (36.0, 29.0, 0.3, -0.4, 1.2, 20.0, 30.0, negative + [(2, 1), (3, 2)]),
+        (30.0, 30.0, 0.5, 0.5, 0.4, 20.0, 20.0, negative),
+        (60.0, 15.0, 0.8, 0.5, 4.0, 15.0, 20.0, negative),
+        (80.0, 10.0, -0.7, 0.2, 0.3, 10.0, 25.0, negative),
+        (150.0, 5.0, 0.9, -0.3, 2.5, 5.0, 8.0, negative),
+        (240.0, 2.0, -0.6, 0.4, 5.0, 3.0, 4.0, negative),
+        (8.0, 1.4, 0.9, 0.0, 5.5, 20.0, 50.0, negative + [(4, 4)]),
+        (150.0, 100.0, 0.95, 0.95, 3.0, 10.0, 15.0, negative),
+    ]
+    cases = list()
+    for m1, m2, c1, c2, phi, fmin, fref, modes in configs:
+        cases.append(
+            dict(
+                approximant="IMRPhenomXHM",
+                mass_1=m1,
+                mass_2=m2,
+                chi_1=c1,
+                chi_2=c2,
+                luminosity_distance=500.0,
+                phi_ref=phi,
+                f_min=fmin,
+                f_ref=fref,
+                f_max=f_max_imr(0.3)(m1 + m2),
+                mode_list=modes,
+            )
+        )
+    return cases
+
+
 SUITES = dict(
     taylorf2=lambda: aligned_cases("TaylorF2", f_max_isco)
     + [
@@ -285,6 +360,7 @@ SUITES = dict(
     imrphenomxhm=lambda: aligned_cases(
         "IMRPhenomXHM", f_max_imr(0.3), lal_flags=NO_MULTIBANDING
     ),
+    imrphenomxhm_modes=xhm_mode_cases,
     imrphenomxp_nnlo=lambda: precessing_cases(
         "IMRPhenomXP", f_max_imr(0.3), lal_flags=dict(PhenomXPrecVersion=102)
     ),

@@ -192,3 +192,86 @@ fn imrphenomxhm_matches_lalsimulation() {
         .polarizations(&case.frequencies, case.phi_ref, case.inclination)
     });
 }
+
+#[derive(Deserialize)]
+struct XhmModeFile {
+    lalsimulation_version: String,
+    cases: Vec<XhmModeCase>,
+}
+
+#[derive(Deserialize)]
+struct XhmModeCase {
+    mass_1: f64,
+    mass_2: f64,
+    chi_1: f64,
+    chi_2: f64,
+    luminosity_distance: f64,
+    phi_ref: f64,
+    f_ref: f64,
+    frequencies: Vec<f64>,
+    modes: Vec<XhmMode>,
+}
+
+#[derive(Deserialize)]
+struct XhmMode {
+    ell: u32,
+    emm: i32,
+    real: Vec<f64>,
+    imag: Vec<f64>,
+}
+
+/// Each mode of IMRPhenomXHM against `SimIMRPhenomXHMFrequencySequenceOneMode`.
+#[test]
+fn imrphenomxhm_modes_match_lalsimulation() {
+    let path = format!(
+        "{}/tests/data/imrphenomxhm_modes.json",
+        env!("CARGO_MANIFEST_DIR")
+    );
+    let reference: XhmModeFile =
+        serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+    let mut failures = Vec::new();
+    for case in &reference.cases {
+        let xhm = IMRPhenomXHM::from_components(
+            case.mass_1,
+            case.mass_2,
+            case.chi_1,
+            case.chi_2,
+            case.luminosity_distance,
+        )
+        .unwrap()
+        .with_reference_frequency(case.f_ref);
+        for mode in &case.modes {
+            let test = xhm.mode(mode.ell, mode.emm, &case.frequencies, case.phi_ref);
+            let truth: Vec<common::C64> = mode
+                .real
+                .iter()
+                .zip(&mode.imag)
+                .map(|(&re, &im)| common::C64::new(re, im))
+                .collect();
+            let result = common::compare(&case.frequencies, &test, &truth);
+            println!(
+                "({},{}): max rel err {:.3e}, mismatch {:.3e} | m1={} m2={} chi=({}, {})",
+                mode.ell,
+                mode.emm,
+                result.max_relative_error,
+                result.mismatch,
+                case.mass_1,
+                case.mass_2,
+                case.chi_1,
+                case.chi_2
+            );
+            if !(result.max_relative_error <= 1e-9 && result.mismatch <= 1e-12) {
+                failures.push(format!(
+                    "({},{}) {:?} m1={} m2={}",
+                    mode.ell, mode.emm, result, case.mass_1, case.mass_2
+                ));
+            }
+        }
+    }
+    assert!(
+        failures.is_empty(),
+        "modes differ from lalsimulation {}:\n{}",
+        reference.lalsimulation_version,
+        failures.join("\n")
+    );
+}
