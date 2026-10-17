@@ -9,7 +9,11 @@
 //!          "inclination": ..., "phi_ref": ..., "f_ref": ..., "f_min": ...,
 //!          "frequencies": [...]}, ...]}
 //! Output: {"results": [{"hplus_real": [...], "hplus_imag": [...],
-//!          "hcross_real": [...], "hcross_imag": [...], "seconds": ...}, ...]}
+//!          "hcross_real": [...], "hcross_imag": [...], "seconds": ...,
+//!          "error": null | "..."}, ...]}
+//!
+//! Precessing approximants are `IMRPhenomXP` (SpinTaylor angles,
+//! `PhenomXPrecVersion` 320) and `IMRPhenomXP_NNLO` (102).
 use std::io::Read;
 use std::time::Instant;
 
@@ -17,7 +21,10 @@ use num_complex::Complex;
 use serde::{Deserialize, Serialize};
 
 use waveformrs::{
-    imrphenomd::IMRPhenomD, imrphenomx::IMRPhenomXAS, taylor::TaylorF2, waveform::Waveform,
+    imrphenomd::IMRPhenomD,
+    imrphenomx::{IMRPhenomXAS, IMRPhenomXP, PrecessingBinary, PrecessionVersion},
+    taylor::TaylorF2,
+    waveform::Waveform,
 };
 
 #[derive(Deserialize)]
@@ -48,14 +55,31 @@ struct Output {
     hcross_real: Vec<f64>,
     hcross_imag: Vec<f64>,
     seconds: f64,
+    error: Option<String>,
 }
 
 type Polarizations = (Vec<Complex<f64>>, Vec<Complex<f64>>);
 
-fn generate(case: &Case) -> Polarizations {
+fn precessing(case: &Case, version: PrecessionVersion) -> Result<Polarizations, String> {
+    let binary = PrecessingBinary {
+        mass_1: case.mass_1,
+        mass_2: case.mass_2,
+        spin_1: case.spin_1,
+        spin_2: case.spin_2,
+        luminosity_distance: case.luminosity_distance,
+        inclination: case.inclination,
+        phi_ref: case.phi_ref,
+        f_ref: case.f_ref,
+    };
+    IMRPhenomXP::with_version(&binary, version)
+        .and_then(|model| model.polarizations(&case.frequencies))
+        .map_err(|err| err.to_string())
+}
+
+fn generate(case: &Case) -> Result<Polarizations, String> {
     let total_mass = case.mass_1 + case.mass_2;
     let mass_ratio = case.mass_2 / case.mass_1;
-    match case.approximant.as_str() {
+    Ok(match case.approximant.as_str() {
         "TaylorF2" => TaylorF2::new(
             total_mass,
             mass_ratio,
@@ -83,8 +107,10 @@ fn generate(case: &Case) -> Polarizations {
         )
         .with_reference_frequency(case.f_ref)
         .waveform_modes(&case.frequencies, 2.0 * case.phi_ref, case.inclination),
+        "IMRPhenomXP" => precessing(case, PrecessionVersion::SpinTaylor)?,
+        "IMRPhenomXP_NNLO" => precessing(case, PrecessionVersion::Nnlo)?,
         other => panic!("unsupported approximant {other}"),
-    }
+    })
 }
 
 fn main() {
@@ -104,13 +130,17 @@ fn main() {
                 timings.push(start.elapsed().as_secs_f64());
             }
             timings.sort_by(f64::total_cmp);
-            let (hp, hc) = output;
+            let (error, (hp, hc)) = match output {
+                Ok(polarizations) => (None, polarizations),
+                Err(error) => (Some(error), (Vec::new(), Vec::new())),
+            };
             Output {
                 hplus_real: hp.iter().map(|h| h.re).collect(),
                 hplus_imag: hp.iter().map(|h| h.im).collect(),
                 hcross_real: hc.iter().map(|h| h.re).collect(),
                 hcross_imag: hc.iter().map(|h| h.im).collect(),
                 seconds: timings[timings.len() / 2],
+                error,
             }
         })
         .collect();

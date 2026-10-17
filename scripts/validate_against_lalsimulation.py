@@ -26,15 +26,25 @@ import numpy as np
 
 ROOT = Path(__file__).resolve().parent.parent
 
-PRECESSING = {"IMRPhenomXPHM"}
+PRECESSING = {"IMRPhenomXP", "IMRPhenomXP_NNLO", "IMRPhenomXPHM"}
 
-# Approximant -> (dimensionless cutoff frequency, extra lal flags, max mass ratio)
+# Approximant -> (dimensionless cutoff frequency, extra lal flags, max mass
+# ratio, optionally the lalsimulation approximant if the name differs)
 SETTINGS = dict(
     TaylorF2=dict(mf_max=6**-1.5 / np.pi, flags=dict(), q_min=1 / 20),
     IMRPhenomD=dict(mf_max=0.2, flags=dict(), q_min=1 / 18),
     IMRPhenomXAS=dict(mf_max=0.3, flags=dict(), q_min=1 / 20),
     IMRPhenomXHM=dict(
         mf_max=0.3, flags=dict(PhenomXHMThresholdMband=0.0), q_min=1 / 20
+    ),
+    IMRPhenomXP=dict(
+        mf_max=0.3, flags=dict(PhenomXPrecVersion=320), q_min=1 / 20
+    ),
+    IMRPhenomXP_NNLO=dict(
+        mf_max=0.3,
+        flags=dict(PhenomXPrecVersion=102),
+        q_min=1 / 20,
+        lal_approximant="IMRPhenomXP",
     ),
     IMRPhenomXPHM=dict(
         mf_max=0.3,
@@ -107,7 +117,9 @@ def lal_waveform(case):
     frequencies = lal.CreateREAL8Vector(len(case["frequencies"]))
     frequencies.data = case["frequencies"]
     params = lal_dict(settings["flags"])
-    approximant = lalsim.GetApproximantFromString(case["approximant"])
+    approximant = lalsim.GetApproximantFromString(
+        settings.get("lal_approximant", case["approximant"])
+    )
 
     def call():
         return lalsim.SimInspiralChooseFDWaveformSequence(
@@ -124,7 +136,10 @@ def lal_waveform(case):
             frequencies,
         )
 
-    hplus, hcross = call()
+    try:
+        hplus, hcross = call()
+    except RuntimeError as error:
+        return None, None, str(error)
     timings = list()
     for _ in range(5):
         start = time.perf_counter()
@@ -155,6 +170,7 @@ def rust_waveforms(cases):
             np.array(out["hplus_real"]) + 1j * np.array(out["hplus_imag"]),
             np.array(out["hcross_real"]) + 1j * np.array(out["hcross_imag"]),
             out["seconds"],
+            out["error"],
         )
         for out in outputs
     ]
@@ -200,8 +216,24 @@ def main():
         ]
         rust = rust_waveforms(cases)
         records = list()
-        for case, (hp_rs, hc_rs, t_rs) in zip(cases, rust):
+        failures = list()
+        for case, (hp_rs, hc_rs, t_rs, error) in zip(cases, rust):
             hp_lal, hc_lal, t_lal = lal_waveform(case)
+            if error is not None or hp_lal is None:
+                # Cases where lalsimulation silently falls back to angles that
+                # are not implemented here (or either code raises an error).
+                failures.append(
+                    dict(
+                        **{
+                            key: value
+                            for key, value in case.items()
+                            if key not in ("frequencies", "approximant")
+                        },
+                        rust_error=error,
+                        lal_error=t_lal if hp_lal is None else None,
+                    )
+                )
+                continue
             weights = 1 / psd(case["frequencies"])
             records.append(
                 dict(
@@ -229,7 +261,9 @@ def main():
         summary = dict(
             approximant=approximant,
             lalsimulation_version=lalsim.__version__,
-            n_draws=len(records),
+            n_draws=len(records) + len(failures),
+            n_compared=len(records),
+            failures=failures,
             max_mismatch=float(mismatches.max()),
             median_mismatch=float(np.median(mismatches)),
             max_relative_error=float(errors.max()),
@@ -242,7 +276,8 @@ def main():
         print(
             f"{approximant:>14}: max mismatch {mismatches.max():.2e}, "
             f"median {np.median(mismatches):.2e}, max rel err {errors.max():.2e}, "
-            f"median speed-up x{np.median(speedup):.2f}"
+            f"median speed-up x{np.median(speedup):.2f}, "
+            f"{len(failures)} not compared"
         )
 
 
