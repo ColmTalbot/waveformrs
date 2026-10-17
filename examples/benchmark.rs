@@ -7,7 +7,9 @@
 use std::hint::black_box;
 use std::time::Instant;
 
-use waveformrs::{imrphenomd::IMRPhenomD, taylor::TaylorF2, waveform::Waveform};
+use waveformrs::{
+    imrphenomd::IMRPhenomD, imrphenomx::IMRPhenomXAS, taylor::TaylorF2, waveform::Waveform,
+};
 
 fn frequencies() -> Vec<f64> {
     let delta_f = 0.25;
@@ -65,6 +67,14 @@ fn main() {
     });
     time("IMRPhenomD new + waveform_modes", n, || {
         let wf = IMRPhenomD::new(total_mass, mass_ratio, chi_1, chi_2, distance);
+        black_box(wf.waveform_modes(black_box(&freqs), 0.1, 0.4));
+    });
+    time("IMRPhenomXAS new", 1, || {
+        black_box(IMRPhenomXAS::new(total_mass, mass_ratio, chi_1, chi_2, distance));
+    });
+    time("IMRPhenomXAS new + waveform_modes", n, || {
+        let wf = IMRPhenomXAS::new(total_mass, mass_ratio, chi_1, chi_2, distance)
+            .with_reference_frequency(20.0);
         black_box(wf.waveform_modes(black_box(&freqs), 0.1, 0.4));
     });
 }

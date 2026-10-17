@@ -16,7 +16,9 @@ use std::time::Instant;
 use num_complex::Complex;
 use serde::{Deserialize, Serialize};
 
-use waveformrs::{imrphenomd::IMRPhenomD, taylor::TaylorF2, waveform::Waveform};
+use waveformrs::{
+    imrphenomd::IMRPhenomD, imrphenomx::IMRPhenomXAS, taylor::TaylorF2, waveform::Waveform,
+};
 
 #[derive(Deserialize)]
 struct Input {
@@ -64,6 +66,15 @@ fn generate(case: &Case) -> Polarizations {
         .with_reference_frequency(case.f_ref)
         .waveform_modes(&case.frequencies, case.phi_ref, case.inclination),
         "IMRPhenomD" => IMRPhenomD::new(
+            total_mass,
+            mass_ratio,
+            case.spin_1[2],
+            case.spin_2[2],
+            case.luminosity_distance,
+        )
+        .with_reference_frequency(case.f_ref)
+        .waveform_modes(&case.frequencies, 2.0 * case.phi_ref, case.inclination),
+        "IMRPhenomXAS" => IMRPhenomXAS::new(
             total_mass,
             mass_ratio,
             case.spin_1[2],
