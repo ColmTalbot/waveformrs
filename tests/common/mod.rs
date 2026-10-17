@@ -35,6 +35,9 @@ pub struct Case {
     /// Waveform flags inserted in the LALDict (e.g. `PhenomXPrecVersion`).
     #[serde(default)]
     pub lal_flags: std::collections::HashMap<String, f64>,
+    /// LAL's mode array `(l, m)`, empty for the default modes.
+    #[serde(default)]
+    pub mode_array: Vec<(u32, i32)>,
 }
 
 impl Case {

@@ -34,10 +34,15 @@ import numpy as np
 DATA_DIR = Path(__file__).resolve().parent.parent / "tests" / "data"
 
 
-def lal_dict(flags):
+def lal_dict(flags, mode_array=None):
     params = lal.CreateDict()
     for key, value in (flags or dict()).items():
         getattr(lalsim, f"SimInspiralWaveformParamsInsert{key}")(params, value)
+    if mode_array is not None:
+        modes = lalsim.SimInspiralCreateModeArray()
+        for ell, emm in mode_array:
+            lalsim.SimInspiralModeArrayActivateMode(modes, ell, emm)
+        lalsim.SimInspiralWaveformParamsInsertModeArray(params, modes)
     return params
 
 
@@ -60,7 +65,7 @@ def generate_uniform(case):
         case["f_min"],
         case["f_max"],
         case["f_ref"],
-        lal_dict(case.get("lal_flags")),
+        lal_dict(case.get("lal_flags"), case.get("mode_array")),
         lalsim.GetApproximantFromString(case["approximant"]),
     )
     case = dict(case)
@@ -166,7 +171,7 @@ def generate(case, n_frequencies):
         case["f_ref"],
         case["luminosity_distance"] * 1e6 * lal.PC_SI,
         case["inclination"],
-        lal_dict(case.get("lal_flags")),
+        lal_dict(case.get("lal_flags"), case.get("mode_array")),
         lalsim.GetApproximantFromString(case["approximant"]),
         freq_vector,
     )
@@ -249,9 +254,9 @@ def precessing_cases(approximant, f_max_fn, lal_flags=None):
     return cases
 
 
-def uniform_precessing_cases():
-    """IMRPhenomXP on uniform grids (SimInspiralChooseFDWaveform)."""
-    configs = [
+def uniform_precessing_cases(approximant="IMRPhenomXP", extra_flags=None, extra=()):
+    """Precessing models on uniform grids (SimInspiralChooseFDWaveform)."""
+    configs = list(extra) + [
         # mass_1, mass_2, spin_1, spin_2, f_min, f_ref, delta_f, f_max, PrecVersion
         (36.0, 29.0, [0.4, 0.2, 0.3], [-0.2, 0.3, -0.1], 20.0, 20.0, 1.0, 0.0, 320),
         (60.0, 15.0, [0.6, -0.3, 0.5], [0.1, 0.1, 0.0], 15.0, 20.0, 0.5, 512.0, 320),
@@ -260,7 +265,7 @@ def uniform_precessing_cases():
     ]
     return [
         dict(
-            approximant="IMRPhenomXP",
+            approximant=approximant,
             mass_1=m1,
             mass_2=m2,
             spin_1=s1,
@@ -272,9 +277,53 @@ def uniform_precessing_cases():
             f_ref=fref,
             delta_f=df,
             f_max=fmax,
-            lal_flags=dict(PhenomXPrecVersion=version),
+            lal_flags=dict(PhenomXPrecVersion=version, **(extra_flags or dict())),
         )
         for m1, m2, s1, s2, fmin, fref, df, fmax, version in configs
+    ]
+
+
+def xphm_mode_array_cases():
+    """IMRPhenomXPHM with restricted mode arrays (which also change the
+    frequency range of the SpinTaylor angles) and equal masses and aligned
+    spin components (vanishing odd co-precessing modes)."""
+    base = dict(
+        approximant="IMRPhenomXPHM",
+        mass_1=40.0,
+        mass_2=12.0,
+        spin_1=[0.5, -0.2, 0.3],
+        spin_2=[0.1, 0.6, -0.2],
+        luminosity_distance=700.0,
+        inclination=2.0,
+        phi_ref=1.3,
+        f_min=15.0,
+        f_ref=25.0,
+        f_max=0.3 / (52.0 * lal.MTSUN_SI),
+    )
+    flags = lambda version: dict(PhenomXPrecVersion=version, **NO_MULTIBANDING)
+    return [
+        dict(base, lal_flags=flags(320), mode_array=[[2, 2], [2, -2], [3, 3], [3, -3]]),
+        dict(base, lal_flags=flags(320), mode_array=[[2, 1], [2, -1], [4, 4], [4, -4]]),
+        dict(base, lal_flags=flags(102), mode_array=[[3, 2], [3, -2], [2, 1], [2, -1]]),
+        dict(base, lal_flags=flags(320), mode_array=[[2, 2], [2, -2]]),
+        dict(
+            base,
+            mass_1=30.0,
+            mass_2=30.0,
+            spin_1=[0.3, 0.0, 0.2],
+            spin_2=[0.0, -0.4, 0.2],
+            f_max=0.3 / (60.0 * lal.MTSUN_SI),
+            lal_flags=flags(320),
+        ),
+        dict(
+            base,
+            mass_1=30.0,
+            mass_2=30.0,
+            spin_1=[0.3, 0.0, 0.2],
+            spin_2=[0.0, -0.4, 0.2],
+            f_max=0.3 / (60.0 * lal.MTSUN_SI),
+            lal_flags=flags(102),
+        ),
     ]
 
 
@@ -442,6 +491,18 @@ SUITES = dict(
         f_max_imr(0.3),
         lal_flags=dict(PhenomXPrecVersion=320, **NO_MULTIBANDING),
     ),
+    imrphenomxphm_nnlo=lambda: precessing_cases(
+        "IMRPhenomXPHM",
+        f_max_imr(0.3),
+        lal_flags=dict(PhenomXPrecVersion=102, **NO_MULTIBANDING),
+    ),
+    imrphenomxphm_uniform=lambda: uniform_precessing_cases(
+        "IMRPhenomXPHM",
+        NO_MULTIBANDING,
+        # equal masses: the uniform driver keeps the input order of the bodies
+        extra=[(30.0, 30.0, [0.5, 0.5, 0.5], [0.5, -0.5, -0.5], 20.0, 30.0, 1.0, 512.0, 320)],
+    ),
+    imrphenomxphm_modes=xphm_mode_array_cases,
 )
 
 

@@ -7,7 +7,10 @@ mod common;
 use serde::Deserialize;
 use waveformrs::{
     imrphenomd::IMRPhenomD,
-    imrphenomx::{IMRPhenomXAS, IMRPhenomXHM, IMRPhenomXP, PrecessingBinary, PrecessionVersion},
+    imrphenomx::{
+        IMRPhenomXAS, IMRPhenomXHM, IMRPhenomXP, IMRPhenomXPHM, PrecessingBinary,
+        PrecessionVersion,
+    },
     taylor::TaylorF2,
     waveform::Waveform,
 };
@@ -96,12 +99,8 @@ fn imrphenomxp_spintaylor_matches_lalsimulation() {
 fn imrphenomxp_uniform_matches_lalsimulation() {
     // SimInspiralChooseFDWaveform on the grid k * delta_f
     common::check_all("imrphenomxp_uniform", 1e-9, 1e-12, |case| {
-        let version = match case.lal_flags.get("PhenomXPrecVersion") {
-            Some(&flag) if flag == 102.0 => PrecessionVersion::Nnlo,
-            _ => PrecessionVersion::SpinTaylor,
-        };
         let delta_f = case.frequencies[1];
-        IMRPhenomXP::with_version(&precessing_binary(case), version)
+        IMRPhenomXP::with_version(&precessing_binary(case), precession_version(case))
             .unwrap()
             .polarizations_uniform(delta_f, case.f_min, case.f_max)
             .unwrap()
@@ -310,4 +309,62 @@ fn imrphenomxhm_modes_match_lalsimulation() {
         reference.lalsimulation_version,
         failures.join("\n")
     );
+}
+
+fn precession_version(case: &common::Case) -> PrecessionVersion {
+    if case.lal_flags.get("PhenomXPrecVersion") == Some(&102.0) {
+        PrecessionVersion::Nnlo
+    } else {
+        PrecessionVersion::SpinTaylor
+    }
+}
+
+#[test]
+fn imrphenomxphm_spintaylor_matches_lalsimulation() {
+    common::check_all("imrphenomxphm_spintaylor", 1e-9, 1e-12, |case| {
+        IMRPhenomXPHM::new(&precessing_binary(case))
+            .unwrap()
+            .polarizations(&case.frequencies)
+            .unwrap()
+    });
+}
+
+#[test]
+fn imrphenomxphm_nnlo_matches_lalsimulation() {
+    common::check_all("imrphenomxphm_nnlo", 1e-9, 1e-12, |case| {
+        IMRPhenomXPHM::with_version(&precessing_binary(case), PrecessionVersion::Nnlo)
+            .unwrap()
+            .polarizations(&case.frequencies)
+            .unwrap()
+    });
+}
+
+#[test]
+fn imrphenomxphm_uniform_matches_lalsimulation() {
+    // SimInspiralChooseFDWaveform on the grid k * delta_f
+    common::check_all("imrphenomxphm_uniform", 1e-9, 1e-12, |case| {
+        IMRPhenomXPHM::with_version(&precessing_binary(case), precession_version(case))
+            .unwrap()
+            .polarizations_uniform(case.frequencies[1], case.f_min, case.f_max)
+            .unwrap()
+    });
+}
+
+#[test]
+fn imrphenomxphm_mode_arrays_match_lalsimulation() {
+    common::check_all("imrphenomxphm_modes", 1e-9, 1e-12, |case| {
+        let mut model =
+            IMRPhenomXPHM::with_version(&precessing_binary(case), precession_version(case))
+                .unwrap();
+        if !case.mode_array.is_empty() {
+            let modes: Vec<(u32, u32)> = case
+                .mode_array
+                .iter()
+                .filter(|(_, m)| *m > 0)
+                .map(|&(l, m)| (l, m as u32))
+                .collect();
+            model = model.with_mode_array(&modes).unwrap();
+        }
+        model.polarizations(&case.frequencies).unwrap()
+    });
 }
