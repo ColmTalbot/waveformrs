@@ -45,6 +45,8 @@ pub enum IMRPhenomXError {
     /// The numerical SpinTaylor Euler angles could not be computed in a
     /// case where LALSimulation raises an error.
     SpinTaylorAngles(&'static str),
+    /// The mode array is empty or contains modes the model does not have.
+    InvalidModeArray,
 }
 
 impl fmt::Display for IMRPhenomXError {
@@ -78,6 +80,7 @@ impl fmt::Display for IMRPhenomXError {
                  MSA angles (PrecVersion 223)"
             ),
             Self::SpinTaylorAngles(why) => write!(f, "SpinTaylor Euler angles: {why}"),
+            Self::InvalidModeArray => write!(f, "mode array contains unavailable modes"),
         }
     }
 }

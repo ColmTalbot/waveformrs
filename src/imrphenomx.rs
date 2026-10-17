@@ -23,6 +23,7 @@
 //! | `msa`          | `LALSimIMRPhenomX_precession.c` (MSA Euler angles)     |
 //! | `wigner`       | Wigner-d matrices and twisting up, spherical harmonics |
 //! | `xhm`          | `LALSimIMRPhenomXHM.c` (IMRPhenomXHM driver, mode sum) |
+//! | `xphm`         | `LALSimIMRPhenomXPHM.c` (IMRPhenomXPHM driver, twisting up) |
 //! | `hm_internals` | `LALSimIMRPhenomXHM_internals.c` (mode struct, coefficients) |
 //! | `hm_inspiral`  | `LALSimIMRPhenomXHM_inspiral.c`                        |
 //! | `hm_intermediate` | `LALSimIMRPhenomXHM_intermediate.c`                 |
@@ -52,6 +53,7 @@ mod wigner;
 mod xas;
 mod xhm;
 mod xp;
+mod xphm;
 
 pub use internals::IMRPhenomXError;
 pub use precession::{PrecessingBinary, PrecessionVersion};
@@ -59,3 +61,4 @@ pub use spintaylor_angles::EulerAngles;
 pub use xas::IMRPhenomXAS;
 pub use xp::{IMRPhenomXP, Polarizations};
 pub use xhm::{IMRPhenomXHM, IMRPHENOMXHM_MODES};
+pub use xphm::IMRPhenomXPHM;
