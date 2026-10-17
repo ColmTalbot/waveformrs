@@ -3,7 +3,8 @@
 //! (`IMRPhenomXGetAndSetPrecessionVariables`,
 //! `IMRPhenomX_SetPrecessingRemnantParams`), the frame conventions relating
 //! the source (L) frame to the J frame, and the NNLO post-Newtonian Euler
-//! angles (`PhenomXPrecVersion` 102).
+//! angles (`PhenomXPrecVersion` 102). The MSA angles (223) are in
+//! [`crate::imrphenomx::msa`].
 //!
 //! Only the default settings of LALSimulation are supported:
 //! `PhenomXPConvention` 1, `PhenomXPFinalSpinMod` 4, no PNR angles or
@@ -19,6 +20,7 @@ use std::f64::consts::{FRAC_PI_2, PI};
 
 use crate::constants::{C_SI, G_SI, MSUN_SI, MTSUN_SI};
 use crate::imrphenomx::internals::{IMRPhenomXError, WaveformStruct, POWERS_OF_LALPI};
+use crate::imrphenomx::msa::{MsaInputs, MsaSystem};
 use crate::imrphenomx::utilities::final_spin_2017;
 use crate::imrphenomx::wigner::SphericalHarmonics;
 use crate::spintaylor::fp::{fma, fms, fnms};
@@ -37,9 +39,18 @@ pub enum PrecessionVersion {
     /// numerical integration of the SpinTaylorT4 precession equations, with
     /// an analytical continuation through merger and ringdown. Like
     /// LALSimulation, binaries with in-plane spins below `1e-7` use the
-    /// NNLO angles instead.
+    /// NNLO angles instead. Where the PN integration does not provide the
+    /// angles (it stops before reaching the first frequency, typically for
+    /// total masses above ~150 solar masses), LALSimulation silently uses
+    /// the MSA angles (223) instead, and so do we.
     #[default]
     SpinTaylor,
+    /// `PhenomXPrecVersion = 223`: double-spin MSA Euler angles
+    /// (Chatziioannou et al. 2017, arXiv:1703.03967) as implemented in
+    /// `LALSimInspiralFDPrecAngles`, with the precession-averaged final
+    /// spin. Like LALSimulation, binaries for which the MSA system cannot
+    /// be initialised use the NNLO angles (102) instead.
+    Msa,
 }
 
 impl PrecessionVersion {
@@ -48,6 +59,7 @@ impl PrecessionVersion {
         match self {
             Self::Nnlo => 102,
             Self::SpinTaylor => 320,
+            Self::Msa => 223,
         }
     }
 }
@@ -264,6 +276,36 @@ impl OrbitalAngularMomentum {
         }
     }
 
+    /// The 3PN orbital angular momentum of versions 222 and 223, with the
+    /// spin-orbit terms of `LALSimInspiralFDPrecAngles`.
+    fn three_pn_msa(eta: f64, delta: f64, chi1l: f64, chi2l: f64) -> Self {
+        let eta2 = eta * eta;
+        // chi1L + chi2L + chi1L delta - chi2L delta
+        let a = fnms(chi2l, delta, fma(chi1l, delta, chi1l + chi2l));
+        Self {
+            l3: fma(-7.0, a, 5.0 * (chi1l + chi2l) * eta) / 6.,
+            l5: fma(
+                28.0 * (chi1l + chi2l),
+                eta2,
+                fma(
+                    511.0 * (chi1l - chi2l) * delta,
+                    eta,
+                    fma(-1650.0, a, 1336.0 * (chi1l + chi2l) * eta),
+                ),
+            ) / 600.,
+            l6: fma(
+                eta,
+                fma(
+                    2214.0,
+                    POWERS_OF_LALPI.two,
+                    fma(7.0, eta2, fma(1674.0, eta, -62001.0)),
+                ),
+                10935.0,
+            ) / 1296.,
+            ..Self::three_pn(eta, delta, chi1l, chi2l)
+        }
+    }
+
     /// `XLALSimIMRPhenomXLPNAnsatz`: `LNorm sum_a L_a x^(a/2)` with
     /// `x = v^2`.
     pub(crate) fn ansatz(&self, v: f64, l_norm: f64) -> f64 {
@@ -327,10 +369,12 @@ pub(crate) struct NnloCoefficients {
 #[derive(Clone, Debug)]
 #[allow(dead_code)] // the LAL struct is kept complete for XPHM
 pub(crate) struct PrecessionStruct {
-    /// Effective `PhenomXPrecVersion` (after the fallback to 102 for
-    /// negligible in-plane spins).
+    /// Effective `PhenomXPrecVersion` (after the fallbacks to 102 for
+    /// negligible in-plane spins with the SpinTaylor angles or a failed
+    /// initialisation of the MSA system).
     pub(crate) version: u32,
-    /// First digit of the version: 1 NNLO, 3 SpinTaylor.
+    /// First digit of the version: 1 NNLO, 2 MSA, 3 SpinTaylor. As in LAL,
+    /// this stays 2 when the MSA system falls back to the NNLO angles.
     pub(crate) precessing_tag: u32,
     /// Mass of the larger body in kg as passed to LAL.
     pub(crate) m1_si: f64,
@@ -374,7 +418,9 @@ pub(crate) struct PrecessionStruct {
     pub(crate) zeta_polarization: f64,
     /// NNLO Euler angle coefficients (zero for the SpinTaylor versions).
     pub(crate) nnlo: NnloCoefficients,
-    /// NNLO offsets at the reference frequency, including `alpha0`,
+    /// The MSA system (version 223 only).
+    pub(crate) msa: Option<MsaSystem>,
+    /// NNLO or MSA offsets at the reference frequency, including `alpha0`,
     /// `epsilon0`.
     pub(crate) alpha_offset: f64,
     pub(crate) epsilon_offset: f64,
@@ -398,7 +444,12 @@ impl PrecessionStruct {
     /// and `PhenomXPFinalSpinMod` 4, except for the numerical integration
     /// of the SpinTaylor equations (version 320), which depends on the
     /// frequency grid and is done separately by
-    /// [`crate::imrphenomx::spintaylor_angles`].
+    /// [`crate::imrphenomx::spintaylor_angles`]. If that integration fails,
+    /// LAL switches to version 223 and carries on with the same structs;
+    /// the SpinTaylor set-up done before (`deltaMF`, the integration
+    /// buffer, the PN orders inserted in the LALDict) does not enter the
+    /// MSA angles, so the fallback is equivalent to calling this function
+    /// again with [`PrecessionVersion::Msa`].
     ///
     /// `wf` is modified as LAL modifies `pWF`: `phi0 = 0`, the precessing
     /// final spin with the corresponding (2,2) QNM frequencies and, for the
@@ -499,15 +550,45 @@ impl PrecessionStruct {
         let f_ring_aligned = wf.f_ring;
         let f_damp_aligned = wf.f_damp;
 
+        // IMRPhenomX_Initialize_MSA_System; if it fails (MSA_ERROR), LAL
+        // continues with the NNLO angles (102) for versions 220, 223, 224.
+        let msa = if version == 223 {
+            let msa = MsaSystem::new(&MsaInputs {
+                eta,
+                m1: wf.m1,
+                m2: wf.m2,
+                m1_2,
+                m2_2,
+                chi1,
+                chi2,
+                pi_gm,
+                f_ref: wf.f_ref,
+            });
+            if msa.is_none() {
+                version = 102;
+            }
+            msa
+        } else {
+            None
+        };
+
         // IMRPhenomX_SetPrecessingRemnantParams: PhenomXPFinalSpinMod 4 uses
         // the total in-plane spin for the SpinTaylor angles; otherwise it
-        // becomes 3, which outside MSA defaults to version 0 (chi_p).
-        let chi_inplane_final = if precessing_tag == 3 {
-            chi_tot_perp
-        } else {
-            chip
+        // becomes 3, the precession-averaged final spin of the MSA system,
+        // which for the other versions (and a failed MSA system) defaults
+        // to version 0 (chi_p).
+        let mut a_final_prec = match (&msa, precessing_tag) {
+            (Some(msa), _) => msa.final_spin(
+                final_spin_2017(eta, chi1l, chi2l),
+                m,
+                m1_2,
+                m2_2,
+                chi1l,
+                chi2l,
+            ),
+            (None, 3) => precessing_final_spin_2017(eta, chi1l, chi2l, chi_tot_perp),
+            (None, _) => precessing_final_spin_2017(eta, chi1l, chi2l, chip),
         };
-        let mut a_final_prec = precessing_final_spin_2017(eta, chi1l, chi2l, chi_inplane_final);
         let mut a_final = a_final_prec;
         if a_final.abs() > 1.0 {
             a_final = 1.0f64.copysign(a_final);
@@ -518,7 +599,11 @@ impl PrecessionStruct {
         wf.a_final_prec = a_final_prec;
         wf.set_final_spin(a_final);
 
-        let l = OrbitalAngularMomentum::three_pn(eta, delta, chi1l, chi2l);
+        let l = if msa.is_some() {
+            OrbitalAngularMomentum::three_pn_msa(eta, delta, chi1l, chi2l)
+        } else {
+            OrbitalAngularMomentum::three_pn(eta, delta, chi1l, chi2l)
+        };
         let l_ref = m * m * l.ansatz(wf.v_ref, wf.eta / wf.v_ref);
 
         // Source frame J = L + S1 + S2 (L along z).
@@ -581,7 +666,7 @@ impl PrecessionStruct {
         );
         let zeta_polarization = x_dot_q.atan2(x_dot_p);
 
-        let nnlo = if precessing_tag == 1 {
+        let nnlo = if version / 100 == 1 {
             nnlo_coefficients(
                 eta, delta, q, chi_eff, chip, m1, m1_2, m1_3, m1_4, m1_5, m1_6, m1_8,
             )
@@ -593,21 +678,31 @@ impl PrecessionStruct {
 
         // Get_alphaepsilon_atfref with mprime = 2.
         let omega_ref = wf.pi_m * wf.f_ref * 2. / 2.;
-        let logomega_ref = omega_ref.ln();
-        let omega_ref_cbrt = omega_ref.cbrt();
-        let omega_ref_cbrt2 = omega_ref_cbrt * omega_ref_cbrt;
-        let alpha_offset = nnlo.alpha1 / omega_ref
-            + nnlo.alpha2 / omega_ref_cbrt2
-            + nnlo.alpha3 / omega_ref_cbrt
-            + nnlo.alpha4l * logomega_ref
-            + nnlo.alpha5 * omega_ref_cbrt
-            - alpha0;
-        let epsilon_offset = nnlo.epsilon1 / omega_ref
-            + nnlo.epsilon2 / omega_ref_cbrt2
-            + nnlo.epsilon3 / omega_ref_cbrt
-            + nnlo.epsilon4l * logomega_ref
-            + nnlo.epsilon5 * omega_ref_cbrt
-            - epsilon0;
+        let (alpha_offset, epsilon_offset) = match &msa {
+            Some(msa) => {
+                let angles = msa.phi_zeta_costhetal(omega_ref.cbrt());
+                (angles.phiz - alpha0, angles.zeta - epsilon0)
+            }
+            None => {
+                let logomega_ref = omega_ref.ln();
+                let omega_ref_cbrt = omega_ref.cbrt();
+                let omega_ref_cbrt2 = omega_ref_cbrt * omega_ref_cbrt;
+                (
+                    nnlo.alpha1 / omega_ref
+                        + nnlo.alpha2 / omega_ref_cbrt2
+                        + nnlo.alpha3 / omega_ref_cbrt
+                        + nnlo.alpha4l * logomega_ref
+                        + nnlo.alpha5 * omega_ref_cbrt
+                        - alpha0,
+                    nnlo.epsilon1 / omega_ref
+                        + nnlo.epsilon2 / omega_ref_cbrt2
+                        + nnlo.epsilon3 / omega_ref_cbrt
+                        + nnlo.epsilon4l * logomega_ref
+                        + nnlo.epsilon5 * omega_ref_cbrt
+                        - epsilon0,
+                )
+            }
+        };
 
         Ok(Self {
             version,
@@ -637,6 +732,7 @@ impl PrecessionStruct {
             epsilon0,
             zeta_polarization,
             nnlo,
+            msa,
             alpha_offset,
             epsilon_offset,
             ylm: SphericalHarmonics::new(theta_jn),
@@ -678,6 +774,24 @@ impl PrecessionStruct {
         let s2 = s * s;
         let cos_beta = 1.0f64.copysign(l + self.sl) / (1.0 + s2).sqrt();
         (alpha, epsilon, cos_beta)
+    }
+
+    /// MSA Euler angles `(alpha, epsilon, cos(beta))` at the orbital
+    /// velocity `v`, including the reference offsets: the MSA branch of
+    /// `IMRPhenomXPTwistUp22` with `v = (pi Mf)^(1/3)`. IMRPhenomXPHM uses
+    /// the same offsets for every co-precessing mode `m'`, evaluated at
+    /// `v = (2 pi Mf / m')^(1/3)` (`Get_alpha_epsilon_offset`).
+    ///
+    /// Panics if the struct was not built for the MSA angles.
+    #[inline]
+    pub(crate) fn msa_angles(&self, v: f64) -> (f64, f64, f64) {
+        let msa = self.msa.as_ref().expect("MSA system");
+        let angles = msa.phi_zeta_costhetal(v);
+        (
+            angles.phiz - self.alpha_offset,
+            angles.zeta - self.epsilon_offset,
+            angles.cos_theta_l,
+        )
     }
 }
 

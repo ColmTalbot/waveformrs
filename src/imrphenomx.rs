@@ -20,6 +20,7 @@
 //! | `xp`           | `LALSimIMRPhenomX.c` (IMRPhenomXP driver)              |
 //! | `precession`   | `LALSimIMRPhenomX_precession.c` (precession struct, J frame, NNLO angles) |
 //! | `spintaylor_angles` | `LALSimIMRPhenomX_precession.c` (SpinTaylor Euler angles) |
+//! | `msa`          | `LALSimIMRPhenomX_precession.c` (MSA Euler angles)     |
 //! | `wigner`       | Wigner-d matrices and twisting up, spherical harmonics |
 //! | `xhm`          | `LALSimIMRPhenomXHM.c` (IMRPhenomXHM driver, mode sum) |
 //! | `hm_internals` | `LALSimIMRPhenomXHM_internals.c` (mode struct, coefficients) |
@@ -40,6 +41,7 @@ mod intermediate;
 mod internals;
 mod libm;
 mod linalg;
+mod msa;
 mod phase;
 mod precession;
 mod qnm;

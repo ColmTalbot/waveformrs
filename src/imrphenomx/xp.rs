@@ -19,9 +19,10 @@ pub type Polarizations = (Vec<Complex<f64>>, Vec<Complex<f64>>);
 /// IMRPhenomXP (Pratten et al. 2021, arXiv:2004.06503): the aligned-spin
 /// (2,2) mode of IMRPhenomXAS twisted up with precession Euler angles, with
 /// the default LALSimulation settings (`PhenomXPConvention` 1,
-/// `PhenomXPFinalSpinMod` 4) and either the SpinTaylor angles
-/// (`PhenomXPrecVersion` 320, Colleoni et al. 2024, arXiv:2412.16721) or
-/// the NNLO angles (102).
+/// `PhenomXPFinalSpinMod` 4) and the SpinTaylor angles
+/// (`PhenomXPrecVersion` 320, Colleoni et al. 2024, arXiv:2412.16721), the
+/// MSA angles (223, Chatziioannou et al. 2017, arXiv:1703.03967) or the
+/// NNLO angles (102), see [`PrecessionVersion`].
 ///
 /// # Conventions
 ///
@@ -37,9 +38,9 @@ pub type Polarizations = (Vec<Complex<f64>>, Vec<Complex<f64>>);
 /// # Precomputation
 ///
 /// Everything that depends only on the parameters (the J-frame
-/// construction, the precessing final spin, the NNLO angle coefficients and
-/// the IMRPhenomXAS coefficients) is computed by [`IMRPhenomXP::new`] when a
-/// reference frequency is given. The SpinTaylor angles depend on the
+/// construction, the precessing final spin, the NNLO or MSA angle
+/// coefficients and the IMRPhenomXAS coefficients) is computed by
+/// [`IMRPhenomXP::new`] when a reference frequency is given. The SpinTaylor angles depend on the
 /// frequency grid in LALSimulation (they are integrated from just below the
 /// first frequency and the merger-ringdown part of `gamma` is integrated
 /// along the grid), as does the remnant spin they set, so they are computed
@@ -47,12 +48,14 @@ pub type Polarizations = (Vec<Complex<f64>>, Vec<Complex<f64>>);
 /// frequency is the first frequency of the grid and everything is computed
 /// per grid.
 ///
-/// # Failures of the SpinTaylor angles
+/// # Fallbacks
 ///
-/// When the PN integration does not provide the angles (e.g. it stops
-/// before reaching `f_min`), LALSimulation silently switches to the MSA
-/// angles (`PhenomXPrecVersion` 223). These are not ported; such cases return
-/// [`IMRPhenomXError::SpinTaylorFallbackToMsa`].
+/// Like LALSimulation, the SpinTaylor angles fall back to the NNLO angles
+/// for in-plane spins below `1e-7` and, when the PN integration does not
+/// provide the angles (it stops before reaching `f_min`, or the PN solution
+/// starts above it), silently to the MSA angles (`PhenomXPrecVersion` 223).
+/// The latter depends on the frequency grid. The MSA angles in turn fall
+/// back to the NNLO angles when the MSA system cannot be initialised.
 #[derive(Clone, Debug)]
 pub struct IMRPhenomXP {
     binary: PrecessingBinary,
@@ -125,7 +128,9 @@ impl Setup {
     }
 
     /// The SpinTaylor angles on the grid `frequencies` and the XAS model
-    /// with the final spin they set (`IMRPhenomXGetAndSetPrecessionVariables`
+    /// with the final spin they set. Failures of the PN integration are
+    /// returned as [`IMRPhenomXError::SpinTaylorFallbackToMsa`] and handled
+    /// by [`fallback_to_msa`] (`IMRPhenomXGetAndSetPrecessionVariables`
     /// integration step and `IMRPhenomXPSpinTaylorAnglesIMR`).
     fn spintaylor_angles(
         &mut self,
@@ -178,6 +183,17 @@ impl Setup {
                     }
                 }
             }
+            None if prec.msa.is_some() => {
+                for (i, &f) in frequencies.iter().enumerate() {
+                    let mf = wf.m_sec * f;
+                    if mf <= mf_cut {
+                        let h22 = xas.h22(mf, phif_ref, mf_cut);
+                        let (alpha, epsilon, cos_beta) =
+                            prec.msa_angles((std::f64::consts::PI * mf).cbrt());
+                        (hp[i], hc[i]) = twist_up_22(h22, alpha, cos_beta, epsilon, y2);
+                    }
+                }
+            }
             None => {
                 for (i, &f) in frequencies.iter().enumerate() {
                     let mf = wf.m_sec * f;
@@ -205,9 +221,30 @@ impl Setup {
     }
 }
 
+/// `IMRPhenomXGetAndSetPrecessionVariables` falls back to the MSA angles
+/// (version 223) when the SpinTaylor integration fails: redo the set-up
+/// with [`PrecessionVersion::Msa`] (see [`PrecessionStruct::new`]) and
+/// generate the polarisations on the same grid.
+fn fallback_to_msa(
+    result: Result<Polarizations, IMRPhenomXError>,
+    binary: &PrecessingBinary,
+    delta_f: f64,
+    frequencies: &[f64],
+    f_min: f64,
+    f_max: f64,
+) -> Result<Polarizations, IMRPhenomXError> {
+    match result {
+        Err(IMRPhenomXError::SpinTaylorFallbackToMsa(_)) => {
+            Setup::new(binary, PrecessionVersion::Msa, delta_f, f_min, f_max)?.generate(frequencies)
+        }
+        result => result,
+    }
+}
+
 impl IMRPhenomXP {
     /// IMRPhenomXP with the default SpinTaylor angles (`PhenomXPrecVersion`
-    /// 320).
+    /// 320). Note that the default of LALSimulation 6.2.0 when no version is
+    /// given is 223 ([`PrecessionVersion::Msa`]).
     ///
     /// Returns an error where LALSimulation would (masses, spins beyond the
     /// Kerr bound, negative distance or reference frequency, unphysical
@@ -249,23 +286,30 @@ impl IMRPhenomXP {
         self.version
     }
 
-    /// The `PhenomXPrecVersion` LALSimulation uses for this binary: 102 if
-    /// NNLO angles were requested or the in-plane spins are below `1e-7`,
-    /// 320 otherwise.
+    /// The `PhenomXPrecVersion` LALSimulation uses for this binary before
+    /// the frequency grid is known: 102 if NNLO angles were requested, the
+    /// SpinTaylor angles were requested and the in-plane spins are below
+    /// `1e-7`, or the MSA angles were requested and the MSA system cannot be
+    /// initialised (only known here for `f_ref > 0`); 320 or 223 otherwise.
+    /// With 320, the waveform may still fall back to 223 on a given grid.
     pub fn effective_version(&self) -> u32 {
         match &self.setup {
             Some(setup) => setup.prec.version,
-            None => {
-                let s1 = self.binary.spin_1;
-                let s2 = self.binary.spin_2;
-                let chi_in_plane =
-                    (s1[0] * s1[0] + s1[1] * s1[1] + s2[0] * s2[0] + s2[1] * s2[1]).sqrt();
-                if self.version == PrecessionVersion::SpinTaylor && chi_in_plane >= 1e-7 {
-                    320
-                } else {
-                    102
+            None => match self.version {
+                PrecessionVersion::Nnlo => 102,
+                PrecessionVersion::Msa => 223,
+                PrecessionVersion::SpinTaylor => {
+                    let s1 = self.binary.spin_1;
+                    let s2 = self.binary.spin_2;
+                    let chi_in_plane =
+                        (s1[0] * s1[0] + s1[1] * s1[1] + s2[0] * s2[0] + s2[1] * s2[1]).sqrt();
+                    if chi_in_plane >= 1e-7 {
+                        320
+                    } else {
+                        102
+                    }
                 }
-            }
+            },
         }
     }
 
@@ -295,7 +339,14 @@ impl IMRPhenomXP {
             Some(setup) => setup.with_bounds(f_min, f_max),
             None => Setup::new(&self.binary, self.version, 0.0, f_min, f_max)?,
         };
-        setup.generate(frequencies)
+        fallback_to_msa(
+            setup.generate(frequencies),
+            &self.binary,
+            0.0,
+            frequencies,
+            f_min,
+            f_max,
+        )
     }
 
     /// `(h_+, h_x)` on the uniform grid `k delta_f`, `k = 0 .. n - 1`,
@@ -332,7 +383,14 @@ impl IMRPhenomXP {
         let i_start = (f_min / delta_f) as usize;
         let i_stop = (f_max_prime / delta_f) as usize + 1;
         let frequencies: Vec<f64> = (i_start..i_stop).map(|i| i as f64 * delta_f).collect();
-        let (hp_band, hc_band) = setup.generate(&frequencies)?;
+        let (hp_band, hc_band) = fallback_to_msa(
+            setup.generate(&frequencies),
+            &self.binary,
+            delta_f,
+            &frequencies,
+            f_min,
+            f_max,
+        )?;
 
         let last_freq = if f_max_prime < f_max {
             f_max
@@ -509,7 +567,11 @@ mod tests {
     #[test]
     fn default_reference_frequency_is_first_frequency() {
         let frequencies = grid();
-        for version in [PrecessionVersion::SpinTaylor, PrecessionVersion::Nnlo] {
+        for version in [
+            PrecessionVersion::SpinTaylor,
+            PrecessionVersion::Nnlo,
+            PrecessionVersion::Msa,
+        ] {
             let default = IMRPhenomXP::with_version(&binary(), version)
                 .unwrap()
                 .polarizations(&frequencies)
@@ -539,7 +601,11 @@ mod tests {
             spin_2: b.spin_1,
             ..b
         };
-        for version in [PrecessionVersion::SpinTaylor, PrecessionVersion::Nnlo] {
+        for version in [
+            PrecessionVersion::SpinTaylor,
+            PrecessionVersion::Nnlo,
+            PrecessionVersion::Msa,
+        ] {
             let a = IMRPhenomXP::with_version(&b, version).unwrap();
             let s = IMRPhenomXP::with_version(&swapped, version).unwrap();
             assert_eq!(
@@ -570,32 +636,34 @@ mod tests {
         );
     }
 
-    /// For the NNLO angles nothing depends on the grid, so the uniform grid
-    /// gives the same values as the non-uniform entry point.
+    /// For the NNLO and MSA angles nothing depends on the grid, so the
+    /// uniform grid gives the same values as the non-uniform entry point.
     #[test]
-    fn uniform_grid_matches_sequence_for_nnlo() {
-        let model = IMRPhenomXP::with_version(
-            &PrecessingBinary {
-                f_ref: 20.0,
-                ..binary()
-            },
-            PrecessionVersion::Nnlo,
-        )
-        .unwrap();
-        let delta_f = 0.25;
-        let (hp, hc) = model.polarizations_uniform(delta_f, 20.0, 1024.0).unwrap();
-        assert_eq!(hp.len(), 4097);
-        let frequencies: Vec<f64> = (80..=4096).map(|i| i as f64 * delta_f).collect();
-        let (hp_seq, hc_seq) = model.polarizations(&frequencies).unwrap();
-        assert_eq!(&hp[80..], &hp_seq[..]);
-        assert_eq!(&hc[80..], &hc_seq[..]);
-        assert!(hp[..80].iter().all(|h| h.norm() == 0.0));
+    fn uniform_grid_matches_sequence_for_nnlo_and_msa() {
+        for version in [PrecessionVersion::Nnlo, PrecessionVersion::Msa] {
+            let model = IMRPhenomXP::with_version(
+                &PrecessingBinary {
+                    f_ref: 20.0,
+                    ..binary()
+                },
+                version,
+            )
+            .unwrap();
+            let delta_f = 0.25;
+            let (hp, hc) = model.polarizations_uniform(delta_f, 20.0, 1024.0).unwrap();
+            assert_eq!(hp.len(), 4097);
+            let frequencies: Vec<f64> = (80..=4096).map(|i| i as f64 * delta_f).collect();
+            let (hp_seq, hc_seq) = model.polarizations(&frequencies).unwrap();
+            assert_eq!(&hp[80..], &hp_seq[..]);
+            assert_eq!(&hc[80..], &hc_seq[..]);
+            assert!(hp[..80].iter().all(|h| h.norm() == 0.0));
+        }
     }
 
     /// Where the SpinTaylor integration does not reach the first frequency
-    /// LALSimulation silently uses the MSA angles; we return an error.
+    /// LALSimulation silently uses the MSA angles, and so do we.
     #[test]
-    fn spintaylor_failure_is_an_error() {
+    fn spintaylor_failure_falls_back_to_msa() {
         let heavy = PrecessingBinary {
             mass_1: 180.0,
             mass_2: 65.0,
@@ -608,14 +676,50 @@ mod tests {
         };
         let frequencies: Vec<f64> = (0..200).map(|i| 15.5 + i as f64).collect();
         let model = IMRPhenomXP::new(&heavy).unwrap();
+        let msa = IMRPhenomXP::with_version(&heavy, PrecessionVersion::Msa).unwrap();
+        assert_eq!(msa.effective_version(), 223);
+        assert_eq!(
+            model.polarizations(&frequencies).unwrap(),
+            msa.polarizations(&frequencies).unwrap()
+        );
+        assert_eq!(
+            model.polarizations_uniform(0.25, 15.5, 200.0).unwrap(),
+            msa.polarizations_uniform(0.25, 15.5, 200.0).unwrap()
+        );
+        // the angles alone (as XLALSimIMRPhenomXPSpinTaylorAngles) fail
         assert!(matches!(
-            model.polarizations(&frequencies),
+            IMRPhenomXP::spin_taylor_angles(&heavy, 15.5, 200.0, 0.25),
             Err(IMRPhenomXError::SpinTaylorFallbackToMsa(_))
         ));
-        assert!(IMRPhenomXP::with_version(&heavy, PrecessionVersion::Nnlo)
-            .unwrap()
-            .polarizations(&frequencies)
-            .is_ok());
+    }
+
+    /// A fallback through a failure that LAL reports with `XLAL_ERROR`
+    /// (too few PN samples for the splines). The C function returns the MSA
+    /// waveform (bit for bit equal to PrecVersion 223, checked with the C
+    /// API), but it leaves `xlalErrno` set, so the SWIG Python wrapper of
+    /// `SimInspiralChooseFDWaveformSequence` raises "Internal function call
+    /// failed" for it.
+    #[test]
+    fn spintaylor_failure_with_xlal_error_falls_back_to_msa() {
+        let heavy = PrecessingBinary {
+            mass_1: 170.0,
+            mass_2: 80.0,
+            spin_1: [-0.6, 0.2, 0.5],
+            spin_2: [0.3, 0.6, -0.2],
+            luminosity_distance: 1000.0,
+            inclination: 2.2,
+            phi_ref: 4.4,
+            f_ref: 35.0,
+        };
+        let frequencies: Vec<f64> = (0..64).map(|i| 20.0 * 1.0195f64.powi(i)).collect();
+        let msa = IMRPhenomXP::with_version(&heavy, PrecessionVersion::Msa).unwrap();
+        assert_eq!(
+            IMRPhenomXP::new(&heavy)
+                .unwrap()
+                .polarizations(&frequencies)
+                .unwrap(),
+            msa.polarizations(&frequencies).unwrap()
+        );
     }
 
     #[test]

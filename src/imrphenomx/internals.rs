@@ -38,8 +38,9 @@ pub enum IMRPhenomXError {
     /// where LALSimulation requires it).
     InvalidFrequencies(&'static str),
     /// The numerical SpinTaylor Euler angles could not be computed in a
-    /// case where LALSimulation silently falls back to the MSA angles
-    /// (`PhenomXPrecVersion` 223), which are not implemented here.
+    /// case where LALSimulation's waveform drivers silently fall back to
+    /// the MSA angles (`PhenomXPrecVersion` 223), as the waveforms here do.
+    /// Only returned by [`crate::imrphenomx::IMRPhenomXP::spin_taylor_angles`].
     SpinTaylorFallbackToMsa(&'static str),
     /// The numerical SpinTaylor Euler angles could not be computed in a
     /// case where LALSimulation raises an error.
@@ -73,8 +74,8 @@ impl fmt::Display for IMRPhenomXError {
             Self::InvalidFrequencies(why) => write!(f, "invalid frequencies: {why}"),
             Self::SpinTaylorFallbackToMsa(why) => write!(
                 f,
-                "SpinTaylor Euler angles failed ({why}); lalsimulation falls back to the \
-                 MSA angles (PrecVersion 223), which are not implemented"
+                "SpinTaylor Euler angles failed ({why}); the waveforms fall back to the \
+                 MSA angles (PrecVersion 223)"
             ),
             Self::SpinTaylorAngles(why) => write!(f, "SpinTaylor Euler angles: {why}"),
         }
