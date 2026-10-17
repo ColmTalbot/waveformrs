@@ -1,5 +1,7 @@
 use std::f64::consts::PI;
 
+use num_complex::Complex;
+
 use crate::{
     constants::{MPC_SI, SOLAR_RADIUS_IN_M, SOLAR_RADIUS_IN_S},
     pn::{PNPhasing, Params},
@@ -13,8 +15,12 @@ mod phase;
 mod qnm_data;
 mod utils;
 
-use amplitude::{imrphenomd_amplitude, AmplitudePrefactors};
-use phase::{imrphenomd_phase, mrd_phase_derivative, PhaseCoefficients, inspiral_prefactors};
+use amplitude::{imrphenomd_amplitude, imrphenomd_amplitude_from_powers, AmplitudePrefactors};
+use phase::{
+    imrphenomd_phase, imrphenomd_phase_from_powers, inspiral_prefactors, mrd_phase_derivative,
+    PhaseCoefficients,
+};
+use utils::MfPowers;
 
 #[derive(Clone, Copy, Debug)]
 pub struct IMRPhenomD {
@@ -68,6 +74,30 @@ impl IMRPhenomD {
         self.reference_phase = imrphenomd_phase(mf_ref, &self.coeffs, &self.phase_prefactors);
         self
     }
+
+    /// Overall amplitude scaling, read from the current public fields.
+    fn amplitude_scale(&self) -> f64 {
+        2. * (5.0 / (64.0 * PI)).sqrt()
+            * self.total_mass
+            * SOLAR_RADIUS_IN_M
+            * self.total_mass
+            * SOLAR_RADIUS_IN_S
+            / self.luminosity_distance
+    }
+
+    /// Evaluate the waveform at dimensionless frequency `mf`, computing the
+    /// shared powers of `mf` once for both amplitude and phase.
+    #[inline(always)]
+    fn evaluate(&self, mf: f64, amplitude_scale: f64, phase_shift: f64) -> Complex<f64> {
+        let powers = MfPowers::new(mf);
+        let amplitude = amplitude_scale
+            * imrphenomd_amplitude_from_powers(&powers, &self.amplitude_prefactors);
+        let phase = imrphenomd_phase_from_powers(&powers, &self.coeffs, &self.phase_prefactors)
+            - phase_shift
+            - self.t0 * (mf - self.reference_mf);
+        let (sin, cos) = phase.sin_cos();
+        Complex::new(amplitude * cos, -amplitude * sin)
+    }
 }
 
 impl Waveform for IMRPhenomD {
@@ -79,17 +109,28 @@ impl Waveform for IMRPhenomD {
     }
 
     fn amplitude(&self, v: f64) -> f64 {
-        let amp0 = 2.
-            * (5.0 / (64.0 * PI)).sqrt()
-            * self.total_mass
-            * SOLAR_RADIUS_IN_M
-            * self.total_mass
-            * SOLAR_RADIUS_IN_S
-            / self.luminosity_distance;
-        amp0 * imrphenomd_amplitude(v, &self.amplitude_prefactors)
+        self.amplitude_scale() * imrphenomd_amplitude(v, &self.amplitude_prefactors)
     }
 
     fn orbital_speed(&self, frequency: f64) -> f64 {
         frequency * self.total_mass * SOLAR_RADIUS_IN_S
+    }
+
+    fn waveform_single_frequency(&self, frequency: f64, phi_c: f64) -> Complex<f64> {
+        self.evaluate(
+            self.orbital_speed(frequency),
+            self.amplitude_scale(),
+            phi_c + self.reference_phase,
+        )
+    }
+
+    fn waveform(&self, frequencies: &[f64], phi_c: f64) -> Vec<Complex<f64>> {
+        let mass_scale = self.total_mass * SOLAR_RADIUS_IN_S;
+        let amplitude_scale = self.amplitude_scale();
+        let phase_shift = phi_c + self.reference_phase;
+        frequencies
+            .iter()
+            .map(|&f| self.evaluate(f * mass_scale, amplitude_scale, phase_shift))
+            .collect()
     }
 }

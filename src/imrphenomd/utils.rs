@@ -1,6 +1,7 @@
 use once_cell::sync::Lazy;
 
 use crate::imrphenomd::coefficients::FINAL_SPIN_COEFFS;
+use crate::imrphenomd::constants::POWERS_OF_PI;
 use crate::imrphenomd::qnm_data::{QNM_FDAMP, QNM_FRING, QNM_SPIN};
 use crate::interpolate::CubicSpline;
 use crate::pn::Params;
@@ -34,6 +35,60 @@ impl Powers {
             three: value.powi(3),
         }
     }
+}
+
+/// Powers of the dimensionless frequency shared between the amplitude and
+/// phase evaluation.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct MfPowers {
+    pub mf: f64,
+    /// Mf^(1/3)
+    pub third: f64,
+    /// (pi Mf)^(1/3)
+    pub orbital_speed: f64,
+}
+
+impl MfPowers {
+    #[inline(always)]
+    pub fn new(mf: f64) -> Self {
+        let third = mf.cbrt();
+        Self {
+            mf,
+            third,
+            orbital_speed: third * POWERS_OF_PI.third,
+        }
+    }
+}
+
+/// Solve the dense linear system `matrix x = rhs` by Gaussian elimination with
+/// partial pivoting.
+pub(crate) fn solve_linear_system<const N: usize>(
+    mut matrix: [[f64; N]; N],
+    mut rhs: [f64; N],
+) -> [f64; N] {
+    for col in 0..N {
+        let pivot = (col..N)
+            .max_by(|&a, &b| matrix[a][col].abs().total_cmp(&matrix[b][col].abs()))
+            .unwrap();
+        matrix.swap(col, pivot);
+        rhs.swap(col, pivot);
+        for row in col + 1..N {
+            let factor = matrix[row][col] / matrix[col][col];
+            for k in col..N {
+                matrix[row][k] -= factor * matrix[col][k];
+            }
+            rhs[row] -= factor * rhs[col];
+        }
+    }
+    let mut solution = [0.0; N];
+    for row in (0..N).rev() {
+        let mut value = rhs[row];
+        for k in row + 1..N {
+            value -= matrix[row][k] * solution[k];
+        }
+        solution[row] = value / matrix[row][row];
+    }
+    solution
 }
 
 pub fn final_spin_0815(params: &Params) -> f64 {

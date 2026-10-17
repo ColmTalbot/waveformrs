@@ -27,11 +27,15 @@ pub trait Waveform {
         phi_c: f64,
         theta_jn: f64,
     ) -> (Vec<Complex<f64>>, Vec<Complex<f64>>) {
-        let waveform = self.waveform(frequencies, phi_c);
-        let plus_factor = (1.0 + theta_jn.cos().powi(2)) / 2.0;
-        let cross_factor = -Complex::I * theta_jn.cos();
-        let plus = waveform.iter().map(|&w| w * plus_factor).collect();
-        let cross = waveform.iter().map(|&w| w * cross_factor).collect();
+        let mut plus = self.waveform(frequencies, phi_c);
+        let cos_theta_jn = theta_jn.cos();
+        let plus_factor = (1.0 + cos_theta_jn * cos_theta_jn) / 2.0;
+        // multiplying by -i cos(theta_jn) without a full complex product
+        let cross = plus
+            .iter()
+            .map(|w| Complex::new(w.im * cos_theta_jn, -w.re * cos_theta_jn))
+            .collect();
+        plus.iter_mut().for_each(|w| *w *= plus_factor);
         (plus, cross)
     }
 }

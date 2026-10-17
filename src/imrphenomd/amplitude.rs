@@ -1,11 +1,10 @@
 use std::f64::consts::PI;
 
-use ndarray::array;
-use ndarray_linalg::Solve;
-
 use crate::imrphenomd::coefficients::{COLLOCATION_COEFFS, GAMMA_COEFFS, RHO_COEFFS};
 use crate::imrphenomd::constants::{AMP_FJOIN_INS, POWERS_OF_PI};
-use crate::imrphenomd::utils::{fdamp, final_spin_0815, fring, phenomenological_function};
+use crate::imrphenomd::utils::{
+    fdamp, final_spin_0815, fring, phenomenological_function, solve_linear_system, MfPowers,
+};
 use crate::pn::{chi_pn, PNAmplitude, Params};
 
 #[derive(Clone, Copy, Debug)]
@@ -98,38 +97,21 @@ fn phenomd_inspiral_amplitude_pn(params: &Params) -> PNAmplitude {
     PNAmplitude { v }
 }
 
-pub fn inspiral_amplitude(
-    frequency: f64,
-    prefactors: &AmplitudePrefactors,
-) -> f64 {
+pub fn inspiral_amplitude(frequency: f64, prefactors: &AmplitudePrefactors) -> f64 {
     let orbital_speed = (frequency * POWERS_OF_PI.one).cbrt();
-    let mut cumulative_power_frequency = 1.0;
-    let mut amplitude = 0.0;
-    for i in 0..10 {
-        amplitude += cumulative_power_frequency * prefactors.pn.v[i];
-        cumulative_power_frequency *= orbital_speed;
+    inspiral_amplitude_from_speed(orbital_speed, prefactors)
+}
+
+/// Horner evaluation of sum_i pn_i v^i.
+#[inline(always)]
+fn inspiral_amplitude_from_speed(orbital_speed: f64, prefactors: &AmplitudePrefactors) -> f64 {
+    let pn = &prefactors.pn.v;
+    let mut amplitude = pn[9];
+    for i in (0..9).rev() {
+        amplitude = amplitude * orbital_speed + pn[i];
     }
     amplitude
 }
-
-// fn inspiral_amplitude_2(frequency: FT<f64>, prefactors: &AmplitudePrefactors) -> FT<f64> {
-//     1.0 + frequency.powf((2.0 / 3.0).into()) * prefactors.two_thirds
-//         + frequency.powf((4.0 / 3.0).into()) * prefactors.four_thirds
-//         + frequency.powf((5.0 / 3.0).into()) * prefactors.five_thirds
-//         + frequency.powf((7.0 / 3.0).into()) * prefactors.seven_thirds
-//         + frequency.powf((8.0 / 3.0).into()) * prefactors.eight_thirds
-//         + frequency
-//             * (prefactors.one
-//                 + frequency * prefactors.two
-//                 + frequency.powi(2.into()) * prefactors.three)
-// }
-
-// #[allow(dead_code)]
-// pub fn inspiral_derivative(frequency: f64, prefactors: &AmplitudePrefactors) -> f64 {
-//     let f = |x: &[FT<f64>]| inspiral_amplitude_2(x[0], prefactors);
-//     let g = grad(f, &[frequency]);
-//     g[0]
-// }
 
 pub fn inspiral_amplitude_derivative(
     frequency: f64,
@@ -188,18 +170,8 @@ fn intermediate_amplitude_collocation(params: &Params) -> f64 {
 }
 
 fn intermediate_amplitude(frequency: f64, prefactors: &AmplitudePrefactors) -> f64 {
-    let power = [
-        1.0,
-        frequency,
-        frequency.powi(2),
-        frequency.powi(3),
-        frequency.powi(4),
-    ];
-    power
-        .iter()
-        .zip(prefactors.deltas.iter())
-        .map(|(p, d)| p * d)
-        .sum()
+    let d = &prefactors.deltas;
+    d[0] + frequency * (d[1] + frequency * (d[2] + frequency * (d[3] + frequency * d[4])))
 }
 
 fn deltas(params: &Params, prefactors: &AmplitudePrefactors) -> [f64; 5] {
@@ -208,43 +180,49 @@ fn deltas(params: &Params, prefactors: &AmplitudePrefactors) -> [f64; 5] {
     let f2 = (f1 + f3) / 2.0;
 
     let v1 = inspiral_amplitude(f1, prefactors);
-    let d1 = inspiral_amplitude_derivative(f1, &prefactors);
+    let d1 = inspiral_amplitude_derivative(f1, prefactors);
     let v2 = intermediate_amplitude_collocation(params);
     let v3 = mrd_amplitude(f3, prefactors);
     let d3 = mrd_amplitude_derivative(f3, prefactors);
-    let f1s = [1.0, f1, f1.powi(2), f1.powi(3), f1.powi(4)];
-    let f3s = [1.0, f3, f3.powi(2), f3.powi(3), f3.powi(4)];
+    let f1s = [1.0, f1, f1 * f1, f1 * f1 * f1, f1 * f1 * f1 * f1];
+    let f3s = [1.0, f3, f3 * f3, f3 * f3 * f3, f3 * f3 * f3 * f3];
 
-    let matrix = array![
+    let f2s = [1.0, f2, f2 * f2, f2 * f2 * f2, f2 * f2 * f2 * f2];
+    let matrix = [
         f1s,
-        [1.0, f2, f2.powi(2), f2.powi(3), f2.powi(4)],
+        f2s,
         f3s,
         [0.0, 1.0, 2.0 * f1s[1], 3.0 * f1s[2], 4.0 * f1s[3]],
         [0.0, 1.0, 2.0 * f3s[1], 3.0 * f3s[2], 4.0 * f3s[3]],
     ];
-    let result = array![v1, v2, v3, d1, d3];
-    let solution = matrix.solve(&result).unwrap();
-
-    [
-        solution[0],
-        solution[1],
-        solution[2],
-        solution[3],
-        solution[4],
-    ]
+    solve_linear_system(matrix, [v1, v2, v3, d1, d3])
 }
 
 pub fn imrphenomd_amplitude(frequency: f64, prefactors: &AmplitudePrefactors) -> f64 {
+    imrphenomd_amplitude_from_powers(&MfPowers::new(frequency), prefactors)
+}
+
+/// The IMRPhenomD amplitude, including the leading `amp0 * Mf^(-7/6)` scaling.
+#[inline(always)]
+pub(crate) fn imrphenomd_amplitude_from_powers(
+    powers: &MfPowers,
+    prefactors: &AmplitudePrefactors,
+) -> f64 {
     let f1 = AMP_FJOIN_INS;
     let f3 = prefactors.f_peak;
+    let frequency = powers.mf;
 
-    let prefactor = prefactors.amp0 * frequency.powf(-7.0 / 6.0);
+    // Mf^(-7/6) = 1 / (Mf * Mf^(1/6))
+    let prefactor = prefactors.amp0 / (frequency * powers.third.sqrt());
 
-    let amplitude = match frequency {
-        f if f < f1 => inspiral_amplitude(f, prefactors),
-        f if f1 <= f && f < f3 => intermediate_amplitude(f, prefactors),
-        f if f3 <= f => mrd_amplitude(f, prefactors),
-        _ => 0.0,
+    let amplitude = if frequency < f1 {
+        inspiral_amplitude_from_speed(powers.orbital_speed, prefactors)
+    } else if frequency < f3 {
+        intermediate_amplitude(frequency, prefactors)
+    } else if f3 <= frequency {
+        mrd_amplitude(frequency, prefactors)
+    } else {
+        0.0
     };
     amplitude * prefactor
 }

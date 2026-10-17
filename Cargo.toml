@@ -5,10 +5,6 @@ edition = "2021"
 
 [dependencies]
 num-complex = "*"
-ndarray = "*"
-ndarray-linalg = {version = "0.16", default-features = false }
-blas-src = { version = "0.10.0", features = ["accelerate"] }
-autodiff = "*"
 once_cell = "*"
 
 [features]
