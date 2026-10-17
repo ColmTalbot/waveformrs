@@ -22,7 +22,7 @@ use serde::{Deserialize, Serialize};
 
 use waveformrs::{
     imrphenomd::IMRPhenomD,
-    imrphenomx::{IMRPhenomXAS, IMRPhenomXP, PrecessingBinary, PrecessionVersion},
+    imrphenomx::{IMRPhenomXAS, IMRPhenomXHM, IMRPhenomXP, PrecessingBinary, PrecessionVersion},
     taylor::TaylorF2,
     waveform::Waveform,
 };
@@ -107,6 +107,16 @@ fn generate(case: &Case) -> Result<Polarizations, String> {
         )
         .with_reference_frequency(case.f_ref)
         .waveform_modes(&case.frequencies, 2.0 * case.phi_ref, case.inclination),
+        "IMRPhenomXHM" => IMRPhenomXHM::from_components(
+            case.mass_1,
+            case.mass_2,
+            case.spin_1[2],
+            case.spin_2[2],
+            case.luminosity_distance,
+        )
+        .map_err(|err| err.to_string())?
+        .with_reference_frequency(case.f_ref)
+        .polarizations(&case.frequencies, case.phi_ref, case.inclination),
         "IMRPhenomXP" => precessing(case, PrecessionVersion::SpinTaylor)?,
         "IMRPhenomXP_NNLO" => precessing(case, PrecessionVersion::Nnlo)?,
         other => panic!("unsupported approximant {other}"),
