@@ -108,6 +108,42 @@ fn imrphenomxp_uniform_matches_lalsimulation() {
     });
 }
 
+/// Polarisations on the non-uniform grid of the case or, for the cases
+/// generated with `SimInspiralChooseFDWaveform` (grid `k delta_f` from zero),
+/// on the uniform grid.
+fn xp_polarizations(
+    case: &common::Case,
+    version: PrecessionVersion,
+) -> (Vec<common::C64>, Vec<common::C64>) {
+    let model = IMRPhenomXP::with_version(&precessing_binary(case), version).unwrap();
+    if case.frequencies[0] == 0.0 {
+        model
+            .polarizations_uniform(case.frequencies[1], case.f_min, case.f_max)
+            .unwrap()
+    } else {
+        model.polarizations(&case.frequencies).unwrap()
+    }
+}
+
+/// MSA angles (`PhenomXPrecVersion` 223), including a binary whose MSA
+/// system fails to initialise (NNLO fallback). The reference data are
+/// generated single-threaded (see `msa.rs` on LAL's OpenMP race).
+#[test]
+fn imrphenomxp_msa_matches_lalsimulation() {
+    common::check_all("imrphenomxp_msa", 1e-9, 1e-12, |case| {
+        xp_polarizations(case, PrecessionVersion::Msa)
+    });
+}
+
+/// Heavy binaries for which the SpinTaylor integration does not reach
+/// `f_min` and lalsimulation falls back to the MSA angles.
+#[test]
+fn imrphenomxp_spintaylor_fallback_matches_lalsimulation() {
+    common::check_all("imrphenomxp_spintaylor_fallback", 1e-9, 1e-12, |case| {
+        xp_polarizations(case, PrecessionVersion::SpinTaylor)
+    });
+}
+
 #[derive(Debug, Deserialize)]
 struct AngleFile {
     lalsimulation_version: String,

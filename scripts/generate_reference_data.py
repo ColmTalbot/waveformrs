@@ -14,7 +14,12 @@ instead stores the Euler angles of ``SimIMRPhenomXPSpinTaylorAngles`` and the
 
 Usage
 -----
-    python scripts/generate_reference_data.py [--n-frequencies 256]
+    OMP_NUM_THREADS=1 python scripts/generate_reference_data.py [--n-frequencies 256]
+
+``OMP_NUM_THREADS=1`` is required for the MSA suites (``imrphenomxp_msa``,
+``imrphenomxp_spintaylor_fallback``): the MSA angles of lalsimulation write
+per-frequency roots into the shared precession struct inside an OpenMP
+loop, so multi-threaded runs are not reproducible.
 
 Requires ``python-lalsimulation`` (tested with lalsimulation 6.2.0).
 """
@@ -299,6 +304,67 @@ def spintaylor_angle_cases():
     ]
 
 
+def msa_cases():
+    """IMRPhenomXP with the MSA angles (PrecVersion 223), on non-uniform and
+    uniform grids, including a binary whose MSA system fails to initialise
+    (|Omega_z5| > 1000), for which lalsimulation uses the NNLO angles."""
+    cases = precessing_cases(
+        "IMRPhenomXP", f_max_imr(0.3), lal_flags=dict(PhenomXPrecVersion=223)
+    )
+    msa_error = dict(
+        cases[0],
+        mass_1=5.223612204949848,
+        mass_2=3.7902144714569808,
+        spin_1=[0.28093860818235766, 0.48620119720341687, -0.09813236836152804],
+        spin_2=[-0.02328864377636709, -0.684967014257048, -0.6656211288407142],
+        f_min=20.0,
+        f_ref=59.33970557086933,
+    )
+    msa_error["f_max"] = f_max_imr(0.3)(msa_error["mass_1"] + msa_error["mass_2"])
+    uniform = [
+        dict(case, lal_flags=dict(PhenomXPrecVersion=223))
+        for case in uniform_precessing_cases()[1:3]
+    ]
+    return cases + [msa_error] + uniform
+
+
+def spintaylor_fallback_cases():
+    """IMRPhenomXP with the SpinTaylor angles (PrecVersion 320) for heavy
+    binaries where the PN integration does not reach f_min, so that
+    lalsimulation falls back to the MSA angles (223)."""
+    configs = [
+        # mass_1, mass_2, spin_1, spin_2, inclination, phi_ref, f_min, f_ref, delta_f
+        (180.0, 65.0, [0.2, 0.1, -0.1], [-0.1, -0.2, 0.1], 0.4, 0.3, 15.5, 15.5, 0.0),
+        (150.0, 100.0, [0.5, -0.3, 0.2], [-0.4, 0.4, 0.3], 1.3, 2.1, 20.0, 20.0, 0.0),
+        (165.0, 95.0, [-0.6, 0.2, 0.5], [0.3, 0.6, -0.2], 2.2, 4.4, 20.0, 22.0, 0.0),
+        (250.0, 30.0, [0.7, 0.3, -0.4], [0.0, -0.5, 0.5], 0.9, 5.9, 10.0, 25.0, 0.0),
+        (140.0, 135.0, [0.1, 0.8, 0.3], [0.6, -0.1, -0.6], 1.7, 0.8, 15.0, 15.0, 0.0),
+        (100.0, 60.0, [-0.3, -0.7, -0.5], [0.2, 0.2, 0.7], 2.8, 3.6, 20.0, 50.0, 0.0),
+        (200.0, 70.0, [0.4, -0.6, 0.1], [-0.5, 0.0, -0.4], 0.6, 1.4, 20.0, 20.0, 0.25),
+        (130.0, 90.0, [0.0, 0.5, -0.6], [0.4, 0.4, 0.2], 1.1, 2.7, 15.0, 30.0, 0.125),
+    ]
+    cases = list()
+    for m1, m2, s1, s2, iota, phi, fmin, fref, df in configs:
+        case = dict(
+            approximant="IMRPhenomXP",
+            mass_1=m1,
+            mass_2=m2,
+            spin_1=s1,
+            spin_2=s2,
+            luminosity_distance=1500.0,
+            inclination=iota,
+            phi_ref=phi,
+            f_min=fmin,
+            f_ref=fref,
+            f_max=f_max_imr(0.3)(m1 + m2),
+            lal_flags=dict(PhenomXPrecVersion=320),
+        )
+        if df > 0:
+            case.update(delta_f=df, f_max=0.0)
+        cases.append(case)
+    return cases
+
+
 def f_max_isco(total_mass):
     """Schwarzschild ISCO GW frequency, TaylorF2's default cutoff."""
     return 1.0 / (6.0**1.5 * np.pi * total_mass * lal.MTSUN_SI)
@@ -368,6 +434,8 @@ SUITES = dict(
         "IMRPhenomXP", f_max_imr(0.3), lal_flags=dict(PhenomXPrecVersion=320)
     ),
     imrphenomxp_uniform=uniform_precessing_cases,
+    imrphenomxp_msa=msa_cases,
+    imrphenomxp_spintaylor_fallback=spintaylor_fallback_cases,
     imrphenomxp_spintaylor_angles=spintaylor_angle_cases,
     imrphenomxphm_spintaylor=lambda: precessing_cases(
         "IMRPhenomXPHM",
