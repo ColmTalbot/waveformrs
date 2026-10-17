@@ -10,7 +10,6 @@ use num_complex::Complex;
 use crate::constants::{MPC_SI, MSUN_SI};
 use crate::imrphenomx::hm_internals::HMMode;
 use crate::imrphenomx::internals::{IMRPhenomXError, UsefulPowers, WaveformStruct};
-use crate::imrphenomx::libm;
 use crate::imrphenomx::phase::PhaseCoefficients;
 use crate::imrphenomx::wigner::SphericalHarmonics;
 use crate::imrphenomx::xas::IMRPhenomXAS;
@@ -261,7 +260,9 @@ impl IMRPhenomXHM {
 
         for (i, &f) in frequencies.iter().enumerate() {
             let mf = wf.m_sec * f;
-            let powers = UsefulPowers::fast(mf);
+            // The powers as LAL computes them: with these the phases of long
+            // inspirals (~1e6 rad) agree with LAL to the last bit.
+            let powers = UsefulPowers::new(mf);
             let h22 = xas.as_ref().map(|xas| xas.evaluate(f, mf, &powers));
             let mut hp = zero;
             let mut hc = zero;
@@ -274,7 +275,7 @@ impl IMRPhenomXHM {
                     continue;
                 }
                 let (amp, phi) = mode.amplitude_phase(&powers, h22);
-                let h = (amp0 * amp) * libm::cexp_i(phi);
+                let h = Complex::from_polar(amp0 * amp, phi);
                 hp += factor_plus * h;
                 hc += factor_cross * h;
             }
@@ -363,7 +364,7 @@ impl Xas22 {
             self.xas.h22_with_powers(mf22, powers, self.phif_ref)
         } else {
             self.xas
-                .h22_with_powers(mf22, &UsefulPowers::fast(mf22), self.phif_ref)
+                .h22_with_powers(mf22, &UsefulPowers::new(mf22), self.phif_ref)
         }
     }
 }
@@ -387,7 +388,6 @@ pub(crate) enum ModeGenerator {
     HigherMode { mode: Box<HMMode>, amp0: f64 },
 }
 
-#[allow(dead_code)] // used by the precessing models
 impl ModeGenerator {
     /// Set up mode (`ell`, `emm`), `emm > 0`, from the waveform variables
     /// `wf`. `phase22` must be `PhaseCoefficients::new(wf)` (the 22 phase
@@ -422,27 +422,8 @@ impl ModeGenerator {
                     return Complex::new(0.0, 0.0);
                 }
                 let (amp, phi) = mode.amplitude_phase(powers, None);
-                (amp0 * amp) * libm::cexp_i(phi)
+                Complex::from_polar(amp0 * amp, phi)
             }
-        }
-    }
-
-    /// As [`ModeGenerator::h`] for the (3,2) mode, recycling the (2,2) mode
-    /// `h22` (strain) in the ringdown as `IMRPhenomXHM_MultiMode2` does.
-    /// Other modes ignore `h22`.
-    #[inline]
-    pub(crate) fn h_recycle(
-        &self,
-        mf: f64,
-        powers: &UsefulPowers,
-        h22: Complex<f64>,
-    ) -> Complex<f64> {
-        match self {
-            Self::HigherMode { mode, amp0 } if mode.wfhm.mixing_on => {
-                let (amp, phi) = mode.amplitude_phase(powers, Some(h22));
-                (amp0 * amp) * libm::cexp_i(phi)
-            }
-            _ => self.h(mf, powers),
         }
     }
 }
@@ -450,7 +431,6 @@ impl ModeGenerator {
 /// `IMRPhenomXHMGenerateFDOneMode` (and `IMRPhenomXASGenerateFD` for the
 /// (2,2)) on a non-uniform grid: `h_{l,-m}(f)` at `frequencies` (Hz) for the
 /// waveform variables `wf`, zero above `wf.f_max_prime`.
-#[allow(dead_code)] // used by the precessing models
 pub(crate) fn generate_fd_one_mode(
     wf: &WaveformStruct,
     ell: u32,
@@ -465,7 +445,7 @@ pub(crate) fn generate_fd_one_mode(
         .map(|&f| {
             let mf = wf.m_sec * f;
             if mf <= mf_cut {
-                generator.h(mf, &UsefulPowers::fast(mf))
+                generator.h(mf, &UsefulPowers::new(mf))
             } else {
                 Complex::new(0.0, 0.0)
             }
