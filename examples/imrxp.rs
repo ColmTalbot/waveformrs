@@ -1,7 +1,8 @@
 //! Timing of IMRPhenomXP on a 0.25 Hz grid from 20 to 1500 Hz, for the
-//! SpinTaylor (PrecVersion 320) and NNLO (102) Euler angles.
+//! SpinTaylor (PrecVersion 320), MSA (223) and NNLO (102) Euler angles.
 //!
-//! Compare with lalsimulation (single thread, multibanding off):
+//! Compare with lalsimulation (single thread, `OMP_NUM_THREADS=1`,
+//! multibanding off), replacing 320 by the version of interest:
 //!
 //! ```python
 //! import lal, lalsimulation as ls, numpy as np, timeit
@@ -41,6 +42,7 @@ fn main() {
 
     for (name, version) in [
         ("SpinTaylor (320)", PrecessionVersion::SpinTaylor),
+        ("MSA (223)", PrecessionVersion::Msa),
         ("NNLO (102)", PrecessionVersion::Nnlo),
     ] {
         let model = IMRPhenomXP::with_version(&binary, version).unwrap();
