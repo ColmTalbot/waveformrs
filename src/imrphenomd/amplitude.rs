@@ -102,15 +102,18 @@ pub fn inspiral_amplitude(frequency: f64, prefactors: &AmplitudePrefactors) -> f
     inspiral_amplitude_from_speed(orbital_speed, prefactors)
 }
 
-/// Horner evaluation of sum_i pn_i v^i.
+/// sum_i pn_i v^i
 #[inline(always)]
 fn inspiral_amplitude_from_speed(orbital_speed: f64, prefactors: &AmplitudePrefactors) -> f64 {
-    let pn = &prefactors.pn.v;
-    let mut amplitude = pn[9];
-    for i in (0..9).rev() {
-        amplitude = amplitude * orbital_speed + pn[i];
-    }
-    amplitude
+    let a = &prefactors.pn.v;
+    let v = orbital_speed;
+    // Estrin's scheme for the degree-9 polynomial
+    let v2 = v * v;
+    let v4 = v2 * v2;
+    let p0 = a[0] + a[1] * v + (a[2] + a[3] * v) * v2;
+    let p1 = a[4] + a[5] * v + (a[6] + a[7] * v) * v2;
+    let p2 = a[8] + a[9] * v;
+    p0 + (p1 + p2 * v4) * v4
 }
 
 pub fn inspiral_amplitude_derivative(

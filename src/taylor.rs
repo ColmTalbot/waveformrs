@@ -78,6 +78,13 @@ impl TaylorF2 {
             phase_shift: 2.0 * phi_c + PI / 4.0 + self.reference_phase,
             power: SparsePolynomial::new(&self.phasing.v),
             log: SparsePolynomial::new(&self.phasing.vlogv),
+            point_particle: self.phasing.v[8..].iter().all(|&c| c == 0.0)
+                && self
+                    .phasing
+                    .vlogv
+                    .iter()
+                    .enumerate()
+                    .all(|(i, &c)| c == 0.0 || i == 5 || i == 6),
         }
     }
 }
@@ -142,6 +149,8 @@ struct Evaluator {
     phase_shift: f64,
     power: SparsePolynomial,
     log: SparsePolynomial,
+    /// Only the v^0..v^7 and v^5 log(v), v^6 log(v) terms are non-zero.
+    point_particle: bool,
 }
 
 impl Evaluator {
@@ -151,10 +160,21 @@ impl Evaluator {
         let v2 = v * v;
         let v3 = v2 * v;
         let inv_v5 = 1.0 / (v3 * v2);
-        let mut phasing = self.power.eval_over_v5(v, inv_v5);
-        if !self.log.is_zero {
-            phasing += self.log.eval_over_v5(v, inv_v5) * v.ln();
-        }
+        let mut phasing = if self.point_particle {
+            // Fast path for the default point-particle phasing (no tidal terms).
+            let a = &self.power.coefficients;
+            let b = &self.log.coefficients;
+            let v4 = v2 * v2;
+            let low = a[0] + a[1] * v + (a[2] + a[3] * v) * v2;
+            let high = a[4] + a[5] * v + (a[6] + a[7] * v) * v2;
+            (low + high * v4) * inv_v5 + (b[5] + b[6] * v) * v.ln()
+        } else {
+            let mut phasing = self.power.eval_over_v5(v, inv_v5);
+            if !self.log.is_zero {
+                phasing += self.log.eval_over_v5(v, inv_v5) * v.ln();
+            }
+            phasing
+        };
         phasing -= self.phase_shift;
         // v^(-7/2) = v^-5 * v^(3/2)
         let amplitude = self.amplitude * inv_v5 * v * v.sqrt();

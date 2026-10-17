@@ -114,12 +114,14 @@ fn inspiral_phase_from_speed(orbital_speed: f64, prefactors: &PNPhasing) -> f64 
     let v = orbital_speed;
     let logv = v.ln();
     let a = &prefactors.v;
-    let mut phasing = a[12];
-    for ii in (0..12).rev() {
-        phasing = phasing * v + a[ii];
-    }
+    // Estrin's scheme for the degree-12 polynomial
     let v2 = v * v;
-    phasing /= v2 * v2 * v;
+    let v4 = v2 * v2;
+    let v8 = v4 * v4;
+    let p0 = a[0] + a[1] * v + (a[2] + a[3] * v) * v2;
+    let p1 = a[4] + a[5] * v + (a[6] + a[7] * v) * v2;
+    let p2 = a[8] + a[9] * v + (a[10] + a[11] * v) * v2;
+    let phasing = (p0 + p1 * v4 + (p2 + a[12] * v4) * v8) / (v4 * v);
     phasing + (prefactors.vlogv[5] + prefactors.vlogv[6] * v) * logv
 }
 
