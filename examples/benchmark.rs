@@ -122,6 +122,21 @@ fn main() {
         });
     }
 
+    // Uniform grids as SimInspiralChooseFDWaveform evaluates them: from f_min
+    // in steps of delta_f, stopping at Mf = 0.3 (about 1015 Hz here).
+    let mtsun_si = 4.925490947641267e-6;
+    let f_cut = 0.3 / (total_mass * mtsun_si);
+    let uniform: Vec<f64> = freqs.iter().copied().filter(|&f| f <= f_cut).collect();
+    run("IMRPhenomXHM (uniform)", &mut || {
+        let wf = IMRPhenomXHM::new(total_mass, mass_ratio, chi_1, chi_2, distance)
+            .with_reference_frequency(f_ref);
+        black_box(wf.polarizations(black_box(&uniform), phi_ref, inclination));
+    });
+    run("IMRPhenomXPHM (320) (uniform)", &mut || {
+        let wf = IMRPhenomXPHM::with_version(&binary, PrecessionVersion::SpinTaylor).unwrap();
+        black_box(wf.polarizations_uniform(0.25, 20.0, 1500.0).unwrap());
+    });
+
     if json {
         let entries: Vec<String> = results
             .iter()

@@ -49,10 +49,21 @@ CASES = {
         dict(PhenomXPrecVersion=320, **NO_MULTIBANDING),
     ),
 }
-# Default multibanding only applies on uniform grids (SimInspiralChooseFDWaveform).
-UNIFORM_MULTIBANDING = {
-    "IMRPhenomXHM": ("IMRPhenomXHM", ALIGNED, dict()),
-    "IMRPhenomXPHM (320)": ("IMRPhenomXPHM", PRECESSING, dict(PhenomXPrecVersion=320)),
+# Uniform grids (SimInspiralChooseFDWaveform, which stops at Mf = 0.3), with
+# multibanding off and with the default multibanding thresholds.
+UNIFORM = {
+    "IMRPhenomXHM (uniform)": ("IMRPhenomXHM", ALIGNED, NO_MULTIBANDING),
+    "IMRPhenomXHM (uniform, default multibanding)": ("IMRPhenomXHM", ALIGNED, dict()),
+    "IMRPhenomXPHM (320) (uniform)": (
+        "IMRPhenomXPHM",
+        PRECESSING,
+        dict(PhenomXPrecVersion=320, **NO_MULTIBANDING),
+    ),
+    "IMRPhenomXPHM (320) (uniform, default multibanding)": (
+        "IMRPhenomXPHM",
+        PRECESSING,
+        dict(PhenomXPrecVersion=320),
+    ),
 }
 
 
@@ -114,9 +125,7 @@ def rust_timings():
 def main():
     rust = rust_timings()
     lal_sequence = {name: best_time(sequence(*case)) for name, case in CASES.items()}
-    lal_uniform = {
-        name: best_time(uniform(*case)) for name, case in UNIFORM_MULTIBANDING.items()
-    }
+    lal_uniform = {name: best_time(uniform(*case)) for name, case in UNIFORM.items()}
     out = dict(
         lalsimulation_version=ls.__version__,
         n_frequencies=len(FREQUENCIES),
@@ -124,12 +133,12 @@ def main():
             "Best time per call (s), single thread. Rust: examples/benchmark.rs "
             "(construction + polarizations). LAL: SimInspiralChooseFDWaveformSequence "
             "on the same 5921 frequencies (multibanding off), and "
-            "SimInspiralChooseFDWaveform on the uniform 0.25 Hz grid with default "
-            "multibanding for the higher-mode models."
+            "SimInspiralChooseFDWaveform on the uniform 0.25 Hz grid (stops at Mf = 0.3) "
+            "with multibanding off and with the default thresholds."
         ),
         rust=rust,
         lal_sequence=lal_sequence,
-        lal_uniform_default_multibanding=lal_uniform,
+        lal_uniform=lal_uniform,
     )
     path = ROOT / "report" / "data" / "timings.json"
     path.write_text(json.dumps(out, indent=1))
@@ -139,7 +148,7 @@ def main():
         if t_lal is not None:
             print(f"{name:<24}{t_rust * 1e6:12.1f}{t_lal * 1e6:12.1f}{t_lal / t_rust:10.2f}")
     for name, t_lal in lal_uniform.items():
-        print(f"{name + ' (LAL MB, uniform)':<40}{t_lal * 1e6:12.1f}")
+        print(f"{name:<52} LAL {t_lal * 1e6:10.1f} us")
 
 
 if __name__ == "__main__":
