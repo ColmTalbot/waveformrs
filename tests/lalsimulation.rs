@@ -374,12 +374,13 @@ fn xphm_polarizations(
     version: PrecessionVersion,
 ) -> (Vec<common::C64>, Vec<common::C64>) {
     let model = IMRPhenomXPHM::with_version(&precessing_binary(case), version).unwrap();
-    match case.frequencies[0] {
-        // uniform grids start at zero frequency
-        f if f == 0.0 => model
+    // uniform grids start at zero frequency
+    if case.frequencies[0] == 0.0 {
+        model
             .polarizations_uniform(case.frequencies[1], case.f_min, case.f_max)
-            .unwrap(),
-        _ => model.polarizations(&case.frequencies).unwrap(),
+            .unwrap()
+    } else {
+        model.polarizations(&case.frequencies).unwrap()
     }
 }
 
