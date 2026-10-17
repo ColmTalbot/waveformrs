@@ -386,7 +386,38 @@ impl WaveformStruct {
         distance: f64,
         inclination: f64,
     ) -> Result<Self, IMRPhenomXError> {
-        if !(mass_1 > 0.0 && mass_2 > 0.0) {
+        Self::from_si(
+            mass_1 * MSUN_SI,
+            mass_2 * MSUN_SI,
+            chi1l_in,
+            chi2l_in,
+            delta_f,
+            f_ref,
+            phi0,
+            f_min,
+            f_max,
+            distance * MPC_SI,
+            inclination,
+        )
+    }
+
+    /// `IMRPhenomXSetWaveformVariables` with the arguments in the units LAL
+    /// receives them: masses in kg and the distance in m.
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn from_si(
+        m1_si_in: f64,
+        m2_si_in: f64,
+        chi1l_in: f64,
+        chi2l_in: f64,
+        delta_f: f64,
+        f_ref: f64,
+        phi0: f64,
+        f_min: f64,
+        f_max: f64,
+        distance: f64,
+        inclination: f64,
+    ) -> Result<Self, IMRPhenomXError> {
+        if !(m1_si_in > 0.0 && m2_si_in > 0.0) {
             return Err(IMRPhenomXError::NonPositiveMass);
         }
         if distance < 0.0 {
@@ -396,9 +427,9 @@ impl WaveformStruct {
             return Err(IMRPhenomXError::NegativeReferenceFrequency);
         }
 
-        // LAL receives the masses in kg and rescales to solar masses.
-        let m1_in = (mass_1 * MSUN_SI) / MSUN_SI;
-        let m2_in = (mass_2 * MSUN_SI) / MSUN_SI;
+        // Masses in solar masses.
+        let m1_in = m1_si_in / MSUN_SI;
+        let m2_in = m2_si_in / MSUN_SI;
 
         let mass_ratio = if m1_in > m2_in {
             m1_in / m2_in
@@ -465,8 +496,6 @@ impl WaveformStruct {
         if f_max_prime > f_cut {
             f_max_prime = f_cut;
         }
-
-        let distance = distance * MPC_SI;
 
         let mut wf = Self {
             m1_si,

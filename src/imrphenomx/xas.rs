@@ -8,7 +8,7 @@ use std::f64::consts::{FRAC_PI_4, PI};
 use num_complex::Complex;
 
 use crate::imrphenomx::amplitude::AmpCoefficients;
-use crate::imrphenomx::internals::{IMRPhenomXError, UsefulPowers, WaveformStruct};
+use crate::imrphenomx::internals::{fma, IMRPhenomXError, UsefulPowers, WaveformStruct};
 use crate::imrphenomx::phase::{
     phase_22, phase_22_connection_coefficients, time_shift_22, PhaseCoefficients,
 };
@@ -188,10 +188,12 @@ impl IMRPhenomXAS {
         self.wf.m_tot
     }
 
-    /// `-(phi22(MfRef) / eta + linb MfRef + lina)`.
+    /// `-(phi22(MfRef) / eta + linb MfRef + lina)`, evaluated as in
+    /// `IMRPhenomXASGenerateFD`.
     fn reference_phase_shift(&self, mf_ref: f64) -> f64 {
         let powers = UsefulPowers::new(mf_ref);
-        -(self.inveta * phase_22(mf_ref, &powers, &self.phase22) + self.linb * mf_ref + self.lina)
+        let phi = self.inveta * phase_22(mf_ref, &powers, &self.phase22);
+        -(fma(self.linb, mf_ref, phi) + self.lina)
     }
 
     /// `phifRef` for the orbital phase `phi0 = phi_c / 2`: the phase offset
@@ -220,14 +222,25 @@ impl IMRPhenomXAS {
     #[inline]
     pub(crate) fn h22(&self, mf: f64, phif_ref: f64, mf_cut: f64) -> Complex<f64> {
         if mf <= mf_cut {
-            let powers = UsefulPowers::fast(mf);
-            let phi = self.phase_22_full(mf, &powers, phif_ref);
-            let amp = self.amplitude_22_full(mf, &powers);
-            let (sin, cos) = phi.sin_cos();
-            Complex::new(amp * cos, amp * sin)
+            self.h22_with_powers(mf, &UsefulPowers::fast(mf), phif_ref)
         } else {
             Complex::new(0.0, 0.0)
         }
+    }
+
+    /// The (2,2) mode at `mf` for precomputed powers of `mf`, without the
+    /// cutoff.
+    #[inline]
+    pub(crate) fn h22_with_powers(
+        &self,
+        mf: f64,
+        powers: &UsefulPowers,
+        phif_ref: f64,
+    ) -> Complex<f64> {
+        let phi = self.phase_22_full(mf, powers, phif_ref);
+        let amp = self.amplitude_22_full(mf, powers);
+        let (sin, cos) = phi.sin_cos();
+        Complex::new(amp * cos, amp * sin)
     }
 }
 

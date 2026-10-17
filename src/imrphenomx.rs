@@ -21,11 +21,24 @@
 //! | `precession`   | `LALSimIMRPhenomX_precession.c` (precession struct, J frame, NNLO angles) |
 //! | `spintaylor_angles` | `LALSimIMRPhenomX_precession.c` (SpinTaylor Euler angles) |
 //! | `wigner`       | Wigner-d matrices and twisting up, spherical harmonics |
+//! | `xhm`          | `LALSimIMRPhenomXHM.c` (IMRPhenomXHM driver, mode sum) |
+//! | `hm_internals` | `LALSimIMRPhenomXHM_internals.c` (mode struct, coefficients) |
+//! | `hm_inspiral`  | `LALSimIMRPhenomXHM_inspiral.c`                        |
+//! | `hm_intermediate` | `LALSimIMRPhenomXHM_intermediate.c`                 |
+//! | `hm_ringdown`  | `LALSimIMRPhenomXHM_ringdown.c`                        |
+//! | `hm_qnm`       | `LALSimIMRPhenomXHM_qnm.c`                             |
+//! | `libm`         | the C library's `cexp`                                 |
 
 mod amplitude;
+mod hm_inspiral;
+mod hm_intermediate;
+mod hm_internals;
+mod hm_qnm;
+mod hm_ringdown;
 mod inspiral;
 mod intermediate;
 mod internals;
+mod libm;
 mod linalg;
 mod phase;
 mod precession;
@@ -35,6 +48,7 @@ mod spintaylor_angles;
 mod utilities;
 mod wigner;
 mod xas;
+mod xhm;
 mod xp;
 
 pub use internals::IMRPhenomXError;
@@ -42,3 +56,4 @@ pub use precession::{PrecessingBinary, PrecessionVersion};
 pub use spintaylor_angles::EulerAngles;
 pub use xas::IMRPhenomXAS;
 pub use xp::{IMRPhenomXP, Polarizations};
+pub use xhm::{IMRPhenomXHM, IMRPHENOMXHM_MODES};
