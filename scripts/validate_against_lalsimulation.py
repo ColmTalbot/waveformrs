@@ -13,8 +13,22 @@ Usage
         --approximants TaylorF2 IMRPhenomD --n-draws 200 --outdir report/data
 
 The Rust side is driven through ``cargo run --release --example lal_validation``.
+
+``OMP_NUM_THREADS=1`` is required for reproducible MSA angles (IMRPhenomXP
+with PrecVersion 223, and the SpinTaylor angles where they fall back to MSA):
+lalsimulation evaluates them inside an OpenMP loop that races on shared
+state.
+
+When the SpinTaylor integration fails through an ``XLAL_ERROR``, the C
+waveform drivers fall back to the MSA angles and return success, but leave
+``xlalErrno`` set, so the Python wrappers raise "Internal function call
+failed". For such cases (identified by lalsimulation's fallback warning) the
+reference is the PrecVersion 223 waveform, which the C-level fallback
+reproduces bit for bit; they are counted as ``n_lal_errno_fallback``.
 """
 import argparse
+import contextlib
+import io
 import json
 import subprocess
 import time
@@ -26,7 +40,7 @@ import numpy as np
 
 ROOT = Path(__file__).resolve().parent.parent
 
-PRECESSING = {"IMRPhenomXP", "IMRPhenomXP_NNLO", "IMRPhenomXPHM"}
+PRECESSING = {"IMRPhenomXP", "IMRPhenomXP_NNLO", "IMRPhenomXP_MSA", "IMRPhenomXPHM"}
 
 # Approximant -> (dimensionless cutoff frequency, extra lal flags, max mass
 # ratio, optionally the lalsimulation approximant if the name differs)
@@ -43,6 +57,12 @@ SETTINGS = dict(
     IMRPhenomXP_NNLO=dict(
         mf_max=0.3,
         flags=dict(PhenomXPrecVersion=102),
+        q_min=1 / 20,
+        lal_approximant="IMRPhenomXP",
+    ),
+    IMRPhenomXP_MSA=dict(
+        mf_max=0.3,
+        flags=dict(PhenomXPrecVersion=223),
         q_min=1 / 20,
         lal_approximant="IMRPhenomXP",
     ),
@@ -112,11 +132,29 @@ def draw(approximant, rng, delta_f, f_high):
     )
 
 
-def lal_waveform(case):
+def reports_msa_fallback(call):
+    """Rerun a failed lalsimulation call capturing its XLAL warnings: whether
+    it fell back from the SpinTaylor to the MSA angles."""
+    level = lal.GetDebugLevel()
+    lal.ClobberDebugLevel(level | lal.LALWARNING)
+    redirect = lal.swig_redirect_standard_output_error(True)
+    buffer = io.StringIO()
+    try:
+        with contextlib.redirect_stderr(buffer), contextlib.redirect_stdout(buffer):
+            call()
+    except RuntimeError:
+        pass
+    finally:
+        lal.swig_redirect_standard_output_error(redirect)
+        lal.ClobberDebugLevel(level)
+    return "default to MSA angles" in buffer.getvalue()
+
+
+def lal_waveform(case, flags=None):
     settings = SETTINGS[case["approximant"]]
     frequencies = lal.CreateREAL8Vector(len(case["frequencies"]))
     frequencies.data = case["frequencies"]
-    params = lal_dict(settings["flags"])
+    params = lal_dict(settings["flags"] if flags is None else flags)
     approximant = lalsim.GetApproximantFromString(
         settings.get("lal_approximant", case["approximant"])
     )
@@ -139,6 +177,14 @@ def lal_waveform(case):
     try:
         hplus, hcross = call()
     except RuntimeError as error:
+        version = settings["flags"].get("PhenomXPrecVersion")
+        if flags is None and version == 320 and reports_msa_fallback(call):
+            hp, hc, timing = lal_waveform(
+                case, flags=dict(settings["flags"], PhenomXPrecVersion=223)
+            )
+            if hp is not None:
+                case["lal_errno_fallback"] = True
+            return hp, hc, timing
         return None, None, str(error)
     timings = list()
     for _ in range(5):
@@ -219,6 +265,7 @@ def main():
         failures = list()
         for case, (hp_rs, hc_rs, t_rs, error) in zip(cases, rust):
             hp_lal, hc_lal, t_lal = lal_waveform(case)
+            errno_fallback = case.pop("lal_errno_fallback", False)
             if error is not None or hp_lal is None:
                 # Cases where lalsimulation silently falls back to angles that
                 # are not implemented here (or either code raises an error).
@@ -249,6 +296,7 @@ def main():
                     max_rel_err_cross=max_relative_error(hc_rs, hc_lal),
                     time_rust=t_rs,
                     time_lal=t_lal,
+                    lal_errno_fallback=errno_fallback,
                 )
             )
         mismatches = np.array(
@@ -263,6 +311,7 @@ def main():
             lalsimulation_version=lalsim.__version__,
             n_draws=len(records) + len(failures),
             n_compared=len(records),
+            n_lal_errno_fallback=sum(r["lal_errno_fallback"] for r in records),
             failures=failures,
             max_mismatch=float(mismatches.max()),
             median_mismatch=float(np.median(mismatches)),
@@ -277,7 +326,8 @@ def main():
             f"{approximant:>14}: max mismatch {mismatches.max():.2e}, "
             f"median {np.median(mismatches):.2e}, max rel err {errors.max():.2e}, "
             f"median speed-up x{np.median(speedup):.2f}, "
-            f"{len(failures)} not compared"
+            f"{len(failures)} not compared, "
+            f"{summary['n_lal_errno_fallback']} via the 223 reference"
         )
 
 

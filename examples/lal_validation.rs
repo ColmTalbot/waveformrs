@@ -13,7 +13,8 @@
 //!          "error": null | "..."}, ...]}
 //!
 //! Precessing approximants are `IMRPhenomXP` (SpinTaylor angles,
-//! `PhenomXPrecVersion` 320) and `IMRPhenomXP_NNLO` (102).
+//! `PhenomXPrecVersion` 320), `IMRPhenomXP_NNLO` (102) and
+//! `IMRPhenomXP_MSA` (223).
 use std::io::Read;
 use std::time::Instant;
 
@@ -119,6 +120,7 @@ fn generate(case: &Case) -> Result<Polarizations, String> {
         .polarizations(&case.frequencies, case.phi_ref, case.inclination),
         "IMRPhenomXP" => precessing(case, PrecessionVersion::SpinTaylor)?,
         "IMRPhenomXP_NNLO" => precessing(case, PrecessionVersion::Nnlo)?,
+        "IMRPhenomXP_MSA" => precessing(case, PrecessionVersion::Msa)?,
         other => panic!("unsupported approximant {other}"),
     })
 }
