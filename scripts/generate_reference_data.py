@@ -414,6 +414,54 @@ def spintaylor_fallback_cases():
     return cases
 
 
+def xphm_msa_cases():
+    """IMRPhenomXPHM with the MSA angles (PrecVersion 223), multibanding off,
+    on non-uniform and uniform grids, including the binary whose MSA system
+    fails to initialise (lalsimulation then uses the NNLO angles)."""
+    flags = dict(PhenomXPrecVersion=223, **NO_MULTIBANDING)
+    cases = [
+        dict(case, approximant="IMRPhenomXPHM", lal_flags=flags)
+        for case in msa_cases()
+    ]
+    return cases
+
+
+def xphm_spintaylor_fallback_cases():
+    """IMRPhenomXPHM with the SpinTaylor angles (PrecVersion 320, multibanding
+    off) for heavy binaries where lalsimulation falls back to the MSA angles."""
+    configs = [
+        # mass_1, mass_2, spin_1, spin_2, f_min, f_ref, delta_f
+        (163.5, 132.1, [0.32, -0.49, -0.14], [-0.46, -0.34, -0.31], 20.0, 25.1, 0.0),
+        (128.3, 102.2, [-0.12, -0.53, 0.03], [-0.32, 0.27, -0.12], 20.0, 35.7, 0.0),
+        (124.8, 87.5, [0.42, 0.55, -0.39], [0.04, 0.42, -0.49], 20.0, 27.0, 0.0),
+        (136.4, 88.5, [0.07, -0.34, 0.0], [0.47, 0.45, -0.53], 20.0, 33.1, 0.0),
+        (143.8, 43.2, [0.17, -0.5, -0.28], [-0.22, -0.27, 0.25], 20.0, 56.2, 0.0),
+        (186.9, 68.2, [-0.19, -0.41, -0.28], [0.12, 0.25, -0.22], 15.0, 43.8, 0.0),
+        (139.8, 22.9, [0.29, 0.0, -0.08], [0.15, 0.29, -0.47], 15.0, 43.7, 1.0),
+        (81.2, 77.2, [0.31, -0.14, -0.34], [0.4, 0.32, 0.19], 20.0, 59.1, 0.5),
+    ]
+    cases = list()
+    for m1, m2, s1, s2, fmin, fref, df in configs:
+        case = dict(
+            approximant="IMRPhenomXPHM",
+            mass_1=m1,
+            mass_2=m2,
+            spin_1=s1,
+            spin_2=s2,
+            luminosity_distance=1000.0,
+            inclination=1.0,
+            phi_ref=0.5,
+            f_min=fmin,
+            f_ref=fref,
+            f_max=f_max_imr(0.3)(m1 + m2),
+            lal_flags=dict(PhenomXPrecVersion=320, **NO_MULTIBANDING),
+        )
+        if df > 0:
+            case.update(delta_f=df, f_max=0.0)
+        cases.append(case)
+    return cases
+
+
 def f_max_isco(total_mass):
     """Schwarzschild ISCO GW frequency, TaylorF2's default cutoff."""
     return 1.0 / (6.0**1.5 * np.pi * total_mass * lal.MTSUN_SI)
@@ -503,6 +551,8 @@ SUITES = dict(
         extra=[(30.0, 30.0, [0.5, 0.5, 0.5], [0.5, -0.5, -0.5], 20.0, 30.0, 1.0, 512.0, 320)],
     ),
     imrphenomxphm_modes=xphm_mode_array_cases,
+    imrphenomxphm_msa=xphm_msa_cases,
+    imrphenomxphm_spintaylor_fallback=xphm_spintaylor_fallback_cases,
 )
 
 

@@ -368,3 +368,40 @@ fn imrphenomxphm_mode_arrays_match_lalsimulation() {
         model.polarizations(&case.frequencies).unwrap()
     });
 }
+
+fn xphm_polarizations(
+    case: &common::Case,
+    version: PrecessionVersion,
+) -> (Vec<common::C64>, Vec<common::C64>) {
+    let model = IMRPhenomXPHM::with_version(&precessing_binary(case), version).unwrap();
+    match case.frequencies[0] {
+        // uniform grids start at zero frequency
+        f if f == 0.0 => model
+            .polarizations_uniform(case.frequencies[1], case.f_min, case.f_max)
+            .unwrap(),
+        _ => model.polarizations(&case.frequencies).unwrap(),
+    }
+}
+
+#[test]
+fn imrphenomxphm_msa_matches_lalsimulation() {
+    common::check_all("imrphenomxphm_msa", 1e-9, 1e-12, |case| {
+        xphm_polarizations(case, PrecessionVersion::Msa)
+    });
+}
+
+/// Heavy binaries for which the SpinTaylor integration does not provide the
+/// angles and lalsimulation falls back to the MSA angles.
+#[test]
+fn imrphenomxphm_spintaylor_fallback_matches_lalsimulation() {
+    common::check_all("imrphenomxphm_spintaylor_fallback", 1e-9, 1e-12, |case| {
+        let result = xphm_polarizations(case, PrecessionVersion::SpinTaylor);
+        assert_eq!(
+            result,
+            xphm_polarizations(case, PrecessionVersion::Msa),
+            "no fallback for {}",
+            case.label()
+        );
+        result
+    });
+}
