@@ -32,6 +32,9 @@ pub struct Case {
     pub hplus_imag: Vec<f64>,
     pub hcross_real: Vec<f64>,
     pub hcross_imag: Vec<f64>,
+    /// Waveform flags inserted in the LALDict (e.g. `PhenomXPrecVersion`).
+    #[serde(default)]
+    pub lal_flags: std::collections::HashMap<String, f64>,
 }
 
 impl Case {
