@@ -491,20 +491,6 @@ pub(crate) fn phase_22_d54(eta: f64, s: f64, dchi: f64, delta: f64) -> f64 {
     no_spin + eq_spin + uneq_spin
 }
 
-/// `IMRPhenomX_Ringdown_Phase_22_AnsatzInt` (RDPhaseVersion 105): phase in
-/// the merger-ringdown (to be scaled by 1/eta).
-#[inline]
-pub(crate) fn phase_22_ansatz_int(
-    mf: f64,
-    powers: &UsefulPowers,
-    phase: &PhaseCoefficients,
-) -> f64 {
-    phase.c0 * mf + phase.c1_3ov2 * powers.two_thirds
-        - phase.c2 * powers.m_one
-        - phase.c4_ov3 * powers.m_three
-        + phase.c_l_ov_fda * ((mf - phase.f_ring) * phase.inv_f_damp).atan()
-}
-
 /// `IMRPhenomX_Ringdown_Phase_22_Ansatz` evaluated operation by operation
 /// as in LALSimulation (including its fused multiply-adds), for the
 /// coefficient computations that must agree with LAL to the last bit.
@@ -522,7 +508,9 @@ pub(crate) fn phase_22_ansatz_exact(
 }
 
 /// `IMRPhenomX_Ringdown_Phase_22_AnsatzInt` evaluated operation by
-/// operation as in LALSimulation, see [`phase_22_ansatz_exact`].
+/// operation as in LALSimulation, see [`phase_22_ansatz_exact`]; also
+/// used for the phase at each frequency.
+#[inline]
 pub(crate) fn phase_22_ansatz_int_exact(
     mf: f64,
     powers: &UsefulPowers,

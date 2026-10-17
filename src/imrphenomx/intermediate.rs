@@ -685,21 +685,6 @@ pub(crate) fn phase_22_d43(eta: f64, s: f64, dchi: f64, delta: f64) -> f64 {
     no_spin + eq_spin + uneq_spin
 }
 
-/// `IMRPhenomX_Intermediate_Phase_22_AnsatzInt` (IntPhaseVersion 105):
-/// phase in the intermediate region (to be scaled by 1/eta).
-#[inline]
-pub(crate) fn phase_22_ansatz_int(
-    mf: f64,
-    powers: &UsefulPowers,
-    phase: &PhaseCoefficients,
-) -> f64 {
-    phase.b0 * mf + phase.b1 * powers.log
-        - phase.b2 * powers.m_one
-        - phase.b3_ov2 * powers.m_two
-        - phase.b4_ov3 * powers.m_three
-        + phase.int_atan_prefactor * ((mf - phase.f_ring) * phase.inv_2_f_damp).atan()
-}
-
 /// `IMRPhenomX_Intermediate_Phase_22_Ansatz` evaluated operation by
 /// operation as in LALSimulation (including its fused multiply-adds), for
 /// the coefficient computations that must agree with LAL to the last bit.
@@ -719,7 +704,9 @@ pub(crate) fn phase_22_ansatz_exact(
 }
 
 /// `IMRPhenomX_Intermediate_Phase_22_AnsatzInt` evaluated operation by
-/// operation as in LALSimulation, see [`phase_22_ansatz_exact`].
+/// operation as in LALSimulation, see [`phase_22_ansatz_exact`]; also
+/// used for the phase at each frequency.
+#[inline]
 pub(crate) fn phase_22_ansatz_int_exact(
     mf: f64,
     powers: &UsefulPowers,

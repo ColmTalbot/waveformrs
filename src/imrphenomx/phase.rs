@@ -608,14 +608,19 @@ impl PhaseCoefficients {
     /// Phase (without the 1/eta scaling and linear terms) using the region
     /// boundaries of `IMRPhenomXASGenerateFD`: `mf < fPhaseMatchIN` is
     /// inspiral, `mf > fPhaseMatchIM` ringdown, intermediate otherwise.
+    /// Evaluated operation by operation as in LALSimulation (including its
+    /// fused multiply-adds) so that long inspirals, with phases of order
+    /// 1e6 rad, agree to the last bit.
     #[inline]
     pub(crate) fn phase_xas(&self, mf: f64, powers: &UsefulPowers) -> f64 {
         if mf < self.f_phase_match_in {
-            inspiral::phase_22_ansatz_int(mf, powers, self)
+            inspiral::phase_22_ansatz_int_exact(mf, powers, self)
         } else if mf > self.f_phase_match_im {
-            ringdown::phase_22_ansatz_int(mf, powers, self) + self.c1_mrd + self.c2_mrd * mf
+            let phi = ringdown::phase_22_ansatz_int_exact(mf, powers, self);
+            fma(self.c2_mrd, mf, phi + self.c1_mrd)
         } else {
-            intermediate::phase_22_ansatz_int(mf, powers, self) + self.c1_int + self.c2_int * mf
+            let phi = intermediate::phase_22_ansatz_int_exact(mf, powers, self);
+            fma(self.c2_int, mf, phi + self.c1_int)
         }
     }
 }

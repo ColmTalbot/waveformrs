@@ -628,38 +628,6 @@ pub(crate) fn phase_22_d43(eta: f64, s: f64, dchi: f64, delta: f64) -> f64 {
     no_spin + eq_spin + uneq_spin
 }
 
-/// `IMRPhenomX_Inspiral_Phase_22_AnsatzInt`: inspiral phase, TaylorF2 plus
-/// pseudo-PN terms (to be scaled by 1/eta).
-///
-/// Terms whose coefficients vanish for the default (GR, version 104) model
-/// (`phi_minus2`, `phi_minus1`, `phi1`, `phi5`, `phi9`, `phi9L`, `sigma5`)
-/// are omitted.
-#[inline]
-pub(crate) fn phase_22_ansatz_int(
-    mf: f64,
-    powers: &UsefulPowers,
-    phase: &PhaseCoefficients,
-) -> f64 {
-    let mut phasing = phase.phi0; // f^{-5/3}, Newtonian
-    phasing += phase.phi2 * powers.two_thirds; // 1.0PN
-    phasing += phase.phi3 * mf; // 1.5PN
-    phasing += phase.phi4 * powers.four_thirds; // 2.0PN
-    phasing += phase.phi5l * powers.five_thirds * powers.log; // 2.5PN, log
-    phasing += phase.phi6 * powers.two; // 3.0PN
-    phasing += phase.phi6l * powers.two * powers.log; // 3.0PN, log
-    phasing += phase.phi7 * powers.seven_thirds; // 3.5PN
-    phasing += phase.phi8 * powers.eight_thirds; // 4.0PN
-    phasing += phase.phi8l * powers.eight_thirds * powers.log; // 4.0PN, log
-
-    // Pseudo-PN coefficients
-    phasing += phase.sigma1 * powers.eight_thirds
-        + phase.sigma2 * powers.three
-        + phase.sigma3 * powers.one_third * powers.three
-        + phase.sigma4 * powers.two_thirds * powers.three;
-
-    phasing * phase.phi_norm * powers.m_five_thirds
-}
-
 /// Leading-order normalisation of the inspiral phase derivative,
 /// 5 / (128 pi^(5/3)) with pi^(5/3) as in `powers_of_lalpi`.
 pub(crate) fn inspiral_dphase_norm() -> f64 {
@@ -694,7 +662,9 @@ pub(crate) fn phase_22_ansatz_exact(
 }
 
 /// `IMRPhenomX_Inspiral_Phase_22_AnsatzInt` evaluated operation by
-/// operation as in LALSimulation, see [`phase_22_ansatz_exact`].
+/// operation as in LALSimulation, see [`phase_22_ansatz_exact`]; also
+/// used for the phase at each frequency.
+#[inline]
 pub(crate) fn phase_22_ansatz_int_exact(
     mf: f64,
     powers: &UsefulPowers,

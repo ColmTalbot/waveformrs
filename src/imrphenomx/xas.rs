@@ -208,7 +208,7 @@ impl IMRPhenomXAS {
     #[inline]
     pub(crate) fn phase_22_full(&self, mf: f64, powers: &UsefulPowers, phif_ref: f64) -> f64 {
         let phi = self.phase22.phase_xas(mf, powers) * self.inveta;
-        phi + (self.linb * mf + self.lina + phif_ref)
+        phi + (fma(self.linb, mf, self.lina) + phif_ref)
     }
 
     /// The (2,2) amplitude `amp0 ampNorm f^(-7/6) A(f)` (strain units).
