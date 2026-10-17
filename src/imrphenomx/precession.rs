@@ -687,20 +687,9 @@ impl PrecessionStruct {
                 let logomega_ref = omega_ref.ln();
                 let omega_ref_cbrt = omega_ref.cbrt();
                 let omega_ref_cbrt2 = omega_ref_cbrt * omega_ref_cbrt;
-                (
-                    nnlo.alpha1 / omega_ref
-                        + nnlo.alpha2 / omega_ref_cbrt2
-                        + nnlo.alpha3 / omega_ref_cbrt
-                        + nnlo.alpha4l * logomega_ref
-                        + nnlo.alpha5 * omega_ref_cbrt
-                        - alpha0,
-                    nnlo.epsilon1 / omega_ref
-                        + nnlo.epsilon2 / omega_ref_cbrt2
-                        + nnlo.epsilon3 / omega_ref_cbrt
-                        + nnlo.epsilon4l * logomega_ref
-                        + nnlo.epsilon5 * omega_ref_cbrt
-                        - epsilon0,
-                )
+                let (alpha, epsilon) =
+                    nnlo.evaluate(omega_ref, logomega_ref, omega_ref_cbrt, omega_ref_cbrt2);
+                (alpha - alpha0, epsilon - epsilon0)
             }
         };
 
@@ -754,19 +743,9 @@ impl PrecessionStruct {
         let logomega = omega.ln();
         let omega_cbrt = omega.cbrt();
         let omega_cbrt2 = omega_cbrt * omega_cbrt;
-        let c = &self.nnlo;
-        let alpha = c.alpha1 / omega
-            + c.alpha2 / omega_cbrt2
-            + c.alpha3 / omega_cbrt
-            + c.alpha4l * logomega
-            + c.alpha5 * omega_cbrt
-            - self.alpha_offset;
-        let epsilon = c.epsilon1 / omega
-            + c.epsilon2 / omega_cbrt2
-            + c.epsilon3 / omega_cbrt
-            + c.epsilon4l * logomega
-            + c.epsilon5 * omega_cbrt
-            - self.epsilon_offset;
+        let (alpha, epsilon) = self.nnlo.evaluate(omega, logomega, omega_cbrt, omega_cbrt2);
+        let alpha = alpha - self.alpha_offset;
+        let epsilon = epsilon - self.epsilon_offset;
         let v = omega_cbrt;
         let l = self.l.ansatz_3pn(v, eta / v);
         // The sign of L + SL is ignored in s := Sp / (L + SL).
@@ -792,6 +771,34 @@ impl PrecessionStruct {
             angles.zeta - self.epsilon_offset,
             angles.cos_theta_l,
         )
+    }
+}
+
+impl NnloCoefficients {
+    /// The NNLO sums `alpha1 / omega + ... + alpha5 omega^(1/3)` (and the
+    /// same for epsilon) before the offsets, with the products contracted
+    /// into fused multiply-adds as in LAL's arm64 build.
+    #[inline]
+    fn evaluate(&self, omega: f64, logomega: f64, omega_cbrt: f64, omega_cbrt2: f64) -> (f64, f64) {
+        let alpha = fma(
+            self.alpha5,
+            omega_cbrt,
+            fma(
+                self.alpha4l,
+                logomega,
+                self.alpha1 / omega + self.alpha2 / omega_cbrt2 + self.alpha3 / omega_cbrt,
+            ),
+        );
+        let epsilon = fma(
+            self.epsilon5,
+            omega_cbrt,
+            fma(
+                self.epsilon4l,
+                logomega,
+                self.epsilon1 / omega + self.epsilon2 / omega_cbrt2 + self.epsilon3 / omega_cbrt,
+            ),
+        );
+        (alpha, epsilon)
     }
 }
 
@@ -825,9 +832,12 @@ fn nnlo_coefficients(
 
     let alpha1 = -35. / 192. + (5. * delta) / (64. * m1);
     let alpha2 = ((15. * chil * delta * m1) / 128. - (35. * chil * m1_2) / 128.) / eta;
-    let alpha3 = -5515. / 3072.
-        + eta * (-515. / 384. - (15. * delta2) / (256. * m1_2) + (175. * delta) / (256. * m1))
-        + (4555. * delta) / (7168. * m1)
+    // -5515/3072 + eta * (...) is contracted to a fused multiply-add
+    let alpha3 = fma(
+        eta,
+        -515. / 384. - (15. * delta2) / (256. * m1_2) + (175. * delta) / (256. * m1),
+        -5515. / 3072.,
+    ) + (4555. * delta) / (7168. * m1)
         + ((15. * chip2 * delta * m1_3) / 128. - (35. * chip2 * m1_4) / 128.) / eta2;
     let alpha4l = (5. * chil * delta2) / 16. - (5. * chil * delta * m1) / 3.
         + (2545. * chil * m1_2) / 1152.
@@ -835,53 +845,66 @@ fn nnlo_coefficients(
         + ((5. * chil * chip2 * delta * m1_5) / 128. - (35. * chil * chip2 * m1_6) / 384.) / eta3
         - (35. * PI) / 48.
         + (5. * delta * PI) / (16. * m1);
-    let alpha5 = (5.
-        * (-190512. * delta3 * eta6
-            + 2268.
-                * delta2
-                * eta3
-                * m1
-                * (eta2 * (323. + 784. * eta) + 336. * (25. * chil2 + chip2) * m1_4)
-            + 7. * m1_3
-                * (8024297. * eta4
-                    + 857412. * eta5
-                    + 3080448. * eta6
-                    + 143640. * chip2 * eta2 * m1_4
-                    - 127008. * chip2 * (-4. * chil2 + chip2) * m1_8
-                    + 6048.
-                        * eta3
-                        * ((2632. * chil2 + 115. * chip2) * m1_4 - 672. * chil * m1_2 * PI))
-            + 3. * delta
-                * m1_2
-                * (-5579177. * eta4 + 80136. * eta5 - 3845520. * eta6
-                    + 146664. * chip2 * eta2 * m1_4
-                    + 127008. * chip2 * (-4. * chil2 + chip2) * m1_8
-                    - 42336.
-                        * eta3
-                        * ((726. * chil2 + 29. * chip2) * m1_4 - 96. * chil * m1_2 * PI))))
-        / (6.5028096e7 * eta4 * m1_3);
+    // alpha5 and epsilon5 with the fused multiply-adds of LAL's build.
+    let b_in = fma(
+        eta2,
+        fma(784., eta, 323.),
+        336. * fma(25., chil2, chip2) * m1_4,
+    );
+    let mut c_in = fma(8024297., eta4, 857412. * eta5);
+    c_in = fma(3080448., eta6, c_in);
+    c_in = fma(143640. * chip2 * eta2, m1_4, c_in);
+    c_in = fnms(127008. * chip2 * fma(-4., chil2, chip2), m1_8, c_in);
+    c_in = fma(
+        6048. * eta3,
+        fms(
+            fma(2632., chil2, 115. * chip2),
+            m1_4,
+            672. * chil * m1_2 * PI,
+        ),
+        c_in,
+    );
+    let mut d_in = fma(-5579177., eta4, 80136. * eta5);
+    d_in = fnms(3845520., eta6, d_in);
+    d_in = fma(146664. * chip2 * eta2, m1_4, d_in);
+    d_in = fma(127008. * chip2 * fma(-4., chil2, chip2), m1_8, d_in);
+    d_in = fnms(
+        42336. * eta3,
+        fms(fma(726., chil2, 29. * chip2), m1_4, 96. * chil * m1_2 * PI),
+        d_in,
+    );
+    let mut sum = fma(-190512. * delta3, eta6, 2268. * delta2 * eta3 * m1 * b_in);
+    sum = fma(7. * m1_3, c_in, sum);
+    sum = fma(3. * delta * m1_2, d_in, sum);
+    let alpha5 = (5. * sum) / (6.5028096e7 * eta4 * m1_3);
 
     let epsilon1 = -35. / 192. + (5. * delta) / (64. * m1);
     let epsilon2 = ((15. * chil * delta * m1) / 128. - (35. * chil * m1_2) / 128.) / eta;
-    let epsilon3 = -5515. / 3072.
-        + eta * (-515. / 384. - (15. * delta2) / (256. * m1_2) + (175. * delta) / (256. * m1))
-        + (4555. * delta) / (7168. * m1);
+    let epsilon3 = fma(
+        eta,
+        -515. / 384. - (15. * delta2) / (256. * m1_2) + (175. * delta) / (256. * m1),
+        -5515. / 3072.,
+    ) + (4555. * delta) / (7168. * m1);
     let epsilon4l = (5. * chil * delta2) / 16. - (5. * chil * delta * m1) / 3.
         + (2545. * chil * m1_2) / 1152.
         + ((-2035. * chil * delta * m1) / 21504. + (2995. * chil * m1_2) / 9216.) / eta
         - (35. * PI) / 48.
         + (5. * delta * PI) / (16. * m1);
-    let epsilon5 = (5.
-        * (-190512. * delta3 * eta3
-            + 2268. * delta2 * m1 * (eta2 * (323. + 784. * eta) + 8400. * chil2 * m1_4)
-            - 3. * delta
-                * m1_2
-                * (eta * (5579177. + 504. * eta * (-159. + 7630. * eta))
-                    + 254016. * chil * m1_2 * (121. * chil * m1_2 - 16. * PI))
-            + 7. * m1_3
-                * (eta * (8024297. + 36. * eta * (23817. + 85568. * eta))
-                    + 338688. * chil * m1_2 * (47. * chil * m1_2 - 12. * PI))))
-        / (6.5028096e7 * eta * m1_3);
+    let b_in = fma(eta2, fma(784., eta, 323.), 8400. * chil2 * m1_4);
+    let c_in = fma(
+        eta,
+        fma(504. * eta, fma(7630., eta, -159.), 5579177.),
+        254016. * chil * m1_2 * fma(121. * chil, m1_2, -16. * PI),
+    );
+    let d_in = fma(
+        eta,
+        fma(36. * eta, fma(85568., eta, 23817.), 8024297.),
+        338688. * chil * m1_2 * fma(47. * chil, m1_2, -12. * PI),
+    );
+    let mut sum = fma(-190512. * delta3, eta3, 2268. * delta2 * m1 * b_in);
+    sum = fnms(3. * delta * m1_2, c_in, sum);
+    sum = fma(7. * m1_3, d_in, sum);
+    let epsilon5 = (5. * sum) / (6.5028096e7 * eta * m1_3);
 
     NnloCoefficients {
         alpha1,
@@ -905,8 +928,10 @@ mod tests {
     /// `PhenomXPrecVersion = 102` from the lalsimulation 6.2.0 python bindings:
     /// (m1, m2, f_ref, phi_ref, inclination, chi1, chi2) and
     /// (chi1L, chi2L, chi_p, thetaJN, alpha0, phi_aligned, zeta_polarization).
+    // The values are printed by lalsimulation: some (e.g. chi_p = 1/sqrt(2)
+    // for the equal-mass case) happen to be close to mathematical constants.
     #[rustfmt::skip]
-    #[allow(clippy::type_complexity)]
+    #[allow(clippy::type_complexity, clippy::approx_constant)]
     const LAL_VALUES: [(f64, f64, f64, f64, f64, [f64; 3], [f64; 3], [f64; 7]); 4] = [
         (36.0, 29.0, 20.0, 1.2, 0.7, [0.4, 0.2, 0.3], [-0.2, 0.3, -0.1],
          [0.3, -0.1, 0.4472135954999579, 0.5936609957517057, 3.8490739691900155, -0.9704448051639335, -3.0067282752337894]),

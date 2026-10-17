@@ -5,13 +5,27 @@
 use num_complex::Complex;
 
 use crate::constants::MSUN_SI;
-use crate::imrphenomx::internals::{hz_to_mf, IMRPhenomXError, WaveformStruct};
+use crate::imrphenomx::internals::{hz_to_mf, IMRPhenomXError, UsefulPowers, WaveformStruct};
+use crate::imrphenomx::phase::phase_22;
 use crate::imrphenomx::precession::{PrecessingBinary, PrecessionStruct, PrecessionVersion};
 use crate::imrphenomx::spintaylor_angles::{
     inspiral_angles_spintaylor, EulerAngles, SpinTaylorAngles,
 };
 use crate::imrphenomx::wigner::twist_up_22;
 use crate::imrphenomx::xas::IMRPhenomXAS;
+use crate::spintaylor::fp::fma;
+
+/// `pWF->phifRef` as `IMRPhenomXPGenerateFD` evaluates it,
+/// `-(phi22(MfRef) / eta + linb MfRef + lina) + 2 phi0 + pi / 4`, which LAL's
+/// arm64 build contracts differently from `IMRPhenomXASGenerateFD`.
+fn phif_ref_xp(xas: &IMRPhenomXAS, wf: &WaveformStruct) -> f64 {
+    let inveta = 1.0 / wf.eta;
+    let powers = UsefulPowers::new(wf.mf_ref);
+    let phi = phase_22(wf.mf_ref, &powers, &xas.phase22);
+    // the tidal phase phiTfRef vanishes for black holes
+    let shift = fma(inveta, phi, xas.linb * wf.mf_ref) + xas.lina + 0.0;
+    fma(2.0, wf.phi0, -shift) + std::f64::consts::FRAC_PI_4
+}
 
 /// `(h_+, h_x)` on a frequency grid.
 pub type Polarizations = (Vec<Complex<f64>>, Vec<Complex<f64>>);
@@ -166,7 +180,7 @@ impl Setup {
         let prec = &self.prec;
         let xas = self.xas.as_ref().expect("XAS coefficients");
         // Convention 1 sets phi0 = 0.
-        let phif_ref = xas.phif_ref(2.0 * wf.phi0);
+        let phif_ref = phif_ref_xp(xas, wf);
         let mf_cut = wf.f_max_prime * wf.m_sec;
         let y2 = &prec.ylm.y2;
         let eta = wf.eta;
@@ -176,7 +190,8 @@ impl Setup {
                 for (i, &f) in frequencies.iter().enumerate() {
                     let mf = wf.m_sec * f;
                     if mf <= mf_cut {
-                        let h22 = xas.h22(mf, phif_ref, mf_cut);
+                        // LAL's powers of Mf (IMRPhenomX_Initialize_Powers)
+                        let h22 = xas.h22_with_powers(mf, &UsefulPowers::new(mf), phif_ref);
                         let epsilon = -(angles.gamma[i] - gamma_ref) + prec.epsilon0;
                         (hp[i], hc[i]) =
                             twist_up_22(h22, angles.alpha[i], angles.cos_beta[i], epsilon, y2);
@@ -198,7 +213,8 @@ impl Setup {
                 for (i, &f) in frequencies.iter().enumerate() {
                     let mf = wf.m_sec * f;
                     if mf <= mf_cut {
-                        let h22 = xas.h22(mf, phif_ref, mf_cut);
+                        // LAL's powers of Mf (IMRPhenomX_Initialize_Powers)
+                        let h22 = xas.h22_with_powers(mf, &UsefulPowers::new(mf), phif_ref);
                         let (alpha, epsilon, cos_beta) =
                             prec.nnlo_angles(std::f64::consts::PI * mf, eta);
                         (hp[i], hc[i]) = twist_up_22(h22, alpha, cos_beta, epsilon, y2);
