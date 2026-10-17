@@ -13,3 +13,9 @@ default = []
 [dev-dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["float_roundtrip"] }
+
+# Whole-program optimisation recovers ~30% for IMRPhenomXAS; it applies to
+# binaries built from this package (examples, tests, benchmarks). Downstream
+# crates should enable `lto = "fat"` in their own release profile.
+[profile.release]
+lto = "fat"
