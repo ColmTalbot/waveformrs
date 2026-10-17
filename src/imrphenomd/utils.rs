@@ -83,8 +83,8 @@ pub(crate) fn solve_linear_system<const N: usize>(
     let mut solution = [0.0; N];
     for row in (0..N).rev() {
         let mut value = rhs[row];
-        for k in row + 1..N {
-            value -= matrix[row][k] * solution[k];
+        for (k, known) in solution.iter().enumerate().skip(row + 1) {
+            value -= matrix[row][k] * known;
         }
         solution[row] = value / matrix[row][row];
     }

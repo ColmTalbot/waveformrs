@@ -144,7 +144,7 @@ fn spintaylor_t4_matches_lalsimulation() {
                 max_diff
             };
             worst = worst.max(error);
-            if !(error <= tolerance) {
+            if error.is_nan() || error > tolerance {
                 failures.push(format!("{}: {name} relative error {error:e}", case.label));
             }
         }
@@ -182,7 +182,7 @@ fn backward_integration_ends_at_start_frequency() {
     // ordered forward in time: v increases, the first sample is below f_end
     assert!(backward.v.windows(2).all(|w| w[0] < w[1]));
     assert!(forward.v.windows(2).all(|w| w[0] < w[1]));
-    let mtotal = 50.0 * 4.925490947641266978197229498498379006e-6;
+    let mtotal = 50.0 * 4.925490947641267e-6;
     let f = |v: f64| v * v * v / (std::f64::consts::PI * mtotal);
     assert!(f(backward.v[0]) < 14.5 && f(backward.v[1]) >= 14.5);
     assert_eq!(backward.epoch, -((backward.len() - 1) as f64) * delta_t);

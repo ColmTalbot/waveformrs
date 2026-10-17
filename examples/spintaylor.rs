@@ -8,7 +8,7 @@ use std::time::Instant;
 
 use waveformrs::spintaylor::SpinTaylorT4;
 
-const MTSUN_SI: f64 = 4.925490947641266978197229498498379006e-6;
+const MTSUN_SI: f64 = 4.925490947641267e-6;
 
 struct Case {
     label: &'static str,

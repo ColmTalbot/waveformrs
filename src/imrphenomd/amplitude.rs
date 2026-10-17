@@ -153,7 +153,7 @@ fn mrd_amplitude_derivative(frequency: f64, prefactors: &AmplitudePrefactors) ->
 fn f_peak(prefactors: &AmplitudePrefactors) -> f64 {
     // NOTE: There's a problem with this expression from the paper becoming imaginary if gamma2>=1
     // Fix: if gamma2 >= 1 then set the square root term to zero.
-    if !(prefactors.gamma2 > 1.0) {
+    if prefactors.gamma2 <= 1.0 {
         (prefactors.f_ringdown
             + (prefactors.f_damping
                 * ((1.0 - prefactors.gamma2.powi(2)).sqrt() - 1.0)

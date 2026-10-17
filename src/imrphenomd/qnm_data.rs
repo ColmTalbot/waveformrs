@@ -3,6 +3,10 @@
 //! Transcribed from `LALSimIMRPhenomD.h` (lalsimulation 6.2.0). Columns are the
 //! dimensionless spin, and the real and imaginary parts of M omega_220 / (2 pi).
 
+// Tabulated values are copied digit for digit from LAL; some happen to be
+// close to mathematical constants.
+#![allow(clippy::approx_constant, clippy::excessive_precision)]
+
 pub(crate) const QNM_SPIN: [f64; 1003] = [
     -1.0, -0.999, -0.998, -0.996, -0.994, -0.992,
     -0.99, -0.988, -0.986, -0.984, -0.982, -0.98,

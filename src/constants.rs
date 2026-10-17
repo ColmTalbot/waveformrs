@@ -1,3 +1,6 @@
+// Constants are quoted with the digits used in LALConstants.h.
+#![allow(clippy::excessive_precision)]
+
 pub const PC_SI: f64 = 3.085677581491367278913937957796471611e16;
 pub const MPC_SI: f64 = 1.0e6 * PC_SI;
 pub const SPEED_OF_LIGHT_IN_VACUUM: f64 = 299_792_458.0;
