@@ -7,7 +7,7 @@ mod common;
 use serde::Deserialize;
 use waveformrs::{
     imrphenomd::IMRPhenomD,
-    imrphenomx::{IMRPhenomXAS, IMRPhenomXP, PrecessingBinary, PrecessionVersion},
+    imrphenomx::{IMRPhenomXAS, IMRPhenomXHM, IMRPhenomXP, PrecessingBinary, PrecessionVersion},
     taylor::TaylorF2,
     waveform::Waveform,
 };
@@ -173,4 +173,22 @@ fn imrphenomxp_spintaylor_angles_match_lalsimulation() {
         );
         assert!(max_diff <= 1e-11, "{max_diff}");
     }
+}
+
+#[test]
+fn imrphenomxhm_matches_lalsimulation() {
+    common::check_all("imrphenomxhm", 1e-9, 1e-12, |case| {
+        // The component masses are passed exactly: the (3,2) mode of
+        // IMRPhenomXHM amplifies rounding differences in its inputs.
+        IMRPhenomXHM::from_components(
+            case.mass_1,
+            case.mass_2,
+            case.spin_1[2],
+            case.spin_2[2],
+            case.luminosity_distance,
+        )
+        .unwrap()
+        .with_reference_frequency(case.f_ref)
+        .polarizations(&case.frequencies, case.phi_ref, case.inclination)
+    });
 }
