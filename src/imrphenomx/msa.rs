@@ -33,8 +33,8 @@
 //! LAL's `IMRPhenomX_Return_phi_zeta_costhetaL_MSA` stores the roots
 //! `S_3^2`, `S_-^2`, `S_+^2` and the spin magnitude at each frequency in the
 //! shared `IMRPhenomXPrecessionStruct`. As it is called from inside the
-//! `#pragma omp parallel for` of `IMRPhenomXPGenerateFD` (and of the XPHM
-//! drivers), multi-threaded LAL builds race on these members and give
+//! `#pragma omp parallel for` of `IMRPhenomXPGenerateFD` (the IMRPhenomXPHM
+//! loops are not parallelised), multi-threaded LAL builds race on these members and give
 //! run-to-run differences of up to ~1e-2 in the MSA waveforms (this is also
 //! what made the SpinTaylor -> MSA fallback appear to differ from direct
 //! `PhenomXPrecVersion` 223 calls). Here the per-frequency roots are local
