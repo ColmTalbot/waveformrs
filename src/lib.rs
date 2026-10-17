@@ -1,5 +1,6 @@
 pub(crate) mod constants;
 pub mod imrphenomd;
+pub mod imrphenomx;
 pub mod interpolate;
 pub mod pn;
 pub mod taylor;
