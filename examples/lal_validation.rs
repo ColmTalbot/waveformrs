@@ -14,7 +14,8 @@
 //!
 //! Precessing approximants are `IMRPhenomXP` (SpinTaylor angles,
 //! `PhenomXPrecVersion` 320), `IMRPhenomXP_NNLO` (102) and
-//! `IMRPhenomXP_MSA` (223).
+//! `IMRPhenomXP_MSA` (223), and the same for `IMRPhenomXPHM` (multibanding
+//! off).
 use std::io::Read;
 use std::time::Instant;
 
@@ -23,7 +24,9 @@ use serde::{Deserialize, Serialize};
 
 use waveformrs::{
     imrphenomd::IMRPhenomD,
-    imrphenomx::{IMRPhenomXAS, IMRPhenomXHM, IMRPhenomXP, PrecessingBinary, PrecessionVersion},
+    imrphenomx::{
+        IMRPhenomXAS, IMRPhenomXHM, IMRPhenomXP, IMRPhenomXPHM, PrecessingBinary, PrecessionVersion,
+    },
     taylor::TaylorF2,
     waveform::Waveform,
 };
@@ -61,8 +64,8 @@ struct Output {
 
 type Polarizations = (Vec<Complex<f64>>, Vec<Complex<f64>>);
 
-fn precessing(case: &Case, version: PrecessionVersion) -> Result<Polarizations, String> {
-    let binary = PrecessingBinary {
+fn binary(case: &Case) -> PrecessingBinary {
+    PrecessingBinary {
         mass_1: case.mass_1,
         mass_2: case.mass_2,
         spin_1: case.spin_1,
@@ -71,8 +74,17 @@ fn precessing(case: &Case, version: PrecessionVersion) -> Result<Polarizations, 
         inclination: case.inclination,
         phi_ref: case.phi_ref,
         f_ref: case.f_ref,
-    };
-    IMRPhenomXP::with_version(&binary, version)
+    }
+}
+
+fn precessing(case: &Case, version: PrecessionVersion) -> Result<Polarizations, String> {
+    IMRPhenomXP::with_version(&binary(case), version)
+        .and_then(|model| model.polarizations(&case.frequencies))
+        .map_err(|err| err.to_string())
+}
+
+fn precessing_hm(case: &Case, version: PrecessionVersion) -> Result<Polarizations, String> {
+    IMRPhenomXPHM::with_version(&binary(case), version)
         .and_then(|model| model.polarizations(&case.frequencies))
         .map_err(|err| err.to_string())
 }
@@ -121,6 +133,9 @@ fn generate(case: &Case) -> Result<Polarizations, String> {
         "IMRPhenomXP" => precessing(case, PrecessionVersion::SpinTaylor)?,
         "IMRPhenomXP_NNLO" => precessing(case, PrecessionVersion::Nnlo)?,
         "IMRPhenomXP_MSA" => precessing(case, PrecessionVersion::Msa)?,
+        "IMRPhenomXPHM" => precessing_hm(case, PrecessionVersion::SpinTaylor)?,
+        "IMRPhenomXPHM_NNLO" => precessing_hm(case, PrecessionVersion::Nnlo)?,
+        "IMRPhenomXPHM_MSA" => precessing_hm(case, PrecessionVersion::Msa)?,
         other => panic!("unsupported approximant {other}"),
     })
 }

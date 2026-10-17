@@ -14,8 +14,9 @@ Usage
 
 The Rust side is driven through ``cargo run --release --example lal_validation``.
 
-``OMP_NUM_THREADS=1`` is required for reproducible MSA angles (IMRPhenomXP
-with PrecVersion 223, and the SpinTaylor angles where they fall back to MSA):
+``OMP_NUM_THREADS=1`` is required for reproducible MSA angles (IMRPhenomXP and
+IMRPhenomXPHM with PrecVersion 223, and the SpinTaylor angles where they fall
+back to MSA):
 lalsimulation evaluates them inside an OpenMP loop that races on shared
 state.
 
@@ -40,7 +41,14 @@ import numpy as np
 
 ROOT = Path(__file__).resolve().parent.parent
 
-PRECESSING = {"IMRPhenomXP", "IMRPhenomXP_NNLO", "IMRPhenomXP_MSA", "IMRPhenomXPHM"}
+PRECESSING = {
+    "IMRPhenomXP",
+    "IMRPhenomXP_NNLO",
+    "IMRPhenomXP_MSA",
+    "IMRPhenomXPHM",
+    "IMRPhenomXPHM_NNLO",
+    "IMRPhenomXPHM_MSA",
+}
 
 # Approximant -> (dimensionless cutoff frequency, extra lal flags, max mass
 # ratio, optionally the lalsimulation approximant if the name differs)
@@ -74,6 +82,26 @@ SETTINGS = dict(
             PhenomXPHMThresholdMband=0.0,
         ),
         q_min=1 / 20,
+    ),
+    IMRPhenomXPHM_NNLO=dict(
+        mf_max=0.3,
+        flags=dict(
+            PhenomXPrecVersion=102,
+            PhenomXHMThresholdMband=0.0,
+            PhenomXPHMThresholdMband=0.0,
+        ),
+        q_min=1 / 20,
+        lal_approximant="IMRPhenomXPHM",
+    ),
+    IMRPhenomXPHM_MSA=dict(
+        mf_max=0.3,
+        flags=dict(
+            PhenomXPrecVersion=223,
+            PhenomXHMThresholdMband=0.0,
+            PhenomXPHMThresholdMband=0.0,
+        ),
+        q_min=1 / 20,
+        lal_approximant="IMRPhenomXPHM",
     ),
 )
 
