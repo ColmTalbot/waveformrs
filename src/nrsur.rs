@@ -26,10 +26,13 @@
 //! Every operation of the C code is reproduced in the same order, with the
 //! fused multiply-adds of clang's arm64 build (see [`crate::spintaylor::fp`]),
 //! the GSL splines and polynomial interpolation operation by operation, the
-//! OpenBLAS `dgemv` kernel's fused accumulation for the empirical
-//! interpolant and the C library's `cexp` in the spherical harmonics. On
-//! Apple silicon the waveforms agree with the conda-forge build of
-//! lalsimulation to the last bit or within a few ulps.
+//! fused column-by-column accumulation of the OpenBLAS `dgemv` kernel for
+//! the empirical interpolants, Darwin's `__sincos_stret` where clang combines
+//! `sin` and `cos` (`trig`) and the C library's `cexp` in the spherical
+//! harmonics. On Apple silicon the polarizations, modes and dynamics agree
+//! bit for bit with the conda-forge build of lalsimulation 6.2.0 (all
+//! reference cases and 200 random draws); elsewhere expect agreement to
+//! rounding (`~1e-15`).
 //!
 //! # Repeated evaluation
 //!
@@ -40,7 +43,42 @@
 //! depend on the binary (the fit index tables, the factorised spline
 //! systems of the dynamics and coorbital time grids, the interpolation
 //! weights between them and the Wigner-D coefficients) is computed once with
-//! the data.
+//! the data. The workspace also keeps the inertial-frame modes of the last
+//! binary, so that changing only extrinsic parameters (inclination, phase,
+//! distance, sampling interval) skips the surrogate evaluation.
+//!
+//! ```no_run
+//! use waveformrs::nrsur::{
+//!     NRSur7dq4, NRSur7dq4Data, NRSurWorkspace, PrecessingBinary, TimeSeriesPolarizations,
+//! };
+//!
+//! // found through NRSUR7DQ4_DATA or LAL_DATA_PATH; or NRSur7dq4Data::load(path)
+//! let data = NRSur7dq4Data::global()?;
+//! let binary = PrecessingBinary {
+//!     mass_1: 40.0,
+//!     mass_2: 20.0,
+//!     spin_1: [0.4, -0.3, 0.2],
+//!     spin_2: [0.1, 0.5, -0.3],
+//!     luminosity_distance: 100.0,
+//!     inclination: 0.7,
+//!     phi_ref: 0.1,
+//!     f_ref: 20.0,
+//! };
+//! let h = NRSur7dq4::new(data, &binary)?.polarizations(1.0 / 4096.0, 20.0)?;
+//! println!("{} samples from t = {} s", h.hplus.len(), h.epoch);
+//!
+//! // many waveforms without allocations
+//! let mut workspace = NRSurWorkspace::new();
+//! let mut out = TimeSeriesPolarizations::default();
+//! for inclination in [0.1, 0.5, 1.0] {
+//!     let model = NRSur7dq4::new(data, &PrecessingBinary { inclination, ..binary })?;
+//!     model.polarizations_with(&mut workspace, 1.0 / 4096.0, 20.0, &mut out)?;
+//! }
+//! # Ok::<(), waveformrs::nrsur::NRSurError>(())
+//! ```
+//!
+//! NRSur7dq2 has the same structure (with different fits, vector fits and
+//! limits, see [`SurrogateVersion`]) but is not implemented.
 
 mod data;
 mod dynamics;

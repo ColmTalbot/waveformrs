@@ -373,8 +373,10 @@ impl<'a> NRSur7dq4<'a> {
         self
     }
 
-    /// Evaluate only the given coorbital-frame modes `(ell, m)` (LAL's
-    /// `ModeArray`; both `m` and `-m` must be given to include a pair).
+    /// Evaluate only the given coorbital-frame modes `(ell, m)`, `2 <= ell
+    /// <= 4` (LAL's `ModeArray`). As in LAL, `(ell, m)` and `(ell, -m)` are
+    /// evaluated together if either is listed, and the inertial modes of an
+    /// `ell` none of whose coorbital modes is listed are left out.
     pub fn with_mode_array(mut self, modes: &[(u32, i32)]) -> Result<Self, NRSurError> {
         let mut active = [false; N_MODES];
         for &(ell, m) in modes {
@@ -697,7 +699,8 @@ impl<'a> NRSur7dq4<'a> {
         (-(ell as i32)..=ell as i32).any(|m| self.active[mode_index(ell, m)])
     }
 
-    /// The output grid: `(t0 in units of M, delta_t in units of M, nt)`.
+    /// The output sampling interval in units of the total mass and the
+    /// number of samples, `ceil((t_end - t0) / dt)`.
     fn output_grid(&self, core: &Core, delta_t: f64) -> (f64, usize) {
         let dt = delta_t / core.labels.m_tot_sec;
         let tf = self.data.t_coorb.x[self.data.t_coorb.len() - 1];
