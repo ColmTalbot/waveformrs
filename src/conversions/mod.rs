@@ -69,8 +69,8 @@
 //!
 //! This is `SimInspiralTD` only for frequency-domain approximants without
 //! a time-domain generator (TaylorF2 here). In LALSimulation 6.2.0,
-//! IMRPhenomD, IMRPhenomXAS, IMRPhenomXHM, IMRPhenomXP and IMRPhenomXPHM do
-//! have one: `SimInspiralChooseTDWaveform` is `XLALSimInspiralTDFromFD` and,
+//! IMRPhenomD, IMRPhenomXAS, IMRPhenomXHM, IMRPhenomXP, IMRPhenomXPHM and
+//! IMRPhenomXPNR do have one: `SimInspiralChooseTDWaveform` is `XLALSimInspiralTDFromFD` and,
 //! for IMRPhenomD/XAS/XHM, moves the epoch so that the peak of `h_+^2 +
 //! h_x^2` is at `t = 0` (IMRPhenomD is transformed face-on and the
 //! inclination applied in the time domain). `SimInspiralTD` then conditions

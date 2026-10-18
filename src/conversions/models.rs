@@ -20,7 +20,7 @@ use crate::conditioning::fd_model_epoch;
 use crate::conditioning::peak_index;
 use crate::constants::{MSUN_SI, MTSUN_SI};
 use crate::error::{Error, Result};
-use crate::imrphenomx::{IMRPhenomXAS, IMRPhenomXP, IMRPhenomXPHM};
+use crate::imrphenomx::{IMRPhenomXAS, IMRPhenomXP, IMRPhenomXPHM, IMRPhenomXPNR};
 #[cfg(feature = "fft")]
 use crate::model::choose_td_model;
 use crate::model::{choose_fd_model, Approximant, Binary, TimeDomainModel, WaveformOptions};
@@ -159,6 +159,25 @@ impl FdWaveform {
                 let binary = Binary { f_ref, ..*b };
                 let mut model = IMRPhenomXPHM::with_version(&binary, options.precession_version)?
                     .with_version_fallback(options.version_fallback);
+                if let Some(modes) = &options.mode_array {
+                    // as crate::choose_fd_model: both signs of m' are twisted up
+                    let mut positive: Vec<(u32, u32)> = modes
+                        .iter()
+                        .map(|&(ell, emm)| (ell, emm.unsigned_abs()))
+                        .collect();
+                    positive.sort_unstable();
+                    positive.dedup();
+                    model = model.with_mode_array(&positive)?;
+                }
+                let (hp, hc) = model.polarizations_uniform(delta_f, f_min, f_max)?;
+                let n = hp.len();
+                Ok(embed(delta_f, n, 0, hp, hc))
+            }
+            Approximant::IMRPhenomXPNR => {
+                // XLALSimIMRPhenomXPHM with the flags of IMRPhenomXPNR
+                let binary = Binary { f_ref, ..*b };
+                let mut model =
+                    IMRPhenomXPNR::new(&binary)?.with_version_fallback(options.version_fallback);
                 if let Some(modes) = &options.mode_array {
                     // as crate::choose_fd_model: both signs of m' are twisted up
                     let mut positive: Vec<(u32, u32)> = modes
@@ -369,6 +388,8 @@ impl FdGenerator for FdWaveform {
     }
 
     fn zero_reference_frequency_is_f_min(&self) -> bool {
+        // (IMRPhenomXPNR is not among LAL's FIX_REFERENCE_FREQUENCY
+        // approximants: its f_ref = 0 becomes the lowered f_min)
         matches!(
             self.approximant,
             Approximant::IMRPhenomXP | Approximant::IMRPhenomXPHM

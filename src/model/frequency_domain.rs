@@ -6,8 +6,8 @@ use crate::error::{Error, Result};
 use crate::grid::FrequencyGrid;
 use crate::imrphenomd::IMRPhenomD;
 use crate::imrphenomx::{
-    IMRPhenomXAS, IMRPhenomXError, IMRPhenomXHM, IMRPhenomXP, IMRPhenomXPHM, Polarizations,
-    IMRPHENOMXHM_MODES,
+    IMRPhenomXAS, IMRPhenomXError, IMRPhenomXHM, IMRPhenomXP, IMRPhenomXPHM, IMRPhenomXPNR,
+    Polarizations, IMRPHENOMXHM_MODES,
 };
 use crate::model::modes::aligned_22;
 use crate::model::{
@@ -482,6 +482,74 @@ impl FrequencyDomainModel for IMRPhenomXPHM {
         Ok(IMRPhenomXPHM::polarizations_on_grid(
             self, grid, hplus, hcross,
         )?)
+    }
+
+    fn modes(&self, frequencies: &[f64]) -> Result<FrequencyModes> {
+        Ok(self.jframe_modes(frequencies)?)
+    }
+}
+
+/// The co-precessing mode array `(l, |m'|)` of a LAL mode array (LAL twists
+/// up both signs of `m'` whichever sign is listed).
+fn coprecessing_modes(modes: &[(u32, i32)]) -> Vec<(u32, u32)> {
+    let mut positive: Vec<(u32, u32)> = modes
+        .iter()
+        .map(|&(ell, emm)| (ell, emm.unsigned_abs()))
+        .collect();
+    positive.sort_unstable();
+    positive.dedup();
+    positive
+}
+
+/// IMRPhenomXPNR for [`crate::model::choose_fd_model`] (which ignores the
+/// precession version of the options).
+pub(super) fn xpnr(binary: &Binary, options: &WaveformOptions) -> Result<IMRPhenomXPNR> {
+    let mut model = IMRPhenomXPNR::new(binary)?.with_version_fallback(options.version_fallback);
+    if let Some(modes) = &options.mode_array {
+        model = model.with_mode_array(&coprecessing_modes(modes))?;
+    }
+    Ok(model)
+}
+
+/// IMRPhenomXPNR as `SimInspiralChooseFDWaveformSequence`
+/// (`XLALSimIMRPhenomXPHMFrequencySequence` with the flags of
+/// IMRPhenomXPNR) with `PhenomXHMThresholdMband = PhenomXPHMThresholdMband
+/// = 0`.
+impl FrequencyDomainModel for IMRPhenomXPNR {
+    fn from_binary(binary: &Binary) -> Result<Self> {
+        Ok(IMRPhenomXPNR::new(binary)?)
+    }
+
+    fn approximant(&self) -> Approximant {
+        Approximant::IMRPhenomXPNR
+    }
+
+    fn polarizations(&self, frequencies: &[f64]) -> Result<Polarizations> {
+        Ok(IMRPhenomXPNR::polarizations(self, frequencies)?)
+    }
+
+    fn polarizations_into(
+        &self,
+        frequencies: &[f64],
+        hplus: &mut [Complex<f64>],
+        hcross: &mut [Complex<f64>],
+    ) -> Result<()> {
+        check_lengths(frequencies.len(), hplus, hcross);
+        let (hp, hc) = IMRPhenomXPNR::polarizations(self, frequencies)?;
+        hplus.copy_from_slice(&hp);
+        hcross.copy_from_slice(&hc);
+        Ok(())
+    }
+
+    /// The polarizations at the frequencies of the grid (without a faster
+    /// path: the PNR angles depend on the first and last frequencies).
+    fn polarizations_on_grid(
+        &self,
+        grid: &FrequencyGrid,
+        hplus: &mut [Complex<f64>],
+        hcross: &mut [Complex<f64>],
+    ) -> Result<()> {
+        FrequencyDomainModel::polarizations_into(self, grid.frequencies(), hplus, hcross)
     }
 
     fn modes(&self, frequencies: &[f64]) -> Result<FrequencyModes> {

@@ -449,6 +449,22 @@ impl EpsilonFactors {
         }
     }
 
+    /// The factors with the antisymmetric part `h_as` of the co-precessing
+    /// mode (IMRPhenomXPNR): `e^{-i m' epsilon} (h + h_as)` and
+    /// `e^{i m' epsilon} (-1)^l conj(h - h_as)`.
+    #[inline]
+    pub(crate) fn with_antisymmetric(
+        h: Complex<f64>,
+        h_as: Complex<f64>,
+        e: Complex<f64>,
+        sigma: f64,
+    ) -> Self {
+        Self {
+            positive: Complex::new(1.0, 0.0) / e * (h + h_as),
+            negative: e * sigma * (h - h_as).conj(),
+        }
+    }
+
     /// The contributions to `h_lm(f)` and `h_lm(-f)` of the J-frame mode
     /// `(l, m)`, with `d = d^l_{k,m'}(beta)` for `k = -l..l` and `rotation =
     /// e^{-i m alpha}`.

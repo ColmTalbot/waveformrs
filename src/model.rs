@@ -8,8 +8,9 @@
 //!   frequency).
 //! * [`FrequencyDomainModel`] is implemented by [`TaylorF2`],
 //!   [`IMRPhenomD`], [`IMRPhenomXAS`], [`IMRPhenomXHM`],
-//!   [`IMRPhenomXP`](crate::imrphenomx::IMRPhenomXP) and
-//!   [`IMRPhenomXPHM`](crate::imrphenomx::IMRPhenomXPHM);
+//!   [`IMRPhenomXP`](crate::imrphenomx::IMRPhenomXP),
+//!   [`IMRPhenomXPHM`](crate::imrphenomx::IMRPhenomXPHM) and
+//!   [`IMRPhenomXPNR`](crate::imrphenomx::IMRPhenomXPNR);
 //!   [`TimeDomainModel`] by [`NRSur7dq4`]. All
 //!   parameters are fixed when the model is built with `from_binary`, so
 //!   the models are interchangeable.
@@ -159,19 +160,23 @@ pub enum Approximant {
     /// [`IMRPhenomXPHM`](crate::imrphenomx::IMRPhenomXPHM) (frequency
     /// domain, precessing, higher modes).
     IMRPhenomXPHM,
+    /// [`IMRPhenomXPNR`](crate::imrphenomx::IMRPhenomXPNR) (frequency
+    /// domain, precessing, higher modes, NR-tuned angles and (2,2) mode).
+    IMRPhenomXPNR,
     /// [`NRSur7dq4`] (time domain, precessing, `l <= 4`).
     NRSur7dq4,
 }
 
 impl Approximant {
     /// Every approximant of the crate.
-    pub const ALL: [Approximant; 7] = [
+    pub const ALL: [Approximant; 8] = [
         Self::TaylorF2,
         Self::IMRPhenomD,
         Self::IMRPhenomXAS,
         Self::IMRPhenomXHM,
         Self::IMRPhenomXP,
         Self::IMRPhenomXPHM,
+        Self::IMRPhenomXPNR,
         Self::NRSur7dq4,
     ];
 
@@ -184,6 +189,7 @@ impl Approximant {
             Self::IMRPhenomXHM => "IMRPhenomXHM",
             Self::IMRPhenomXP => "IMRPhenomXP",
             Self::IMRPhenomXPHM => "IMRPhenomXPHM",
+            Self::IMRPhenomXPNR => "IMRPhenomXPNR",
             Self::NRSur7dq4 => "NRSur7dq4",
         }
     }
@@ -198,7 +204,7 @@ impl Approximant {
     pub fn is_precessing(&self) -> bool {
         matches!(
             self,
-            Self::IMRPhenomXP | Self::IMRPhenomXPHM | Self::NRSur7dq4
+            Self::IMRPhenomXP | Self::IMRPhenomXPHM | Self::IMRPhenomXPNR | Self::NRSur7dq4
         )
     }
 }
@@ -241,13 +247,14 @@ pub struct WaveformOptions {
     /// [`PrecessionVersion::SpinTaylor`] (320); note that LALSimulation 6.2.0
     /// uses [`PrecessionVersion::Msa`] (223) when no version is given (see
     /// [`WaveformOptions::lalsimulation_defaults`]). Ignored by the other
-    /// models.
+    /// models (IMRPhenomXPNR always starts from the SpinTaylor angles
+    /// connected to the PNR angles, LAL's `PhenomXPrecVersion` 330).
     pub precession_version: PrecessionVersion,
     /// LAL's `ModeArray`: the modes `(l, m)` of IMRPhenomXHM (with the sign
     /// of `m`), the co-precessing modes of IMRPhenomXPHM (`m` of either sign
     /// selects `|m|`, as in LAL) or the coorbital modes of NRSur7dq4. `None`
     /// selects all modes of the model. The (2,2)-mode models accept no mode
-    /// array.
+    /// array. IMRPhenomXPNR takes it as IMRPhenomXPHM.
     pub mode_array: Option<Vec<(u32, i32)>>,
     /// Whether IMRPhenomXP and IMRPhenomXPHM may change the Euler-angle
     /// prescription automatically as LALSimulation does (`true`, the
@@ -256,6 +263,9 @@ pub struct WaveformOptions {
     /// to NNLO when the MSA system cannot be initialised. With `false` the
     /// requested prescription is used or the evaluation fails with
     /// [`crate::imrphenomx::IMRPhenomXError::PrecessionVersionUnavailable`].
+    /// For IMRPhenomXPNR, `false` requires the PNR angles with the
+    /// SpinTaylor angles (see
+    /// [`IMRPhenomXPNR::with_version_fallback`](crate::imrphenomx::IMRPhenomXPNR::with_version_fallback)).
     pub version_fallback: bool,
 }
 
@@ -398,6 +408,9 @@ pub trait FrequencyDomainModel: Send + Sync + fmt::Debug {
     ///   IMRPhenomXHM, with `h_{2,-2}(f) = h(f) / (2 sqrt(5 / 64 pi) e^{-i
     ///   pi})` for the face-on `h_+ = h`; for IMRPhenomXAS this is the (2,2)
     ///   mode of IMRPhenomXHM.
+    /// * IMRPhenomXPNR: as IMRPhenomXPHM with the flags of IMRPhenomXPNR
+    ///   (the PNR angles, the antisymmetric part of the (2,2) mode), each
+    ///   J-frame mode with its own set-up as in LAL.
     /// * IMRPhenomXP (not supported by LAL): the J-frame modes `(2, m)` of
     ///   its (2,2) co-precessing mode, twisted up as for its polarizations.
     ///
@@ -544,6 +557,7 @@ pub fn choose_fd_model(
             Box::new(frequency_domain::xp(binary, options)?)
         }
         Approximant::IMRPhenomXPHM => Box::new(frequency_domain::xphm(binary, options)?),
+        Approximant::IMRPhenomXPNR => Box::new(frequency_domain::xpnr(binary, options)?),
         Approximant::NRSur7dq4 => {
             return Err(Error::Unsupported {
                 approximant,
@@ -581,9 +595,9 @@ pub fn choose_td_model(
 
 /// `SimInspiralChooseFDModes(m1, m2, *spin_1, *spin_2, delta_f, f_min,
 /// f_max, f_ref, phi_ref, distance, inclination, params, approximant)` of
-/// LALSimulation 6.2.0 for the approximants it supports, IMRPhenomXHM and
-/// IMRPhenomXPHM (with `PhenomXHMThresholdMband = PhenomXPHMThresholdMband
-/// = 0`).
+/// LALSimulation 6.2.0 for the approximants it supports, IMRPhenomXHM,
+/// IMRPhenomXPHM and IMRPhenomXPNR (with `PhenomXHMThresholdMband =
+/// PhenomXPHMThresholdMband = 0`).
 ///
 /// The modes are on the uniform grid `f_k = k delta_f`, `k = 0 .. n - 1`,
 /// with `n - 1` the next power of two of `max(f_max, f_cut) / delta_f`
@@ -592,8 +606,9 @@ pub fn choose_td_model(
 /// `(l, m)` at `(i - n + 1) delta_f`, `i = 0 .. 2n - 2`, is
 /// `negative[n - 1 - i]` for `i < n - 1` and `positive[i - n + 1]` after.
 /// `f_ref = 0` selects `f_min`. The mode array of `options` is IMRPhenomXHM's
-/// (with signs) or IMRPhenomXPHM's co-precessing one; IMRPhenomXPHM returns
-/// all J-frame modes of the `l` it has (LAL's default `ModeArrayJframe`).
+/// (with signs) or IMRPhenomXPHM's (IMRPhenomXPNR's) co-precessing one;
+/// IMRPhenomXPHM and IMRPhenomXPNR return all J-frame modes of the `l` they
+/// have (LAL's default `ModeArrayJframe`).
 /// See [`FrequencyDomainModel::modes`] for the conventions.
 pub fn choose_fd_modes(
     approximant: Approximant,
@@ -621,9 +636,14 @@ pub fn choose_fd_modes(
             Ok(frequency_domain::xphm(binary, options)?
                 .jframe_modes_uniform(delta_f, f_min, f_max)?)
         }
+        Approximant::IMRPhenomXPNR => {
+            Ok(frequency_domain::xpnr(binary, options)?
+                .jframe_modes_uniform(delta_f, f_min, f_max)?)
+        }
         _ => Err(Error::Unsupported {
             approximant,
-            what: "SimInspiralChooseFDModes (LAL supports IMRPhenomXHM and IMRPhenomXPHM)",
+            what: "SimInspiralChooseFDModes (LAL supports IMRPhenomXHM, IMRPhenomXPHM and \
+                   IMRPhenomXPNR)",
         }),
     }
 }

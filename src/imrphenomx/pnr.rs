@@ -248,6 +248,45 @@ impl PnrSplines {
     }
 }
 
+/// The modes the SpinTaylor and PNR angles must cover: `M_MIN`, `M_MAX`
+/// and `L_MAX_PNR` of LAL's precession struct.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(crate) struct ModeRange {
+    pub(crate) m_min: u32,
+    pub(crate) m_max: u32,
+    pub(crate) l_max: u32,
+}
+
+impl ModeRange {
+    /// `IMRPhenomX_GetandSetModes` and `L_MAX_PNR` for a co-precessing mode
+    /// array `(l, m' > 0)` in the LALDict (both signs of `m'`).
+    pub(crate) fn of_mode_array(modes: &[(u32, u32)]) -> Self {
+        let l_max = if modes.contains(&(4, 4)) {
+            4
+        } else if modes.contains(&(3, 3)) || modes.contains(&(3, 2)) {
+            3
+        } else {
+            2
+        };
+        Self {
+            m_min: modes.iter().map(|&(_, m)| m).fold(4, u32::min),
+            m_max: modes.iter().map(|&(_, m)| m).fold(1, u32::max),
+            l_max,
+        }
+    }
+
+    /// The single-mode functions without a mode array in the LALDict:
+    /// `M_MIN = max(1, |m|)`, `M_MAX = L_MAX_PNR = l` for the J-frame mode
+    /// `(l, m)`.
+    pub(crate) fn of_jframe_mode(ell: u32, m: i32) -> Self {
+        Self {
+            m_min: m.unsigned_abs().max(1),
+            m_max: ell,
+            l_max: ell,
+        }
+    }
+}
+
 /// The quantities of `IMRPhenomXPrecessionStruct` used by IMRPhenomXPNR,
 /// built by [`PnrPrecession::new`] (`IMRPhenomXGetAndSetPrecessionVariables`).
 #[derive(Clone, Debug)]
@@ -378,8 +417,8 @@ impl PnrPrecession {
     /// `IMRPhenomXGetAndSetPrecessionVariables` for the flags set by
     /// IMRPhenomXPNR (`PhenomXPrecVersion` 330, `PhenomXPFinalSpinMod` 7,
     /// `PNRUseTunedAngles`, `PNRUseTunedCoprec`, `AntisymmetricWaveform`,
-    /// `PhenomXPConvention` 1, multibanding off), for the modes `modes`
-    /// (`(l, m' > 0)`, both signs of `m'` active). Modifies `wf` as LAL
+    /// `PhenomXPConvention` 1, multibanding off), for the range of modes
+    /// `range`. Modifies `wf` as LAL
     /// modifies `pWF` (`phi0`, `deltaMF`, the co-precessing deviations, the
     /// final spin and the (2,2) ringdown frequencies).
     ///
@@ -391,7 +430,7 @@ impl PnrPrecession {
         m2_si: f64,
         chi1: [f64; 3],
         chi2: [f64; 3],
-        modes: &[(u32, u32)],
+        range: ModeRange,
     ) -> Result<Self, IMRPhenomXError> {
         let [chi1x, chi1y, chi1z] = chi1;
         let [chi2x, chi2y, chi2z] = chi2;
@@ -448,16 +487,11 @@ impl PnrPrecession {
         let den = if m2 > m1 { a2 * m2_2 } else { a1 * m1_2 };
         let chip = num / den;
 
-        // IMRPhenomX_GetandSetModes on the mode array (both signs of m')
-        let m_max = modes.iter().map(|&(_, m)| m).fold(1, u32::max);
-        let m_min = modes.iter().map(|&(_, m)| m).fold(4, u32::min);
-        let l_max_pnr = if modes.contains(&(4, 4)) {
-            4
-        } else if modes.contains(&(3, 3)) || modes.contains(&(3, 2)) {
-            3
-        } else {
-            2
-        };
+        let ModeRange {
+            m_min,
+            m_max,
+            l_max: l_max_pnr,
+        } = range;
 
         let mut prec = Self {
             version,

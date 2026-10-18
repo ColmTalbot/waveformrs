@@ -38,6 +38,11 @@
 //!   inspiral scaling `2 f / m'` of the frequency map;
 //! - the co-precessing deviations are switched off between `q = 10` and
 //!   `q = 20`.
+//!
+//! With [`IMRPhenomXPNR::with_version_fallback`]`(false)` the model fails
+//! instead of leaving the PNR angles with the SpinTaylor angles (330).
+
+mod jframe;
 
 use num_complex::Complex;
 
@@ -45,7 +50,7 @@ use crate::constants::{MSUN_SI, PC_SI};
 use crate::imrphenomx::internals::{IMRPhenomXError, UsefulPowers, WaveformStruct};
 use crate::imrphenomx::libm::cexp_i;
 use crate::imrphenomx::phase::PhaseCoefficients;
-use crate::imrphenomx::pnr::{ringdown_frequency, PnrPrecession, PnrSplines};
+use crate::imrphenomx::pnr::{ringdown_frequency, ModeRange, PnrPrecession, PnrSplines};
 use crate::imrphenomx::pnr_angles::{
     linear_frequency_map, linear_frequency_map_transition_frequencies,
 };
@@ -81,6 +86,125 @@ pub struct IMRPhenomXPNR {
     binary: PrecessingBinary,
     /// Co-precessing modes `(l, m' > 0)` in the order of LAL's mode loop.
     modes: Vec<(u32, u32)>,
+    /// Whether the modes were restricted with a mode array (which then
+    /// sets the frequency range of the angles of the single-mode
+    /// functions).
+    custom_mode_array: bool,
+    /// Whether the precession prescription may leave the PNR angles with
+    /// the SpinTaylor angles as in LAL.
+    version_fallback: bool,
+}
+
+/// The co-precessing modes `(l, m' > 0)` among `modes` in the order of
+/// LAL's mode loop (`l = 2..4`, `m' = 1..l`).
+fn lal_order(modes: &[(u32, u32)]) -> Vec<(u32, u32)> {
+    (2..=4u32)
+        .flat_map(|ell| (1..=ell).map(move |emm| (ell, emm)))
+        .filter(|mode| modes.contains(mode))
+        .collect()
+}
+
+/// An error unless the PNR angles are used with the SpinTaylor angles
+/// (version 330), for models without version fallbacks.
+fn check_prescription(prec: &PnrPrecession) -> Result<(), IMRPhenomXError> {
+    if prec.use_tuned_angles && prec.version == 330 {
+        return Ok(());
+    }
+    let reason = if !prec.use_tuned_angles {
+        "the in-plane spins are below 1e-7, which switches the PNR angles off"
+    } else if prec.version == 223 {
+        "the SpinTaylor angles cannot be computed"
+    } else {
+        "the in-plane spins are below 1e-6 or the MSA system cannot be initialised"
+    };
+    Err(IMRPhenomXError::PrecessionVersionUnavailable {
+        requested: 330,
+        fallback: prec.version,
+        reason,
+    })
+}
+
+/// The Euler angles `(alpha, cos(beta), epsilon)` of one co-precessing mode
+/// `(l, m')`: the PNR angles at the frequency of the (2,2) mode given by
+/// the frequency map, or the NNLO angles without the PNR angles.
+struct ModeAngles<'a> {
+    wf: &'a WaveformStruct,
+    prec: &'a PnrPrecession,
+    splines: Option<&'a PnrSplines>,
+    ell: u32,
+    emm: u32,
+    /// Transition frequencies of the map and the (l, m') ringdown frequency.
+    mf_low: f64,
+    mf_high: f64,
+    mf_rd_lm: f64,
+}
+
+impl<'a> ModeAngles<'a> {
+    fn new(
+        wf: &'a WaveformStruct,
+        prec: &'a PnrPrecession,
+        splines: Option<&'a PnrSplines>,
+        ell: u32,
+        emm: u32,
+    ) -> Self {
+        let (mf_low, mf_high, mf_rd_lm) = if splines.is_some() && (ell, emm) != (2, 2) {
+            let mf_rd_lm = ringdown_frequency(ell, emm, wf);
+            let (low, high) = linear_frequency_map_transition_frequencies(
+                emm,
+                wf.f_ring,
+                mf_rd_lm,
+                prec.pnr_hm_mflow,
+                prec.pnr_hm_mfhigh,
+            );
+            (low, high, mf_rd_lm)
+        } else {
+            (0.0, 0.0, 0.0)
+        };
+        Self {
+            wf,
+            prec,
+            splines,
+            ell,
+            emm,
+            mf_low,
+            mf_high,
+            mf_rd_lm,
+        }
+    }
+
+    /// The angles at `Mf`, with the offsets at the reference frequency.
+    #[inline]
+    fn at(&self, mf: f64) -> Result<(f64, f64, f64), IMRPhenomXError> {
+        let (wf, prec) = (self.wf, self.prec);
+        match self.splines {
+            Some(splines) => {
+                let mf_mapped = linear_frequency_map(
+                    mf,
+                    self.ell,
+                    self.emm,
+                    self.mf_low,
+                    self.mf_high,
+                    wf.f_ring,
+                    self.mf_rd_lm,
+                    prec.pnr_inspiral_scaling,
+                )
+                .ok_or(IMRPhenomXError::PnrAngles(
+                    "invalid transition frequencies of the frequency map",
+                ))?;
+                let f_mapped = mf_to_hz(mf_mapped, wf.m_tot);
+                let (alpha, beta, gamma) = splines.angles(f_mapped)?;
+                Ok((
+                    alpha - prec.alpha_offset,
+                    beta.cos(),
+                    -gamma - prec.epsilon_offset,
+                ))
+            }
+            None => {
+                let omega = std::f64::consts::PI * mf * 2. / self.emm as f64;
+                Ok(prec.nnlo_angles(omega))
+            }
+        }
+    }
 }
 
 /// The twisting-up factors shared by all modes with the same `m'` at one
@@ -181,6 +305,19 @@ fn harmonics(prec: &PnrPrecession, ell: u32) -> &[f64] {
     }
 }
 
+/// The LAL function that sets up the waveform and precession structs.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Caller {
+    /// `XLALSimIMRPhenomXPHMFrequencySequence` (`delta_f = 0`) and
+    /// `XLALSimIMRPhenomXPHM` (`delta_f > 0`, which keeps the input order
+    /// of the bodies in the waveform struct), which check that the
+    /// reference frequency is inside the grid.
+    Polarizations,
+    /// The single-mode functions `XLALSimIMRPhenomXPHMOneMode` and
+    /// `XLALSimIMRPhenomXPHMFrequencySequenceOneMode`.
+    SingleMode,
+}
+
 /// Waveform and precession structs of one evaluation.
 struct Setup {
     wf: WaveformStruct,
@@ -189,19 +326,18 @@ struct Setup {
 
 impl Setup {
     /// `IMRPhenomXSetWaveformVariables` and
-    /// `IMRPhenomXGetAndSetPrecessionVariables` as called by
-    /// `XLALSimIMRPhenomXPHMFrequencySequence` (`delta_f = 0`) and
-    /// `XLALSimIMRPhenomXPHM` (`delta_f > 0`), with the check of the
-    /// reference frequency for the PNR angles.
+    /// `IMRPhenomXGetAndSetPrecessionVariables` as called by `caller`, with
+    /// the angles covering the modes of `range`.
     fn new(
         binary: &PrecessingBinary,
-        modes: &[(u32, u32)],
+        range: ModeRange,
         delta_f: f64,
         f_min: f64,
         f_max: f64,
+        caller: Caller,
     ) -> Result<Self, IMRPhenomXError> {
         let (m1, m2, chi1, chi2) = binary.ordered();
-        let (wf_m1, wf_m2, wf_chi1, wf_chi2) = if delta_f > 0.0 {
+        let (wf_m1, wf_m2, wf_chi1, wf_chi2) = if delta_f > 0.0 && caller == Caller::Polarizations {
             (
                 binary.mass_1,
                 binary.mass_2,
@@ -228,13 +364,44 @@ impl Setup {
         wf.hm_release = 122019;
         // tuned angles: f_min <= f_ref <= f_max
         let upper = if delta_f > 0.0 { wf.f_max_prime } else { f_max };
-        if !(wf.f_ref >= f_min && wf.f_ref <= upper) {
+        if caller == Caller::Polarizations && !(wf.f_ref >= f_min && wf.f_ref <= upper) {
             return Err(IMRPhenomXError::InvalidFrequencies(
                 "f_min <= f_ref <= f_max is required when using tuned angles",
             ));
         }
-        let prec = PnrPrecession::new(&mut wf, m1 * MSUN_SI, m2 * MSUN_SI, chi1, chi2, modes)?;
+        let prec = PnrPrecession::new(&mut wf, m1 * MSUN_SI, m2 * MSUN_SI, chi1, chi2, range)?;
         Ok(Self { wf, prec })
+    }
+
+    /// The SpinTaylor angles (`IMRPhenomX_Initialize_Euler_Angles`) and the
+    /// interpolants of the PNR angles for the co-precessing modes `modes`,
+    /// with the offsets at the reference frequency and the J frame of the
+    /// line of sight remapped with the PNR `beta`; `None` without the PNR
+    /// angles.
+    fn prepare_angles(
+        &mut self,
+        modes: &[(u32, u32)],
+    ) -> Result<Option<PnrSplines>, IMRPhenomXError> {
+        if self.wf.f_max_prime <= self.wf.f_min {
+            return Err(IMRPhenomXError::InvalidFrequencies("fCut <= f_min"));
+        }
+        if self.prec.precessing_tag == 3 {
+            self.prec.initialize_euler_angles(&self.wf)?;
+        }
+        if !self.prec.use_tuned_angles {
+            return Ok(None);
+        }
+        let splines = self.prec.angle_interpolants(&self.wf, modes)?;
+        let (alpha_ref, beta_ref, gamma_ref) = splines.angles(self.wf.f_ref)?;
+        // the contribution of alpha0 is assigned in the remapping
+        self.prec.alpha_offset = alpha_ref;
+        // (the sign is flipped between gamma and epsilon)
+        self.prec.epsilon_offset = -gamma_ref - self.prec.epsilon0;
+        if !beta_ref.is_finite() {
+            return Err(IMRPhenomXError::PnrAngles("invalid beta at f_ref"));
+        }
+        self.prec.remap_theta_jsf(&self.wf, beta_ref);
+        Ok(Some(splines))
     }
 
     /// `IMRPhenomXPHM_hplushcross` with the PNR flags on the grid
@@ -245,29 +412,8 @@ impl Setup {
         modes: &[(u32, u32)],
         frequencies: &[f64],
     ) -> Result<Polarizations, IMRPhenomXError> {
-        if self.wf.f_max_prime <= self.wf.f_min {
-            return Err(IMRPhenomXError::InvalidFrequencies("fCut <= f_min"));
-        }
-        if self.prec.precessing_tag == 3 {
-            self.prec.initialize_euler_angles(&self.wf)?;
-        }
-        let tuned = self.prec.use_tuned_angles;
-        let splines = if tuned {
-            let splines = self.prec.angle_interpolants(&self.wf, modes)?;
-            let f_ref = self.wf.f_ref;
-            let (alpha_ref, beta_ref, gamma_ref) = splines.angles(f_ref)?;
-            // the contribution of alpha0 is assigned in the remapping
-            self.prec.alpha_offset = alpha_ref;
-            // (the sign is flipped between gamma and epsilon)
-            self.prec.epsilon_offset = -gamma_ref - self.prec.epsilon0;
-            if !beta_ref.is_finite() {
-                return Err(IMRPhenomXError::PnrAngles("invalid beta at f_ref"));
-            }
-            self.prec.remap_theta_jsf(&self.wf, beta_ref);
-            Some(splines)
-        } else {
-            None
-        };
+        let splines = self.prepare_angles(modes)?;
+        let tuned = splines.is_some();
         let wf = &self.wf;
         let prec = &self.prec;
         let phase22 = PhaseCoefficients::new(wf);
@@ -277,7 +423,6 @@ impl Setup {
         let mut hp = vec![zero; n];
         let mut hc = vec![zero; n];
         let mf_cut = wf.f_max_prime * wf.m_sec;
-        let mf_rd_22 = wf.f_ring;
 
         for &(ell, emm) in modes {
             // skip twisting up when the co-precessing mode vanishes
@@ -290,20 +435,7 @@ impl Setup {
             } else {
                 None
             };
-            // transition frequencies of the frequency map
-            let (mf_low, mf_high, mf_rd_lm) = if tuned && (ell, emm) != (2, 2) {
-                let mf_rd_lm = ringdown_frequency(ell, emm, wf);
-                let (low, high) = linear_frequency_map_transition_frequencies(
-                    emm,
-                    mf_rd_22,
-                    mf_rd_lm,
-                    prec.pnr_hm_mflow,
-                    prec.pnr_hm_mfhigh,
-                );
-                (low, high, mf_rd_lm)
-            } else {
-                (0.0, 0.0, 0.0)
-            };
+            let angles = ModeAngles::new(wf, prec, splines.as_ref(), ell, emm);
             let ylm = harmonics(prec, ell);
             for (i, &f) in frequencies.iter().enumerate() {
                 let mf = wf.m_sec * f;
@@ -312,33 +444,8 @@ impl Setup {
                     continue;
                 }
                 let h = generator.h(mf, &UsefulPowers::new(mf));
-                let twist = match &splines {
-                    Some(splines) => {
-                        let mf_mapped = linear_frequency_map(
-                            mf,
-                            ell,
-                            emm,
-                            mf_low,
-                            mf_high,
-                            mf_rd_22,
-                            mf_rd_lm,
-                            prec.pnr_inspiral_scaling,
-                        )
-                        .ok_or(IMRPhenomXError::PnrAngles(
-                            "invalid transition frequencies of the frequency map",
-                        ))?;
-                        let f_mapped = mf_to_hz(mf_mapped, wf.m_tot);
-                        let (alpha, beta, gamma) = splines_at(splines, f_mapped)?;
-                        let alpha = alpha - prec.alpha_offset;
-                        let epsilon = -gamma - prec.epsilon_offset;
-                        Twist::new(alpha, beta.cos(), epsilon, emm)
-                    }
-                    None => {
-                        let omega = std::f64::consts::PI * mf * 2. / emm as f64;
-                        let (alpha, cos_beta, epsilon) = prec.nnlo_angles(omega);
-                        Twist::new(alpha, cos_beta, epsilon, emm)
-                    }
-                };
+                let (alpha, cos_beta, epsilon) = angles.at(mf)?;
+                let twist = Twist::new(alpha, cos_beta, epsilon, emm);
                 let (mut p, mut c) = twist_up(ell, emm, &twist, ylm, h, 1.0);
                 if let Some((amp, phase)) = &antisymmetric {
                     let h_antisymmetric = amp[i] * cexp_i(phase[i]);
@@ -365,12 +472,6 @@ impl Setup {
     }
 }
 
-/// The PNR angles at `f` (Hz).
-#[inline]
-fn splines_at(splines: &PnrSplines, f: f64) -> Result<(f64, f64, f64), IMRPhenomXError> {
-    splines.angles(f)
-}
-
 impl IMRPhenomXPNR {
     /// IMRPhenomXPNR with the default modes.
     ///
@@ -378,7 +479,7 @@ impl IMRPhenomXPNR {
     /// Kerr bound, non-positive distance, negative reference frequency,
     /// unphysical remnant fits).
     pub fn new(binary: &PrecessingBinary) -> Result<Self, IMRPhenomXError> {
-        Self::build(binary, IMRPHENOMXHM_MODES.to_vec())
+        Self::build(binary, lal_order(&IMRPHENOMXHM_MODES), false)
     }
 
     /// Restrict the waveform to the co-precessing modes `(l, m')` with
@@ -389,15 +490,59 @@ impl IMRPhenomXPNR {
         if modes.is_empty() || modes.iter().any(|mode| !IMRPHENOMXHM_MODES.contains(mode)) {
             return Err(IMRPhenomXError::InvalidModeArray);
         }
-        // LAL's mode loop order
-        let ordered: Vec<(u32, u32)> = (2..=4u32)
-            .flat_map(|ell| (1..=ell).map(move |emm| (ell, emm)))
-            .filter(|mode| modes.contains(mode))
-            .collect();
-        Self::build(&self.binary, ordered)
+        Ok(Self {
+            modes: lal_order(modes),
+            custom_mode_array: true,
+            ..self
+        })
     }
 
-    fn build(binary: &PrecessingBinary, modes: Vec<(u32, u32)>) -> Result<Self, IMRPhenomXError> {
+    /// Whether the Euler angles may leave the PNR angles with the
+    /// SpinTaylor angles (version 330) as LALSimulation does (`true`, the
+    /// default): the NNLO angles inside the PNR machinery for in-plane spins
+    /// below `1e-6`, plain IMRPhenomXPHM with the NNLO angles below `1e-7`,
+    /// the MSA angles when the SpinTaylor integration fails and the NNLO
+    /// angles when the MSA system cannot be initialised. With `false` these
+    /// are [`IMRPhenomXError::PrecessionVersionUnavailable`] errors.
+    pub fn with_version_fallback(self, allow: bool) -> Self {
+        Self {
+            version_fallback: allow,
+            ..self
+        }
+    }
+
+    /// Whether the precession prescription may change as in LALSimulation
+    /// (see [`IMRPhenomXPNR::with_version_fallback`]).
+    pub fn version_fallback(&self) -> bool {
+        self.version_fallback
+    }
+
+    /// The waveform and precession structs of the polarizations.
+    fn polarization_setup(
+        &self,
+        delta_f: f64,
+        f_min: f64,
+        f_max: f64,
+    ) -> Result<Setup, IMRPhenomXError> {
+        let setup = Setup::new(
+            &self.binary,
+            ModeRange::of_mode_array(&self.modes),
+            delta_f,
+            f_min,
+            f_max,
+            Caller::Polarizations,
+        )?;
+        if !self.version_fallback {
+            check_prescription(&setup.prec)?;
+        }
+        Ok(setup)
+    }
+
+    fn build(
+        binary: &PrecessingBinary,
+        modes: Vec<(u32, u32)>,
+        custom_mode_array: bool,
+    ) -> Result<Self, IMRPhenomXError> {
         if binary.f_ref < 0.0 {
             return Err(IMRPhenomXError::NegativeReferenceFrequency);
         }
@@ -407,6 +552,8 @@ impl IMRPhenomXPNR {
         Ok(Self {
             binary: *binary,
             modes,
+            custom_mode_array,
+            version_fallback: true,
         })
     }
 
@@ -428,7 +575,8 @@ impl IMRPhenomXPNR {
         let Some((f_min, f_max)) = frequency_bounds(frequencies)? else {
             return Ok((Vec::new(), Vec::new()));
         };
-        Setup::new(&self.binary, &self.modes, 0.0, f_min, f_max)?.generate(&self.modes, frequencies)
+        self.polarization_setup(0.0, f_min, f_max)?
+            .generate(&self.modes, frequencies)
     }
 
     /// `(h_+, h_x)` on the uniform grid `k delta_f`, `k = 0 .. n - 1`,
@@ -457,7 +605,7 @@ impl IMRPhenomXPNR {
                 "f_max must be non-negative",
             ));
         }
-        let mut setup = Setup::new(&self.binary, &self.modes, delta_f, f_min, f_max)?;
+        let mut setup = self.polarization_setup(delta_f, f_min, f_max)?;
         let f_max_prime = setup.wf.f_max_prime;
         let i_start = (f_min / delta_f) as usize;
         let i_stop = (f_max_prime / delta_f) as usize + 1;
