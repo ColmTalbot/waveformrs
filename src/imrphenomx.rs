@@ -51,6 +51,7 @@ mod qnm;
 mod ringdown;
 mod spintaylor_angles;
 mod utilities;
+mod version_fallback;
 mod wigner;
 mod xas;
 mod xhm;

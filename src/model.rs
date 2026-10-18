@@ -220,8 +220,10 @@ impl FromStr for Approximant {
     }
 }
 
-/// Options of [`choose_fd_model`] and [`choose_td_model`], the settings LAL
-/// takes from its `LALDict`.
+/// Options of [`choose_fd_model`], [`choose_td_model`] and
+/// [`choose_fd_modes`], the settings LAL takes from its `LALDict` (and the
+/// switch for the automatic changes of the precession prescription, which
+/// LAL does not have).
 ///
 /// ```
 /// use waveformrs::{imrphenomx::PrecessionVersion, WaveformOptions};
@@ -231,7 +233,7 @@ impl FromStr for Approximant {
 ///     .with_mode_array(&[(2, 2), (2, -2), (3, 3), (3, -3)]);
 /// # assert!(options.mode_array.is_some());
 /// ```
-#[derive(Clone, Debug, Default, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 #[non_exhaustive]
 pub struct WaveformOptions {
     /// The Euler angles of IMRPhenomXP and IMRPhenomXPHM (LAL's
@@ -247,6 +249,24 @@ pub struct WaveformOptions {
     /// selects all modes of the model. The (2,2)-mode models accept no mode
     /// array.
     pub mode_array: Option<Vec<(u32, i32)>>,
+    /// Whether IMRPhenomXP and IMRPhenomXPHM may change the Euler-angle
+    /// prescription automatically as LALSimulation does (`true`, the
+    /// default): SpinTaylor to NNLO for in-plane spins below `1e-7`,
+    /// SpinTaylor to MSA when the SpinTaylor angles cannot be computed, MSA
+    /// to NNLO when the MSA system cannot be initialised. With `false` the
+    /// requested prescription is used or the evaluation fails with
+    /// [`crate::imrphenomx::IMRPhenomXError::PrecessionVersionUnavailable`].
+    pub version_fallback: bool,
+}
+
+impl Default for WaveformOptions {
+    fn default() -> Self {
+        Self {
+            precession_version: PrecessionVersion::default(),
+            mode_array: None,
+            version_fallback: true,
+        }
+    }
 }
 
 impl WaveformOptions {
@@ -271,6 +291,12 @@ impl WaveformOptions {
     /// Set [`WaveformOptions::mode_array`].
     pub fn with_mode_array(mut self, modes: &[(u32, i32)]) -> Self {
         self.mode_array = Some(modes.to_vec());
+        self
+    }
+
+    /// Set [`WaveformOptions::version_fallback`].
+    pub fn with_version_fallback(mut self, allow: bool) -> Self {
+        self.version_fallback = allow;
         self
     }
 }

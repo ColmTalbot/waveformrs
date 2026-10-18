@@ -47,6 +47,15 @@ pub enum IMRPhenomXError {
     SpinTaylorAngles(&'static str),
     /// The mode array is empty or contains modes the model does not have.
     InvalidModeArray,
+    /// The requested Euler-angle prescription (`PhenomXPrecVersion`) cannot
+    /// be used for this binary and grid, and the automatic fallback to
+    /// `fallback`, which LALSimulation would make, is switched off
+    /// (`with_version_fallback(false)`).
+    PrecessionVersionUnavailable {
+        requested: u32,
+        fallback: u32,
+        reason: &'static str,
+    },
 }
 
 impl fmt::Display for IMRPhenomXError {
@@ -81,6 +90,15 @@ impl fmt::Display for IMRPhenomXError {
             ),
             Self::SpinTaylorAngles(why) => write!(f, "SpinTaylor Euler angles: {why}"),
             Self::InvalidModeArray => write!(f, "mode array contains unavailable modes"),
+            Self::PrecessionVersionUnavailable {
+                requested,
+                fallback,
+                reason,
+            } => write!(
+                f,
+                "PhenomXPrecVersion {requested} cannot be used ({reason}); LALSimulation would \
+                 switch to {fallback}, but version fallbacks are disabled"
+            ),
         }
     }
 }

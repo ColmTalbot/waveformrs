@@ -373,10 +373,10 @@ impl FrequencyDomainModel for IMRPhenomXHM {
 
 /// IMRPhenomXP for [`crate::model::choose_fd_model`].
 pub(super) fn xp(binary: &Binary, options: &WaveformOptions) -> Result<IMRPhenomXP> {
-    Ok(IMRPhenomXP::with_version(
-        binary,
-        options.precession_version,
-    )?)
+    Ok(
+        IMRPhenomXP::with_version(binary, options.precession_version)?
+            .with_version_fallback(options.version_fallback),
+    )
 }
 
 /// IMRPhenomXP as `SimInspiralChooseFDWaveformSequence`
@@ -427,7 +427,8 @@ impl FrequencyDomainModel for IMRPhenomXP {
 
 /// IMRPhenomXPHM for [`crate::model::choose_fd_model`].
 pub(super) fn xphm(binary: &Binary, options: &WaveformOptions) -> Result<IMRPhenomXPHM> {
-    let mut model = IMRPhenomXPHM::with_version(binary, options.precession_version)?;
+    let mut model = IMRPhenomXPHM::with_version(binary, options.precession_version)?
+        .with_version_fallback(options.version_fallback);
     if let Some(modes) = &options.mode_array {
         // LAL twists up both signs of m' whichever sign is listed
         let mut positive: Vec<(u32, u32)> = modes

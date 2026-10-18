@@ -57,3 +57,12 @@ All notable changes to `waveformrs` are recorded here.
   `SimInspiralChooseFDModes` on uniform grids for IMRPhenomXHM and
   IMRPhenomXPHM. Tested against new reference data
   (`tests/data/choose_fd_modes.json`, `tests/modes.rs`).
+- **A switch for the automatic changes of the precession prescription** of
+  IMRPhenomXP and IMRPhenomXPHM: `with_version_fallback(false)` (and
+  `WaveformOptions::version_fallback`). By default the models still change
+  the Euler angles as LALSimulation does (SpinTaylor to NNLO for in-plane
+  spins below 1e-7, SpinTaylor to MSA when the SpinTaylor angles cannot be
+  computed, MSA to NNLO when the MSA system cannot be initialised); with the
+  switch off they return the new
+  `IMRPhenomXError::PrecessionVersionUnavailable` instead (polarizations,
+  grid and uniform paths, and modes).

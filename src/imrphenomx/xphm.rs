@@ -20,6 +20,7 @@ use crate::imrphenomx::precession::{
     mf_to_hz, PrecessingBinary, PrecessionStruct, PrecessionVersion,
 };
 use crate::imrphenomx::spintaylor_angles::{inspiral_angles_spintaylor, SpinTaylorAngles};
+use crate::imrphenomx::version_fallback::{check_version, forbid_spintaylor_fallback};
 use crate::imrphenomx::wigner::half_angles;
 use crate::imrphenomx::xhm::{ModeGenerator, IMRPHENOMXHM_MODES};
 use crate::imrphenomx::xp::{frequency_bounds, Polarizations};
@@ -87,6 +88,9 @@ pub struct IMRPhenomXPHM {
     /// (a `ModeArray` in the LALDict), which sets the frequency range of the
     /// SpinTaylor angles of the J-frame modes.
     custom_mode_array: bool,
+    /// Whether the prescription may change as in LAL (see
+    /// [`IMRPhenomXPHM::with_version_fallback`]).
+    version_fallback: bool,
     /// Parameter-only set-up for a non-uniform grid (`f_ref > 0`).
     setup: Option<Setup>,
 }
@@ -769,7 +773,46 @@ impl IMRPhenomXPHM {
             .collect();
         let mut model = Self::build(&self.binary, self.version, ordered)?;
         model.custom_mode_array = true;
+        model.version_fallback = self.version_fallback;
         Ok(model)
+    }
+
+    /// Whether the Euler-angle prescription may change automatically as in
+    /// LALSimulation (the default, `true`): SpinTaylor to NNLO for in-plane
+    /// spins below `1e-7`, SpinTaylor to MSA when the SpinTaylor angles
+    /// cannot be computed, MSA to NNLO when the MSA system cannot be
+    /// initialised. With `false` the requested prescription is used or
+    /// the evaluation (polarizations and modes) returns
+    /// [`IMRPhenomXError::PrecessionVersionUnavailable`].
+    pub fn with_version_fallback(mut self, allow: bool) -> Self {
+        self.version_fallback = allow;
+        self
+    }
+
+    /// Whether the Euler-angle prescription may change automatically (see
+    /// [`IMRPhenomXPHM::with_version_fallback`]).
+    pub fn version_fallback(&self) -> bool {
+        self.version_fallback
+    }
+
+    /// Without version fallbacks, the failure of the SpinTaylor angles as an
+    /// error (otherwise unchanged, for [`fallback_to_msa`]).
+    fn strict<T>(&self, result: Result<T, IMRPhenomXError>) -> Result<T, IMRPhenomXError> {
+        if self.version_fallback {
+            result
+        } else {
+            forbid_spintaylor_fallback(result)
+        }
+    }
+
+    /// Without version fallbacks, an error unless `setup` uses the requested
+    /// prescription.
+    fn check(&self, setup: &Setup) -> Result<(), IMRPhenomXError> {
+        if self.version_fallback {
+            Ok(())
+        } else {
+            check_version(&setup.prec, self.version)
+        }
     }
 
     fn build(
@@ -803,6 +846,7 @@ impl IMRPhenomXPHM {
             version,
             modes,
             custom_mode_array: false,
+            version_fallback: true,
             setup: (binary.f_ref > 0.0).then_some(setup),
         })
     }
@@ -833,7 +877,7 @@ impl IMRPhenomXPHM {
         };
         let mut setup = self.setup(f_min, f_max)?;
         fallback_to_msa(
-            setup.generate(&self.modes, frequencies),
+            self.strict(setup.generate(&self.modes, frequencies)),
             &self.binary,
             &self.modes,
             0.0,
@@ -874,10 +918,10 @@ impl IMRPhenomXPHM {
             return Ok(());
         };
         let modes = &self.modes;
-        match self
-            .setup(f_min, f_max)?
-            .generate_grid(modes, grid, hplus, hcross)
-        {
+        match self.strict(
+            self.setup(f_min, f_max)?
+                .generate_grid(modes, grid, hplus, hcross),
+        ) {
             Err(IMRPhenomXError::SpinTaylorFallbackToMsa(_)) => Setup::new(
                 &self.binary,
                 PrecessionVersion::Msa,
@@ -893,10 +937,12 @@ impl IMRPhenomXPHM {
 
     /// The set-up for a non-uniform grid from `f_min` to `f_max`.
     fn setup(&self, f_min: f64, f_max: f64) -> Result<Setup, IMRPhenomXError> {
-        match &self.setup {
-            Some(setup) => Ok(setup.with_bounds(f_min, f_max)),
-            None => Setup::new(&self.binary, self.version, &self.modes, 0.0, f_min, f_max),
-        }
+        let setup = match &self.setup {
+            Some(setup) => setup.with_bounds(f_min, f_max),
+            None => Setup::new(&self.binary, self.version, &self.modes, 0.0, f_min, f_max)?,
+        };
+        self.check(&setup)?;
+        Ok(setup)
     }
 
     /// `(h_+, h_x)` on the uniform grid `k delta_f`, `k = 0 .. n - 1`,
@@ -933,12 +979,13 @@ impl IMRPhenomXPHM {
             f_min,
             f_max,
         )?;
+        self.check(&setup)?;
         let f_max_prime = setup.wf.f_max_prime;
         let i_start = (f_min / delta_f) as usize;
         let i_stop = (f_max_prime / delta_f) as usize + 1;
         let frequencies: Vec<f64> = (i_start..i_stop).map(|i| i as f64 * delta_f).collect();
         let (hp_band, hc_band) = fallback_to_msa(
-            setup.generate(&self.modes, &frequencies),
+            self.strict(setup.generate(&self.modes, &frequencies)),
             &self.binary,
             &self.modes,
             delta_f,

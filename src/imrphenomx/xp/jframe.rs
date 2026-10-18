@@ -102,7 +102,7 @@ impl IMRPhenomXP {
         let Some((f_min, f_max)) = frequency_bounds(frequencies)? else {
             return Ok(FrequencyModes::default());
         };
-        match self.setup(f_min, f_max)?.jframe_modes(frequencies) {
+        match self.strict(self.setup(f_min, f_max)?.jframe_modes(frequencies)) {
             Err(IMRPhenomXError::SpinTaylorFallbackToMsa(_)) => {
                 Setup::new(&self.binary, PrecessionVersion::Msa, 0.0, f_min, f_max)?
                     .jframe_modes(frequencies)

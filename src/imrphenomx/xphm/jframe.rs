@@ -25,6 +25,7 @@ use crate::constants::{MSUN_SI, PC_SI};
 use crate::imrphenomx::internals::{IMRPhenomXError, UsefulPowers, WaveformStruct};
 use crate::imrphenomx::libm::cexp_i;
 use crate::imrphenomx::precession::{PrecessingBinary, PrecessionStruct, PrecessionVersion};
+use crate::imrphenomx::version_fallback::{check_version, forbid_spintaylor_fallback};
 use crate::imrphenomx::wigner::half_angles;
 use crate::imrphenomx::xhm::modes::next_pow2;
 use crate::imrphenomx::xp::frequency_bounds;
@@ -50,6 +51,8 @@ pub(crate) struct JFrameModes<'a> {
     /// Co-precessing modes `(l, m' > 0)` in LAL's order.
     pub(crate) coprecessing: &'a [(u32, u32)],
     pub(crate) range: AngleRange,
+    /// Whether the prescription may change as in LAL.
+    pub(crate) version_fallback: bool,
 }
 
 /// The angle range `(M_MIN, M_MAX)` of a set-up and its J-frame modes
@@ -231,13 +234,19 @@ impl JFrameModes<'_> {
                 .collect();
             let band = &frequencies[start..stop];
             let mut setup = self.setup(self.version, m_min, m_max, delta_f, f_min, f_max)?;
-            let result = twist_up_modes(
+            if !self.version_fallback {
+                check_version(&setup.prec, self.version)?;
+            }
+            let mut result = twist_up_modes(
                 &mut setup,
                 self.coprecessing,
                 band,
                 start,
                 &mut accumulators,
             );
+            if !self.version_fallback {
+                result = forbid_spintaylor_fallback(result);
+            }
             let setup = match result {
                 Err(IMRPhenomXError::SpinTaylorFallbackToMsa(_)) => {
                     // LAL switches this mode to the MSA angles (223)
@@ -393,6 +402,7 @@ impl IMRPhenomXPHM {
             } else {
                 AngleRange::PerMode
             },
+            version_fallback: self.version_fallback,
         }
     }
 
