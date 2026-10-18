@@ -1,4 +1,5 @@
 pub mod batch;
+pub mod conditioning;
 pub(crate) mod constants;
 pub mod error;
 pub(crate) mod fastmath;
@@ -10,6 +11,7 @@ pub mod interpolate;
 pub mod model;
 pub mod nrsur;
 pub mod pn;
+pub mod series;
 pub mod spintaylor;
 pub mod taylor;
 pub mod waveform;
