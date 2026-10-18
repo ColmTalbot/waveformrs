@@ -137,6 +137,22 @@ fn main() {
         black_box(wf.polarizations_uniform(0.25, 20.0, 1500.0).unwrap());
     });
 
+    // NRSur7dq4 (time domain, 4096 Hz from 20 Hz), when its data file is found
+    if let Ok(data) = waveformrs::nrsur::NRSur7dq4Data::global() {
+        let mut ws = waveformrs::nrsur::NRSurWorkspace::new();
+        let mut out = waveformrs::nrsur::TimeSeriesPolarizations::default();
+        run("NRSur7dq4", &mut || {
+            let wf = waveformrs::nrsur::NRSur7dq4::new(data, &binary).unwrap();
+            black_box(wf.polarizations(1.0 / 4096.0, f_ref).unwrap());
+        });
+        run("NRSur7dq4 (workspace)", &mut || {
+            let wf = waveformrs::nrsur::NRSur7dq4::new(data, &binary).unwrap();
+            wf.polarizations_with(&mut ws, 1.0 / 4096.0, f_ref, &mut out)
+                .unwrap();
+            black_box(&out);
+        });
+    }
+
     if json {
         let entries: Vec<String> = results
             .iter()

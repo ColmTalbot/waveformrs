@@ -45,6 +45,7 @@ ORDER = [
     "IMRPhenomXPHM_NNLO",
     "IMRPhenomXPHM_MSA",
     "IMRPhenomXPHM",
+    "NRSur7dq4",
 ]
 LABELS = {
     "IMRPhenomXP_NNLO": "IMRPhenomXP (102)",
@@ -66,6 +67,7 @@ COLOURS = [
     "#7a8b2e",
     "#b8662d",
     "#5a6fd6",
+    "#8c6d3f",
 ]
 
 
@@ -129,7 +131,7 @@ def total_mass(record):
 
 def accuracy(results):
     names = list(results)
-    ncols = 5
+    ncols = 4
     nrows = int(np.ceil(len(names) / ncols))
     fig, axes = plt.subplots(
         nrows, ncols, figsize=(8.0, 1.75 * nrows), sharex=True, sharey=True

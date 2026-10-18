@@ -8,6 +8,7 @@ Run single-threaded (lalsimulation's IMRPhenomX* loops use OpenMP):
     OMP_NUM_THREADS=1 python report/lal_benchmark.py
 """
 import json
+import os
 import subprocess
 import time
 from pathlib import Path
@@ -17,6 +18,7 @@ import lalsimulation as ls
 import numpy as np
 
 ROOT = Path(__file__).resolve().parent.parent
+os.environ.setdefault("LAL_DATA_PATH", str(ROOT / "lal_data"))
 
 FREQUENCIES = np.arange(80, 6001) * 0.25
 ALIGNED = dict(masses=(40.0, 20.0), spins=(0, 0, 0.3, 0, 0, -0.2))
@@ -114,10 +116,21 @@ def uniform(approximant, binary, flags):
     )
 
 
+def nrsur(delta_t=1 / 4096):
+    """NRSur7dq4 with SimInspiralChooseTDWaveform from 20 Hz."""
+    m1, m2 = PRECESSING["masses"]
+    return lambda: ls.SimInspiralChooseTDWaveform(
+        m1 * lal.MSUN_SI, m2 * lal.MSUN_SI, *PRECESSING["spins"],
+        DISTANCE * 1e6 * lal.PC_SI, INCLINATION, PHI_REF, 0.0, 0.0, 0.0,
+        delta_t, F_REF, F_REF, None, ls.NRSur7dq4,
+    )
+
+
 def rust_timings():
+    env = dict(os.environ, NRSUR7DQ4_DATA=str(ROOT / "lal_data" / "NRSur7dq4_v1.0.h5"))
     result = subprocess.run(
         ["cargo", "run", "--quiet", "--release", "--example", "benchmark", "--", "--json"],
-        capture_output=True, text=True, cwd=ROOT, check=True,
+        capture_output=True, text=True, cwd=ROOT, check=True, env=env,
     )
     return {name: value["best"] for name, value in json.loads(result.stdout).items()}
 
@@ -126,6 +139,9 @@ def main():
     rust = rust_timings()
     lal_sequence = {name: best_time(sequence(*case)) for name, case in CASES.items()}
     lal_uniform = {name: best_time(uniform(*case)) for name, case in UNIFORM.items()}
+    if "NRSur7dq4" in rust:
+        lal_sequence["NRSur7dq4"] = best_time(nrsur())
+        lal_sequence["NRSur7dq4 (workspace)"] = lal_sequence["NRSur7dq4"]
     out = dict(
         lalsimulation_version=ls.__version__,
         n_frequencies=len(FREQUENCIES),
