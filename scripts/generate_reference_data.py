@@ -10,7 +10,10 @@ polarizations computed with ``SimInspiralChooseFDWaveformSequence`` (or with
 for cases with ``delta_f > 0``).  The ``imrphenomxp_spintaylor_angles`` suite
 instead stores the Euler angles of ``SimIMRPhenomXPSpinTaylorAngles`` and the
 ``imrphenomxhm_modes`` suite the individual modes of
-``SimIMRPhenomXHMFrequencySequenceOneMode``.
+``SimIMRPhenomXHMFrequencySequenceOneMode``. The ``choose_fd_modes`` suite
+stores the modes of ``SimInspiralChooseFDModes`` (IMRPhenomXHM and
+IMRPhenomXPHM, on uniform grids), every ``fd_modes_stride``-th sample of the
+positive- and negative-frequency halves of each mode.
 
 The time-domain ``nrsur7dq4`` suites store the polarizations of
 ``SimInspiralChooseTDWaveform`` (with the epoch, or the error message for
@@ -334,6 +337,56 @@ def spin_weighted_harmonic_cases():
     return [dict(theta=thetas, phi=phis, harmonics=True)]
 
 
+def generate_fd_modes(case):
+    """Modes of SimInspiralChooseFDModes. Each mode is a two-sided series
+    on (-L..L) * delta_f; store h_lm(k delta_f) and h_lm(-k delta_f) for
+    k = 0, stride, 2 stride, ... <= L."""
+    params = lal_dict(case.get("lal_flags"), case.get("mode_array"))
+    if case.get("mode_array_jframe") is not None:
+        modes = lalsim.SimInspiralCreateModeArray()
+        for ell, emm in case["mode_array_jframe"]:
+            lalsim.SimInspiralModeArrayActivateMode(modes, ell, emm)
+        lalsim.SimInspiralWaveformParamsInsertModeArrayJframe(params, modes)
+    hlms = lalsim.SimInspiralChooseFDModes(
+        case["mass_1"] * lal.MSUN_SI,
+        case["mass_2"] * lal.MSUN_SI,
+        *case["spin_1"],
+        *case["spin_2"],
+        case["delta_f"],
+        case["f_min"],
+        case["f_max"],
+        case["f_ref"],
+        case["phi_ref"],
+        case["luminosity_distance"] * 1e6 * lal.PC_SI,
+        case["inclination"],
+        params,
+        lalsim.GetApproximantFromString(case["approximant"]),
+    )
+    stride = case["fd_modes_stride"]
+    case = dict(case)
+    case["modes"] = list()
+    node = hlms
+    while node is not None:
+        data = node.mode.data.data
+        half = (len(data) - 1) // 2
+        positive = data[half::stride]
+        negative = data[half::-stride]
+        case["length"] = half + 1
+        case["modes"].append(
+            dict(
+                ell=node.l,
+                emm=node.m,
+                positive_real=positive.real.tolist(),
+                positive_imag=positive.imag.tolist(),
+                negative_real=negative.real.tolist(),
+                negative_imag=negative.imag.tolist(),
+            )
+        )
+        node = node.next
+    case["modes"].sort(key=lambda mode: (mode["ell"], mode["emm"]))
+    return case
+
+
 def generate_harmonics(case):
     case = dict(case)
     case.pop("harmonics")
@@ -349,6 +402,8 @@ def generate_harmonics(case):
 def generate(case, n_frequencies):
     if "harmonics" in case:
         return generate_harmonics(case)
+    if "fd_modes_stride" in case:
+        return generate_fd_modes(case)
     if "sample_stride" in case:
         return generate_td_modes(case)
     if "delta_t" in case:
@@ -725,6 +780,77 @@ def unit(vector, magnitude):
     return (magnitude * vector / np.linalg.norm(vector)).tolist()
 
 
+def choose_fd_modes_cases():
+    """SimInspiralChooseFDModes for IMRPhenomXHM (mode arrays, equal masses,
+    f_max above the cutoff, f_ref = 0) and IMRPhenomXPHM (SpinTaylor, MSA
+    and NNLO angles, a co-precessing mode array with the matching J-frame
+    mode array, equal masses, and a heavy binary whose SpinTaylor angles
+    fall back to the MSA angles for some J-frame modes), with
+    multibanding off."""
+    xhm = [
+        # mass_1, mass_2, chi_1, chi_2, f_min, f_ref, delta_f, f_max, mode_array
+        (36.0, 29.0, 0.3, -0.4, 20.0, 30.0, 0.5, 512.0, None),
+        (60.0, 15.0, 0.8, 0.5, 15.0, 0.0, 1.0, 0.0, None),
+        (30.0, 30.0, 0.5, 0.5, 20.0, 25.0, 1.0, 1024.0, [[2, 2], [2, -2], [3, -3], [4, 4]]),
+        (8.0, 1.4, 0.9, 0.0, 20.0, 50.0, 0.25, 256.0, [[2, -2], [2, -1], [3, -3], [3, -2], [4, -4]]),
+    ]
+    cases = [
+        dict(
+            approximant="IMRPhenomXHM",
+            mass_1=m1,
+            mass_2=m2,
+            spin_1=[0.0, 0.0, c1],
+            spin_2=[0.0, 0.0, c2],
+            luminosity_distance=500.0,
+            inclination=0.7,
+            phi_ref=1.2,
+            f_min=fmin,
+            f_ref=fref,
+            delta_f=df,
+            f_max=fmax,
+            lal_flags=NO_MULTIBANDING,
+            fd_modes_stride=8,
+            **(dict(mode_array=modes) if modes else dict()),
+        )
+        for m1, m2, c1, c2, fmin, fref, df, fmax, modes in xhm
+    ]
+    l23 = [[ell, emm] for ell in (2, 3) for emm in range(-ell, ell + 1)]
+    xphm = [
+        # mass_1, mass_2, spin_1, spin_2, f_min, f_ref, delta_f, f_max,
+        # version, inclination, extra
+        (36.0, 29.0, [0.4, 0.2, 0.3], [-0.2, 0.3, -0.1], 20.0, 20.0, 1.0, 512.0, 320, 0.7, {}),
+        (36.0, 29.0, [0.4, 0.2, 0.3], [-0.2, 0.3, -0.1], 20.0, 25.0, 1.0, 512.0, 223, 0.7, {}),
+        (36.0, 29.0, [0.4, 0.2, 0.3], [-0.2, 0.3, -0.1], 20.0, 0.0, 1.0, 512.0, 102, 0.7, {}),
+        (60.0, 15.0, [0.6, -0.3, 0.5], [0.1, 0.1, 0.0], 15.0, 20.0, 0.5, 0.0, 320, 2.3, {}),
+        (40.0, 12.0, [0.5, -0.2, 0.3], [0.1, 0.6, -0.2], 15.0, 25.0, 1.0, 0.0, 320, 2.0,
+         dict(mode_array=[[2, 2], [2, -2], [2, 1], [2, -1], [3, 3], [3, -3]],
+              mode_array_jframe=l23)),
+        (30.0, 30.0, [0.5, 0.5, 0.5], [0.5, -0.5, -0.5], 20.0, 30.0, 1.0, 512.0, 320, 1.6, {}),
+        (180.0, 65.0, [0.2, 0.1, -0.1], [-0.1, -0.2, 0.1], 15.5, 15.5, 0.5, 0.0, 320, 0.4, {}),
+    ]
+    for m1, m2, s1, s2, fmin, fref, df, fmax, version, iota, extra in xphm:
+        cases.append(
+            dict(
+                approximant="IMRPhenomXPHM",
+                mass_1=m1,
+                mass_2=m2,
+                spin_1=s1,
+                spin_2=s2,
+                luminosity_distance=800.0,
+                inclination=iota,
+                phi_ref=0.9,
+                f_min=fmin,
+                f_ref=fref,
+                delta_f=df,
+                f_max=fmax,
+                lal_flags=dict(PhenomXPrecVersion=version, **NO_MULTIBANDING),
+                fd_modes_stride=8,
+                **extra,
+            )
+        )
+    return cases
+
+
 def nrsur7dq4_cases():
     """NRSur7dq4 polarizations from SimInspiralChooseTDWaveform: mass ratios
     1 to 6, spins up to 0.99, f_ref != f_min, f_min = 0 (the whole
@@ -941,6 +1067,7 @@ SUITES = dict(
     imrphenomxphm_modes=xphm_mode_array_cases,
     imrphenomxphm_msa=xphm_msa_cases,
     imrphenomxphm_spintaylor_fallback=xphm_spintaylor_fallback_cases,
+    choose_fd_modes=choose_fd_modes_cases,
     nrsur7dq4=nrsur7dq4_cases,
     nrsur7dq4_modes=nrsur7dq4_mode_cases,
     nrsur7dq4_dynamics=nrsur7dq4_dynamics_cases,

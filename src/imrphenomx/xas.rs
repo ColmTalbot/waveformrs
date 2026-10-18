@@ -282,6 +282,19 @@ impl IMRPhenomXAS {
             *h = self.h22(self.wf.m_sec * f, phif_ref, mf_cut) * ylm;
         }
     }
+
+    /// The (2,2) mode `h_{2,-2}(f)` of `XLALSimIMRPhenomXASFrequencySequence`
+    /// (without the spherical-harmonic factor) at `frequencies`, written into
+    /// `out`, for the orbital reference phase `phi_ref`.
+    pub(crate) fn h22_into(&self, frequencies: &[f64], phi_ref: f64, out: &mut [Complex<f64>]) {
+        let (Some(&f_min), Some(&f_max)) = (frequencies.first(), frequencies.last()) else {
+            return;
+        };
+        let (phif_ref, mf_cut) = self.grid_phase_and_cutoff(f_min, f_max, phi_ref);
+        for (h, &f) in out.iter_mut().zip(frequencies) {
+            *h = self.h22(self.wf.m_sec * f, phif_ref, mf_cut);
+        }
+    }
 }
 
 impl Waveform for IMRPhenomXAS {

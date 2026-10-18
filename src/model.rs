@@ -39,6 +39,7 @@
 //! ```
 
 mod frequency_domain;
+mod modes;
 mod time_domain;
 
 use std::fmt;
@@ -54,6 +55,7 @@ use crate::nrsur::{NRSur7dq4, NRSurWorkspace};
 use crate::taylor::TaylorF2;
 
 pub use crate::nrsur::{Mode as TimeSeriesMode, TimeSeriesModes, TimeSeriesPolarizations};
+pub use modes::{FrequencyMode, FrequencyModes};
 
 /// The parameters of a compact binary in the conventions of
 /// `SimInspiralChooseFDWaveform` (also used by `SimInspiralChooseTDWaveform`
@@ -349,6 +351,35 @@ pub trait FrequencyDomainModel: Send + Sync + fmt::Debug {
         hplus: &mut [Complex<f64>],
         hcross: &mut [Complex<f64>],
     ) -> Result<()>;
+
+    /// The spherical-harmonic modes `h_lm` (without the `Y_lm`) at
+    /// `frequencies` (Hz, positive and increasing), at `+f` and `-f`, in the
+    /// conventions of `SimInspiralChooseFDModes` (see [`FrequencyModes`]):
+    ///
+    /// * IMRPhenomXHM: the modes of its mode array (by default `(l, +-m)`
+    ///   for (2,2), (2,1), (3,3), (3,2), (4,4)), each as
+    ///   `XLALSimIMRPhenomXHMFrequencySequenceOneMode`, including the
+    ///   reference phase; `m < 0` at positive and `m > 0` at negative
+    ///   frequencies.
+    /// * IMRPhenomXPHM: the modes `(l, m)`, `|m| <= l`, in the inertial J
+    ///   frame for every `l` of its co-precessing modes, each as
+    ///   `XLALSimIMRPhenomXPHMFrequencySequenceOneMode` (with LAL's frequency
+    ///   range of the SpinTaylor angles for each mode). Unlike LAL, a
+    ///   co-precessing mode array without some `l` leaves out the J-frame
+    ///   modes of that `l` instead of failing.
+    /// * IMRPhenomXAS, IMRPhenomD, TaylorF2 (not supported by LAL's
+    ///   `ChooseFDModes`): the modes (2,-2) and (2,2) in the conventions of
+    ///   IMRPhenomXHM, with `h_{2,-2}(f) = h(f) / (2 sqrt(5 / 64 pi) e^{-i
+    ///   pi})` for the face-on `h_+ = h`; for IMRPhenomXAS this is the (2,2)
+    ///   mode of IMRPhenomXHM.
+    /// * IMRPhenomXP (not supported by LAL): the J-frame modes `(2, m)` of
+    ///   its (2,2) co-precessing mode, twisted up as for its polarizations.
+    ///
+    /// [`FrequencyModes::polarizations`] recovers the polarizations from the
+    /// modes, to rounding (for IMRPhenomXPHM with the SpinTaylor angles, to
+    /// the accuracy of the angles, whose integration range differs between
+    /// the modes and the polarizations as in LAL).
+    fn modes(&self, frequencies: &[f64]) -> Result<FrequencyModes>;
 }
 
 /// A time-domain waveform model with all parameters fixed (NRSur7dq4),
@@ -437,6 +468,10 @@ impl<T: FrequencyDomainModel + ?Sized> FrequencyDomainModel for Box<T> {
     ) -> Result<()> {
         (**self).polarizations_on_grid(grid, hplus, hcross)
     }
+
+    fn modes(&self, frequencies: &[f64]) -> Result<FrequencyModes> {
+        (**self).modes(frequencies)
+    }
 }
 
 /// The frequency-domain model `approximant` for `binary`, the analogue of
@@ -514,6 +549,55 @@ pub fn choose_td_model(
         _ => Err(Error::Unsupported {
             approximant,
             what: "time-domain waveforms (it is a frequency-domain model)",
+        }),
+    }
+}
+
+/// `SimInspiralChooseFDModes(m1, m2, *spin_1, *spin_2, delta_f, f_min,
+/// f_max, f_ref, phi_ref, distance, inclination, params, approximant)` of
+/// LALSimulation 6.2.0 for the approximants it supports, IMRPhenomXHM and
+/// IMRPhenomXPHM (with `PhenomXHMThresholdMband = PhenomXPHMThresholdMband
+/// = 0`).
+///
+/// The modes are on the uniform grid `f_k = k delta_f`, `k = 0 .. n - 1`,
+/// with `n - 1` the next power of two of `max(f_max, f_cut) / delta_f`
+/// (`f_max = 0` selects the cutoff `f_cut` at `Mf = 0.3`), and vanish below
+/// `f_min` and above `min(f_max, f_cut)`. LAL's two-sided series of mode
+/// `(l, m)` at `(i - n + 1) delta_f`, `i = 0 .. 2n - 2`, is
+/// `negative[n - 1 - i]` for `i < n - 1` and `positive[i - n + 1]` after.
+/// `f_ref = 0` selects `f_min`. The mode array of `options` is IMRPhenomXHM's
+/// (with signs) or IMRPhenomXPHM's co-precessing one; IMRPhenomXPHM returns
+/// all J-frame modes of the `l` it has (LAL's default `ModeArrayJframe`).
+/// See [`FrequencyDomainModel::modes`] for the conventions.
+pub fn choose_fd_modes(
+    approximant: Approximant,
+    binary: &Binary,
+    delta_f: f64,
+    f_min: f64,
+    f_max: f64,
+    options: &WaveformOptions,
+) -> Result<FrequencyModes> {
+    match approximant {
+        Approximant::IMRPhenomXHM => {
+            let mut model = IMRPhenomXHM::from_binary(binary)?;
+            if let Some(modes) = &options.mode_array {
+                model = frequency_domain::xhm_with_mode_array(model, modes)?;
+            }
+            Ok(model.frequency_modes_uniform(
+                delta_f,
+                f_min,
+                f_max,
+                binary.phi_ref,
+                binary.inclination,
+            )?)
+        }
+        Approximant::IMRPhenomXPHM => {
+            Ok(frequency_domain::xphm(binary, options)?
+                .jframe_modes_uniform(delta_f, f_min, f_max)?)
+        }
+        _ => Err(Error::Unsupported {
+            approximant,
+            what: "SimInspiralChooseFDModes (LAL supports IMRPhenomXHM and IMRPhenomXPHM)",
         }),
     }
 }

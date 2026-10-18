@@ -21,6 +21,8 @@ use crate::imrphenomx::wigner::twist_up_22;
 use crate::imrphenomx::xas::IMRPhenomXAS;
 use crate::spintaylor::fp::fma;
 
+mod jframe;
+
 /// `pWF->phifRef` as `IMRPhenomXPGenerateFD` evaluates it,
 /// `-(phi22(MfRef) / eta + linb MfRef + lina) + 2 phi0 + pi / 4`, which LAL's
 /// arm64 build contracts differently from `IMRPhenomXASGenerateFD`.

@@ -15,6 +15,6 @@ pub mod waveform;
 
 pub use error::{Error, Result};
 pub use model::{
-    choose_fd_model, choose_td_model, Approximant, Binary, FrequencyDomainModel, TimeDomainModel,
-    WaveformOptions,
+    choose_fd_model, choose_fd_modes, choose_td_model, Approximant, Binary, FrequencyDomainModel,
+    FrequencyMode, FrequencyModes, TimeDomainModel, WaveformOptions,
 };

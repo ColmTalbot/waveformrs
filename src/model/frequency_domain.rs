@@ -9,7 +9,10 @@ use crate::imrphenomx::{
     IMRPhenomXAS, IMRPhenomXError, IMRPhenomXHM, IMRPhenomXP, IMRPhenomXPHM, Polarizations,
     IMRPHENOMXHM_MODES,
 };
-use crate::model::{Approximant, Binary, Extrinsic, FrequencyDomainModel, WaveformOptions};
+use crate::model::modes::aligned_22;
+use crate::model::{
+    Approximant, Binary, Extrinsic, FrequencyDomainModel, FrequencyModes, WaveformOptions,
+};
 use crate::taylor::TaylorF2;
 use crate::waveform::Waveform;
 
@@ -59,6 +62,15 @@ fn is_positive(x: f64) -> bool {
 /// `x >= 0` (false for NaN).
 fn is_non_negative(x: f64) -> bool {
     x >= 0.0
+}
+
+/// `h_{2,-2}(f)` from the face-on `h_+ = Y h_{2,-2}` of the (2,2)-mode
+/// models, `Y = 2 sqrt(5 / 64 pi) exp(-i pi) = -2 sqrt(5 / 64 pi)`.
+fn h22_from_face_on(h: &mut [Complex<f64>]) {
+    let y = -2.0 * (5.0 / (64.0 * std::f64::consts::PI)).sqrt();
+    for value in h {
+        *value /= y;
+    }
 }
 
 fn invalid(approximant: Approximant, message: &'static str) -> Error {
@@ -121,6 +133,13 @@ impl FrequencyDomainModel for TaylorF2 {
         } = self.extrinsic;
         self.waveform_modes_on_grid(grid, phi_ref, inclination, hplus, hcross);
         Ok(())
+    }
+
+    fn modes(&self, frequencies: &[f64]) -> Result<FrequencyModes> {
+        let mut h = vec![Complex::new(0.0, 0.0); frequencies.len()];
+        self.waveform_into(frequencies, self.extrinsic.phi_ref, &mut h);
+        h22_from_face_on(&mut h);
+        Ok(aligned_22(frequencies, h, self.extrinsic.inclination))
     }
 }
 
@@ -207,6 +226,14 @@ impl FrequencyDomainModel for IMRPhenomD {
             .waveform_modes_on_grid(grid, phi_ref, inclination, hplus, hcross);
         Ok(())
     }
+
+    fn modes(&self, frequencies: &[f64]) -> Result<FrequencyModes> {
+        let mut h = vec![Complex::new(0.0, 0.0); frequencies.len()];
+        self.referenced_to(frequencies.first().copied())
+            .waveform_into(frequencies, self.extrinsic.phi_ref, &mut h);
+        h22_from_face_on(&mut h);
+        Ok(aligned_22(frequencies, h, self.extrinsic.inclination))
+    }
 }
 
 /// IMRPhenomXAS as `SimInspiralChooseFDWaveformSequence`
@@ -258,6 +285,12 @@ impl FrequencyDomainModel for IMRPhenomXAS {
         } = self.extrinsic;
         self.waveform_modes_on_grid(grid, phi_ref, inclination, hplus, hcross);
         Ok(())
+    }
+
+    fn modes(&self, frequencies: &[f64]) -> Result<FrequencyModes> {
+        let mut h = vec![Complex::new(0.0, 0.0); frequencies.len()];
+        self.h22_into(frequencies, self.extrinsic.phi_ref, &mut h);
+        Ok(aligned_22(frequencies, h, self.extrinsic.inclination))
     }
 }
 
@@ -328,6 +361,14 @@ impl FrequencyDomainModel for IMRPhenomXHM {
         IMRPhenomXHM::polarizations_on_grid(self, grid, phi_ref, inclination, hplus, hcross);
         Ok(())
     }
+
+    fn modes(&self, frequencies: &[f64]) -> Result<FrequencyModes> {
+        let Extrinsic {
+            inclination,
+            phi_ref,
+        } = self.extrinsic;
+        Ok(self.frequency_modes(frequencies, phi_ref, inclination))
+    }
 }
 
 /// IMRPhenomXP for [`crate::model::choose_fd_model`].
@@ -377,6 +418,10 @@ impl FrequencyDomainModel for IMRPhenomXP {
         Ok(IMRPhenomXP::polarizations_on_grid(
             self, grid, hplus, hcross,
         )?)
+    }
+
+    fn modes(&self, frequencies: &[f64]) -> Result<FrequencyModes> {
+        Ok(self.jframe_modes(frequencies)?)
     }
 }
 
@@ -436,5 +481,9 @@ impl FrequencyDomainModel for IMRPhenomXPHM {
         Ok(IMRPhenomXPHM::polarizations_on_grid(
             self, grid, hplus, hcross,
         )?)
+    }
+
+    fn modes(&self, frequencies: &[f64]) -> Result<FrequencyModes> {
+        Ok(self.jframe_modes(frequencies)?)
     }
 }

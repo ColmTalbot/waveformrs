@@ -24,6 +24,8 @@ use crate::imrphenomx::wigner::half_angles;
 use crate::imrphenomx::xhm::{ModeGenerator, IMRPHENOMXHM_MODES};
 use crate::imrphenomx::xp::{frequency_bounds, Polarizations};
 
+pub(super) mod jframe;
+
 /// `pPrec->sqrt*` as hard-coded in `IMRPhenomXGetAndSetPrecessionVariables`
 /// (`sqrt10` is only accurate to 15 digits there).
 // LAL's literal 1.4142135623730951 is the double nearest to sqrt(2).
@@ -81,6 +83,10 @@ pub struct IMRPhenomXPHM {
     version: PrecessionVersion,
     /// Co-precessing modes `(l, m' > 0)` in the order of LAL's mode loop.
     modes: Vec<(u32, u32)>,
+    /// Whether the mode array was set with [`IMRPhenomXPHM::with_mode_array`]
+    /// (a `ModeArray` in the LALDict), which sets the frequency range of the
+    /// SpinTaylor angles of the J-frame modes.
+    custom_mode_array: bool,
     /// Parameter-only set-up for a non-uniform grid (`f_ref > 0`).
     setup: Option<Setup>,
 }
@@ -761,7 +767,9 @@ impl IMRPhenomXPHM {
             .flat_map(|ell| (1..=ell).map(move |emm| (ell, emm)))
             .filter(|mode| modes.contains(mode))
             .collect();
-        Self::build(&self.binary, self.version, ordered)
+        let mut model = Self::build(&self.binary, self.version, ordered)?;
+        model.custom_mode_array = true;
+        Ok(model)
     }
 
     fn build(
@@ -794,6 +802,7 @@ impl IMRPhenomXPHM {
             binary: *binary,
             version,
             modes,
+            custom_mode_array: false,
             setup: (binary.f_ref > 0.0).then_some(setup),
         })
     }

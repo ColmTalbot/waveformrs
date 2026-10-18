@@ -64,3 +64,5 @@ pub use xas::IMRPhenomXAS;
 pub use xhm::{IMRPhenomXHM, IMRPHENOMXHM_MODES};
 pub use xp::{IMRPhenomXP, Polarizations};
 pub use xphm::IMRPhenomXPHM;
+
+pub(crate) use xhm::spin_weighted_spherical_harmonic;

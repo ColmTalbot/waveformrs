@@ -44,3 +44,16 @@ All notable changes to `waveformrs` are recorded here.
     approximant, a `Binary` and `WaveformOptions` (Euler angles, mode
     array).
   - `waveformrs::Error`, wrapping `IMRPhenomXError` and `NRSurError`.
+- **Frequency-domain modes** in the conventions of
+  `SimInspiralChooseFDModes`: `FrequencyDomainModel::modes` returns
+  `FrequencyModes`, the modes `h_lm` at `+f` and `-f` with the frame in
+  which to combine them (`FrequencyModes::polarizations` rebuilds the
+  polarizations). IMRPhenomXHM returns its modes (`m < 0` at positive,
+  `m > 0` at negative frequencies, including `phi_ref`); IMRPhenomXPHM
+  returns the J-frame modes of `XLALSimIMRPhenomXPHMOneMode`, including
+  LAL's per-mode range of the SpinTaylor angles; TaylorF2, IMRPhenomD and
+  IMRPhenomXAS return their (2,+-2) modes and IMRPhenomXP its J-frame (2,m)
+  modes, consistent with their polarizations. `choose_fd_modes` reproduces
+  `SimInspiralChooseFDModes` on uniform grids for IMRPhenomXHM and
+  IMRPhenomXPHM. Tested against new reference data
+  (`tests/data/choose_fd_modes.json`, `tests/modes.rs`).

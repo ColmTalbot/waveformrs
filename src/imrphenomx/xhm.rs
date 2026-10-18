@@ -17,6 +17,8 @@ use crate::imrphenomx::wigner::SphericalHarmonics;
 use crate::imrphenomx::xas::IMRPhenomXAS;
 use crate::model::Extrinsic;
 
+pub(super) mod modes;
+
 /// The modes of IMRPhenomXHM, `(l, m)` with `m > 0`.
 pub const IMRPHENOMXHM_MODES: [(u32, u32); 5] = [(2, 2), (2, 1), (3, 3), (3, 2), (4, 4)];
 
