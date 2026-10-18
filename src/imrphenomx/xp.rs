@@ -11,8 +11,7 @@ use crate::grid::{FrequencyGrid, ScalePowers};
 use crate::imrphenomx::internals::{hz_to_mf, IMRPhenomXError, UsefulPowers, WaveformStruct};
 use crate::imrphenomx::phase::phase_22;
 use crate::imrphenomx::precessing_grid::{
-    add_twisted_mode, angles_with_reuse, coprecessing_mode, rotate_polarizations, AngleArrays,
-    TwistArrays,
+    add_twisted_mode, coprecessing_mode, rotate_polarizations, AngleArrays, TwistArrays,
 };
 use crate::imrphenomx::precession::{PrecessingBinary, PrecessionStruct, PrecessionVersion};
 use crate::imrphenomx::spintaylor_angles::{
@@ -282,19 +281,19 @@ impl Setup {
                     epsilon,
                 }
             }
-            None => {
-                if prec.msa.is_some() {
-                    let omega = |_, i: usize| PI * (wf.m_sec * frequencies[i]);
-                    let [_, _, angles, ..] = angles_with_reuse(&[2], n, omega, |omegas, angles| {
-                        prec.msa_angles_many(omegas, |alpha, epsilon, cos_beta| {
-                            angles.push(alpha, cos_beta, epsilon)
-                        });
-                    });
-                    angles.expect("angles of m' = 2")
-                } else {
-                    AngleArrays::nnlo(prec, wf.eta, grid, wf.m_sec, 2, n)
-                }
+            None if prec.msa.is_some() => {
+                // v = (pi Mf)^(1/3) as in the per-frequency path
+                let omega: Vec<f64> = frequencies[..n]
+                    .iter()
+                    .map(|&f| PI * (wf.m_sec * f))
+                    .collect();
+                let mut angles = AngleArrays::with_capacity(n);
+                prec.msa_angles_many(&omega, |alpha, epsilon, cos_beta| {
+                    angles.push(alpha, cos_beta, epsilon)
+                });
+                angles
             }
+            None => AngleArrays::nnlo(prec, wf.eta, grid, wf.m_sec, 2, n),
         };
         let twist = TwistArrays::new(&angles);
 
