@@ -548,9 +548,19 @@ mod tests {
     ];
 
     /// The fits reproduce the fused multiply-adds of LALSimulation's build
-    /// and agree to the last bit.
+    /// and agree to the last bit. Elsewhere (unfused on x86-64, another
+    /// libm) the QNM fits, whose denominators amplify rounding by up to
+    /// ~1e4, differ by up to ~5e-13 from these osx-arm64 values, the others
+    /// by a few ulp. (On x86-64 the remnant and PN fits agree with the
+    /// conda-forge linux-64 build of LAL to the last bit, docs/linux.md.)
+    #[track_caller]
     fn assert_exact(name: &str, value: f64, expected: f64) {
-        assert_eq!(value, expected, "{name} differs from lalsimulation");
+        let ulps = if name.starts_with("fring") || name.starts_with("fdamp") {
+            1e4
+        } else {
+            64.0
+        };
+        crate::reference::assert_matches_lal(name, value, expected, ulps);
     }
 
     #[test]

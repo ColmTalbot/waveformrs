@@ -1041,9 +1041,16 @@ mod tests {
                 -prec.phi_j_sf,
                 prec.zeta_polarization,
             ];
-            for (value, expected) in values.into_iter().zip(expected) {
+            for (k, (value, expected)) in values.into_iter().zip(expected).enumerate() {
+                let mut diff = (value - expected).abs();
+                if k >= 4 && !crate::reference::BIT_EXACT {
+                    // Angles: for aligned spins zeta is +pi or -pi depending
+                    // on the sign of a rounding error, which differs with
+                    // glibc's libm.
+                    diff = diff.min((diff - 2.0 * PI).abs());
+                }
                 assert!(
-                    (value - expected).abs() <= 4.0 * f64::EPSILON * expected.abs().max(1.0),
+                    diff <= 4.0 * f64::EPSILON * expected.abs().max(1.0),
                     "{value} != {expected}"
                 );
             }

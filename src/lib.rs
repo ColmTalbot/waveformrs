@@ -14,6 +14,8 @@ pub mod interpolate;
 pub mod model;
 pub mod nrsur;
 pub mod pn;
+#[cfg(test)]
+mod reference;
 pub mod series;
 pub mod spintaylor;
 pub mod taylor;

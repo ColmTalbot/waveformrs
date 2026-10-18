@@ -4,6 +4,8 @@
 //! `NRSUR7DQ4_DATA` (the file), then `LAL_DATA_PATH` (directories), then
 //! `<CARGO_MANIFEST_DIR>/lal_data/`. Without it the tests are skipped with
 //! a message.
+mod common;
+
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -148,7 +150,7 @@ fn load_data() -> Option<&'static NRSur7dq4Data> {
 }
 
 fn reference<T: serde::de::DeserializeOwned>(name: &str) -> T {
-    let path = format!("{}/tests/data/{name}.json", env!("CARGO_MANIFEST_DIR"));
+    let path = common::data_path(name);
     serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap()
 }
 

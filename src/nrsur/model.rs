@@ -1084,10 +1084,7 @@ mod tests {
         struct File {
             cases: Vec<Case>,
         }
-        let path = concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/tests/data/spin_weighted_harmonics.json"
-        );
+        let path = crate::reference::data_path("spin_weighted_harmonics");
         let file: File = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
         let case = &file.cases[0];
         let mut values = case.values.iter();
@@ -1098,7 +1095,13 @@ mod tests {
                     let &(l, mm, re, im) = values.next().unwrap();
                     assert_eq!((l, mm), (ell, m));
                     let y = spin_weighted_spherical_harmonic(theta, phi, ell, m);
-                    if y.re.to_bits() != re.to_bits() || y.im.to_bits() != im.to_bits() {
+                    let matches = if crate::reference::same_platform() {
+                        y.re.to_bits() == re.to_bits() && y.im.to_bits() == im.to_bits()
+                    } else {
+                        // another libm: |Y| <= 1.3, so to a few ulp
+                        (y.re - re).abs().max((y.im - im).abs()) <= 4.0 * f64::EPSILON
+                    };
+                    if !matches {
                         mismatches.push(format!("({ell}, {m}) theta={theta}"));
                     }
                 }

@@ -77,9 +77,84 @@ fn zip_complex(re: &[f64], im: &[f64]) -> Vec<C64> {
     re.iter().zip(im).map(|(&r, &i)| C64::new(r, i)).collect()
 }
 
+/// The reference data `<name>.json`: from the directory in
+/// `WAVEFORMRS_REFERENCE_DATA` if set (data generated with the lalsimulation
+/// of this machine, e.g. by `scripts/linux/reference.sh`), else from the
+/// committed `tests/data` (the conda-forge osx-arm64 build of lalsimulation).
+pub fn data_path(name: &str) -> std::path::PathBuf {
+    let dir = std::env::var_os("WAVEFORMRS_REFERENCE_DATA")
+        .map(std::path::PathBuf::from)
+        .unwrap_or_else(|| std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data"));
+    dir.join(format!("{name}.json"))
+}
+
+/// Whether this crate mirrors the reference build of lalsimulation
+/// operation by operation: on macOS arm64 it reproduces the conda-forge
+/// osx-arm64 build (clang's fused multiply-adds, Apple's libm) to rounding,
+/// mostly bit for bit.
+///
+/// Elsewhere, whether against the committed data or against data from this
+/// machine's lalsimulation (`WAVEFORMRS_REFERENCE_DATA`), the arithmetic
+/// differs in the last bits: another libm (glibc), and a LAL compiled by GCC,
+/// which contracts across statements on aarch64 and not at all on x86-64.
+/// The ill-conditioned parts of the models turn that into much larger
+/// differences, in LAL itself as much as here (docs/linux.md): the
+/// IMRPhenomXHM (3,2) mode (relative ~1e-3 between LAL's own Linux and
+/// macOS builds) and, through it, every IMRPhenomXHM/XPHM polarisation, and
+/// the MSA angles.
+pub fn mirrored_build() -> bool {
+    cfg!(all(target_os = "macos", target_arch = "aarch64"))
+}
+
+/// Tolerances `(relative error, mismatch)` of the suites that need looser
+/// ones where [`mirrored_build`] is false, about ten times the largest
+/// differences seen between this crate on Linux (arm64 and amd64) and either
+/// the osx-arm64 or the Linux lalsimulation, which are themselves of the
+/// size of the differences between lalsimulation's own builds
+/// (report/data/linux_reference_comparison.json).
+const CROSS_BUILD_TOLERANCES: [(&str, (f64, f64)); 11] = [
+    ("imrphenomxhm", (1e-3, 1e-6)),
+    // the (3,+-2) modes; the other modes keep the strict tolerances
+    ("imrphenomxhm_modes_32", (2e-2, 4e-5)),
+    ("imrphenomxphm_spintaylor", (1e-3, 1e-6)),
+    ("imrphenomxphm_nnlo", (1e-3, 1e-6)),
+    ("imrphenomxphm_msa", (1e-3, 1e-6)),
+    ("imrphenomxphm_uniform", (1e-3, 1e-6)),
+    ("imrphenomxphm_modes", (1e-3, 1e-6)),
+    ("imrphenomxphm_spintaylor_fallback", (1e-3, 1e-6)),
+    ("imrphenomxp_msa", (1e-7, 1e-12)),
+    // absolute difference of the Euler angles
+    ("imrphenomxp_spintaylor_angles", (1e-9, 0.0)),
+    // spin components and the like, relative to their largest value
+    ("spintaylor", (1e-6, 0.0)),
+];
+
+/// The tolerances of `suite`: `strict` where [`mirrored_build`] (or where
+/// the suite needs nothing looser), else those of
+/// [`CROSS_BUILD_TOLERANCES`].
+pub fn tolerances(suite: &str, strict: (f64, f64)) -> (f64, f64) {
+    if mirrored_build() {
+        return strict;
+    }
+    match CROSS_BUILD_TOLERANCES
+        .iter()
+        .find(|(name, _)| *name == suite)
+    {
+        Some(&(_, loose)) => {
+            println!(
+                "{suite}: not the osx-arm64 build that this crate mirrors, tolerances \
+                 {loose:?} instead of {strict:?} (docs/linux.md)"
+            );
+            loose
+        }
+        None => strict,
+    }
+}
+
 pub fn load(name: &str) -> ReferenceFile {
-    let path = format!("{}/tests/data/{}.json", env!("CARGO_MANIFEST_DIR"), name);
-    let contents = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{path}: {e}"));
+    let path = data_path(name);
+    let contents =
+        std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
     serde_json::from_str(&contents).unwrap()
 }
 
@@ -135,11 +210,13 @@ pub fn compare(frequencies: &[f64], test: &[C64], reference: &[C64]) -> Comparis
 }
 
 /// Compare both polarizations of every case and panic with a summary if any
-/// exceeds the tolerances.
+/// exceeds the tolerances (those given, or those of [`tolerances`] where the
+/// crate does not mirror the reference build).
 pub fn check_all<F>(name: &str, max_relative_error: f64, max_mismatch: f64, generate: F)
 where
     F: Fn(&Case) -> (Vec<C64>, Vec<C64>),
 {
+    let (max_relative_error, max_mismatch) = tolerances(name, (max_relative_error, max_mismatch));
     let reference = load(name);
     let mut failures = Vec::new();
     for case in &reference.cases {

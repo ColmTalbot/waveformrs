@@ -165,14 +165,11 @@ struct AngleCase {
 }
 
 /// The SpinTaylor Euler angles against `SimIMRPhenomXPSpinTaylorAngles`.
-/// On arm64 (where the port mirrors LAL's fused multiply-adds) they agree
-/// bit for bit.
+/// On macOS arm64 (where the port mirrors LAL's fused multiply-adds) they
+/// agree bit for bit.
 #[test]
 fn imrphenomxp_spintaylor_angles_match_lalsimulation() {
-    let path = format!(
-        "{}/tests/data/imrphenomxp_spintaylor_angles.json",
-        env!("CARGO_MANIFEST_DIR")
-    );
+    let path = common::data_path("imrphenomxp_spintaylor_angles");
     let reference: AngleFile =
         serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
     for case in &reference.cases {
@@ -203,7 +200,8 @@ fn imrphenomxp_spintaylor_angles_match_lalsimulation() {
             "max |angle difference| {max_diff:.3e} | m1={} m2={} (lalsimulation {})",
             case.mass_1, case.mass_2, reference.lalsimulation_version
         );
-        assert!(max_diff <= 1e-11, "{max_diff}");
+        let tolerance = common::tolerances("imrphenomxp_spintaylor_angles", (1e-11, 0.0)).0;
+        assert!(max_diff <= tolerance, "{max_diff}");
     }
 }
 
@@ -255,10 +253,7 @@ struct XhmMode {
 /// Each mode of IMRPhenomXHM against `SimIMRPhenomXHMFrequencySequenceOneMode`.
 #[test]
 fn imrphenomxhm_modes_match_lalsimulation() {
-    let path = format!(
-        "{}/tests/data/imrphenomxhm_modes.json",
-        env!("CARGO_MANIFEST_DIR")
-    );
+    let path = common::data_path("imrphenomxhm_modes");
     let reference: XhmModeFile =
         serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
     let mut failures = Vec::new();
@@ -292,7 +287,13 @@ fn imrphenomxhm_modes_match_lalsimulation() {
                 case.chi_1,
                 case.chi_2
             );
-            if !(result.max_relative_error <= 1e-9 && result.mismatch <= 1e-12) {
+            let suite = if (mode.ell, mode.emm.abs()) == (3, 2) {
+                "imrphenomxhm_modes_32"
+            } else {
+                "imrphenomxhm_modes"
+            };
+            let (rel, mm) = common::tolerances(suite, (1e-9, 1e-12));
+            if !(result.max_relative_error <= rel && result.mismatch <= mm) {
                 failures.push(format!(
                     "({},{}) {:?} m1={} m2={}",
                     mode.ell, mode.emm, result, case.mass_1, case.mass_2

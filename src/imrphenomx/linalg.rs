@@ -15,7 +15,11 @@
 //! fused multiply-adds starting from zero. Reproducing these (with
 //! [`fma`], fused on the arm64 targets whose LAL builds fuse) makes the
 //! solution agree with LALSimulation to the last bit (verified on random
-//! 4x4 to 8x8 systems against `gsl_linalg_LU_solve`).
+//! 4x4 to 8x8 systems against `gsl_linalg_LU_solve`). On x86-64 OpenBLAS
+//! picks its kernels at run time: the unfused operations here match its
+//! kernels for CPUs without FMA (verified with the Nehalem kernels that it
+//! selects under Rosetta), while on Haswell and later its kernels fuse and
+//! the solution agrees to rounding.
 
 use crate::spintaylor::fp::fma;
 
@@ -124,13 +128,25 @@ mod tests {
         ];
         let b = [0.3, -1.7, 2.9, 4.1, -0.6];
         let x = lu_solve(a, b);
-        let expected = [
-            -3.873704390847249,
-            8.711915069057929,
-            0.6889095031952177,
-            -3.2225520511234795,
-            0.7734157905586476,
-        ];
+        let expected = if crate::spintaylor::fp::FUSED_MULTIPLY_ADD {
+            // osx-arm64 and linux-aarch64 (OpenBLAS neoversen1 kernels)
+            [
+                -3.873704390847249,
+                8.711915069057929,
+                0.6889095031952177,
+                -3.2225520511234795,
+                0.7734157905586476,
+            ]
+        } else {
+            // linux-64 with OpenBLAS's kernels without FMA (e.g. Nehalem)
+            [
+                -3.8737043908472497,
+                8.71191506905793,
+                0.6889095031952147,
+                -3.222552051123481,
+                0.7734157905586483,
+            ]
+        };
         assert_eq!(x, expected);
     }
 }

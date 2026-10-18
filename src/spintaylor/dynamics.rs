@@ -832,7 +832,7 @@ mod tests {
 
     /// Whether LAL reference values from the osx-arm64 lalsimulation build
     /// can be reproduced bit for bit (same FMA contraction and libm).
-    const EXACT: bool = cfg!(all(target_arch = "aarch64", target_os = "macos"));
+    const EXACT: bool = crate::reference::BIT_EXACT;
 
     struct Case {
         /// m1_SI, m2_SI, fStart, fEnd, quadparam1, quadparam2, lambda1, lambda2

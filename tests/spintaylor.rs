@@ -3,15 +3,16 @@
 //! Reference data are produced by `scripts/generate_spintaylor_reference.py`
 //! with `SimInspiralSpinTaylorPNEvolveOrbit` and stored in
 //! `tests/data/spintaylor.json`.
+mod common;
+
 use serde::Deserialize;
 use waveformrs::spintaylor::{SpinTaylorError, SpinTaylorOrbit, SpinTaylorT4, Termination};
 
-/// The reference data were generated with the osx-arm64 build of
-/// lalsimulation, which this crate reproduces bit for bit on the same
-/// platform.  Elsewhere LAL itself is compiled differently (no fused
-/// multiply-adds on x86-64, a different libm), and the adaptive step size
-/// control amplifies last-bit differences.
-const EXACT: bool = cfg!(all(target_arch = "aarch64", target_os = "macos"));
+// The reference data were generated with the osx-arm64 build of
+// lalsimulation, which this crate reproduces bit for bit on the same
+// platform.  Elsewhere LAL itself is compiled differently (no fused
+// multiply-adds on x86-64, a different libm), and the adaptive step size
+// control amplifies last-bit differences (common::tolerances).
 
 #[derive(Debug, Deserialize)]
 struct ReferenceFile {
@@ -104,8 +105,9 @@ fn series(orbit: &SpinTaylorOrbit) -> [&[f64]; 14] {
 }
 
 fn load() -> ReferenceFile {
-    let path = format!("{}/tests/data/spintaylor.json", env!("CARGO_MANIFEST_DIR"));
-    let contents = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{path}: {e}"));
+    let path = common::data_path("spintaylor");
+    let contents =
+        std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
     serde_json::from_str(&contents).unwrap()
 }
 
@@ -113,7 +115,7 @@ fn load() -> ReferenceFile {
 fn spintaylor_t4_matches_lalsimulation() {
     let reference = load();
     // max |rust - lal| / max |lal| for each series
-    let tolerance = if EXACT { 1e-12 } else { 1e-6 };
+    let tolerance = common::tolerances("spintaylor", (1e-12, 0.0)).0;
     let mut failures = Vec::new();
     for case in &reference.cases {
         let orbit = case

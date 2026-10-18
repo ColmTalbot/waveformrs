@@ -21,15 +21,44 @@
 //! hundreds of evolutions).  Without it, differences of order 1e-7 (relative
 //! to the largest value of a series) appear in the spin components.
 //!
-//! The generic x86-64 builds of LAL (GCC without `-mfma`) cannot contain
-//! fused multiply-adds, so [`fma`] falls back to separately rounded
-//! operations there (this also avoids the slow software `fma` of targets
-//! without hardware support).  Other targets/compilers may contract
-//! differently; expect agreement at the ~1e-7 level there.
+//! # Choice per platform
+//!
+//! [`FUSED_MULTIPLY_ADD`] depends on the architecture only, and was chosen
+//! by comparing with the conda-forge builds of lalsimulation 6.2.0 on each
+//! platform (docs/linux.md, report/data/linux_validation_*.json):
+//!
+//! * aarch64, macOS: fused. Clang (`-ffp-contract=on`) builds LAL and GSL,
+//!   OpenBLAS's kernels fuse, and with the same libm the port is bit for
+//!   bit identical.
+//! * aarch64, Linux: fused. GCC 14 builds LAL and GSL with its default
+//!   `-ffp-contract=fast`, which fuses every product that clang fuses within
+//!   an expression (with the same choice of operand in `a * b + c * d`) and,
+//!   in addition, products and sums in different statements (about 11% more
+//!   fused instructions in `liblalsimulation.so` than in the osx-arm64
+//!   dylib). Mirroring clang's subset is not bit for bit, but it is closer
+//!   to the Linux build than not fusing at all (over random draws, median
+//!   IMRPhenomXHM errors 2e-7 against 5e-7, NRSur7dq4 1e-14 against 1e-13),
+//!   and OpenBLAS's neoversen1 kernels fuse exactly as mirrored here (the
+//!   GSL LU solves agree bit for bit). glibc's libm, not Apple's, makes up
+//!   the rest of the difference.
+//! * x86-64 (and other architectures): separately rounded. The conda-forge
+//!   linux-64 builds use `-march=nocona`, which has no FMA instruction:
+//!   `liblalsimulation.so`, `liblal.so` and `libgsl.so` contain none, and the
+//!   remnant and PN fits agree with them bit for bit. This also avoids the
+//!   software `fma` call that `f64::mul_add` becomes without the `fma` target
+//!   feature. OpenBLAS selects its kernels at run time; on CPUs with FMA
+//!   (Haswell and later) they fuse, so the LU solves of
+//!   `imrphenomx::linalg` then agree to rounding only.
+//!
+//! `--cfg waveformrs_fma="on"` or `"off"` (in `RUSTFLAGS`) overrides the
+//! choice, e.g. for a LAL built with clang on Linux or with `-march=haswell`.
 
 /// Whether `a * b + c` is evaluated with a single rounding, mirroring how the
-/// LAL/GSL binaries for this target are compiled.
-pub const FUSED_MULTIPLY_ADD: bool = cfg!(target_arch = "aarch64");
+/// LAL/GSL binaries for this target are compiled (see the module docs).
+pub const FUSED_MULTIPLY_ADD: bool = cfg!(any(
+    waveformrs_fma = "on",
+    all(not(waveformrs_fma = "off"), target_arch = "aarch64")
+));
 
 /// `a * b + c`, fused if and only if the target LAL build fuses it.
 #[inline(always)]
