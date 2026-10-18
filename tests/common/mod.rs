@@ -114,7 +114,7 @@ pub fn mirrored_build() -> bool {
 /// the osx-arm64 or the Linux lalsimulation, which are themselves of the
 /// size of the differences between lalsimulation's own builds
 /// (report/data/linux_reference_comparison.json).
-const CROSS_BUILD_TOLERANCES: [(&str, (f64, f64)); 20] = [
+const CROSS_BUILD_TOLERANCES: [(&str, (f64, f64)); 26] = [
     ("imrphenomxhm", (1e-3, 1e-6)),
     // the (3,+-2) modes, and the others (up to 2e-9 at mass ratio 30)
     ("imrphenomxhm_modes_32", (2e-2, 4e-5)),
@@ -128,6 +128,13 @@ const CROSS_BUILD_TOLERANCES: [(&str, (f64, f64)); 20] = [
     ("imrphenomxphm_uniform", (1e-3, 1e-6)),
     ("imrphenomxphm_modes", (1e-3, 1e-6)),
     ("imrphenomxphm_spintaylor_fallback", (1e-3, 1e-6)),
+    // IMRPhenomXHM release 122019 and IMRPhenomXPNR (which uses it), not
+    // yet compared with a Linux lalsimulation: those of IMRPhenomXHM/XPHM
+    ("imrphenomxhm_122019", (1e-3, 1e-6)),
+    ("imrphenomxpnr", (1e-3, 1e-6)),
+    ("imrphenomxpnr_uniform", (1e-3, 1e-6)),
+    ("imrphenomxpnr_modes", (1e-3, 1e-6)),
+    ("imrphenomxpnr_modes_l3", (2e-2, 4e-5)),
     ("imrphenomxp_msa", (1e-7, 1e-12)),
     // absolute difference of the Euler angles
     ("imrphenomxp_spintaylor_angles", (1e-9, 0.0)),
@@ -136,6 +143,7 @@ const CROSS_BUILD_TOLERANCES: [(&str, (f64, f64)); 20] = [
     // tests/conversions.rs: SimInspiralTD/FD of the higher-mode models
     ("conversions IMRPhenomXHM", (1e-3, 0.0)),
     ("conversions IMRPhenomXPHM", (1e-3, 0.0)),
+    ("conversions IMRPhenomXPNR", (1e-3, 0.0)),
     // tests/long_waveforms.rs: lower bounds of its tolerances
     ("long IMRPhenomXHM", (1e-5, 0.0)),
     ("long IMRPhenomXP", (1e-7, 0.0)),

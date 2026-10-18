@@ -46,10 +46,7 @@ struct Mode {
 /// Each higher mode against `SimIMRPhenomXHMFrequencySequenceOneMode`.
 #[test]
 fn imrphenomxhm_122019_modes_match_lalsimulation() {
-    let path = format!(
-        "{}/tests/data/imrphenomxhm_122019_modes.json",
-        env!("CARGO_MANIFEST_DIR")
-    );
+    let path = common::data_path("imrphenomxhm_122019_modes");
     let reference: ModeFile =
         serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
     let mut failures = Vec::new();
@@ -90,7 +87,14 @@ fn imrphenomxhm_122019_modes_match_lalsimulation() {
                 case.chi_1,
                 case.chi_2
             );
-            if !(result.max_relative_error <= 1e-12 && result.mismatch <= 1e-14) {
+            // the cross-build tolerances of the IMRPhenomXHM modes
+            let suite = if (mode.ell, mode.emm.abs()) == (3, 2) {
+                "imrphenomxhm_modes_32"
+            } else {
+                "imrphenomxhm_modes"
+            };
+            let (rel, mm) = common::tolerances(suite, (1e-12, 1e-14));
+            if !(result.max_relative_error <= rel && result.mismatch <= mm) {
                 failures.push(format!(
                     "({},{}) {:?} m1={} m2={}",
                     mode.ell, mode.emm, result, case.mass_1, case.mass_2

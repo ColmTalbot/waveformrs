@@ -190,7 +190,7 @@ impl ModesCase {
 }
 
 fn load_modes(name: &str) -> ModesFile {
-    let path = format!("{}/tests/data/{name}.json", env!("CARGO_MANIFEST_DIR"));
+    let path = common::data_path(name);
     serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap()
 }
 
@@ -226,7 +226,15 @@ fn compare_modes(
             result.mismatch,
             case.label()
         );
-        if !(result.max_relative_error <= 1e-12 && result.mismatch <= 1e-15) {
+        // the (3,+-2) mode of IMRPhenomXHM, spread to every l = 3 mode by
+        // the twisting up, amplifies rounding on the builds not mirrored
+        let suite = if mode.ell == 3 {
+            "imrphenomxpnr_modes_l3"
+        } else {
+            "imrphenomxpnr_modes"
+        };
+        let (rel, mm) = common::tolerances(suite, (1e-12, 1e-15));
+        if !(result.max_relative_error <= rel && result.mismatch <= mm) {
             failures.push(format!(
                 "({},{}) {result:?} {}",
                 mode.ell,
