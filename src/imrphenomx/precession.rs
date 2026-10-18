@@ -66,33 +66,8 @@ impl PrecessionVersion {
 }
 
 /// Parameters of a precessing binary in the conventions of
-/// `SimInspiralChooseFDWaveform`.
-///
-/// The spins are the dimensionless spin vectors in the source frame at the
-/// reference frequency, where the Newtonian orbital angular momentum is
-/// along `z` and the separation vector along `x`. The line of sight has
-/// polar angle `inclination` and azimuth `pi / 2 - phi_ref` in this frame.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct PrecessingBinary {
-    /// Mass of the first body in solar masses.
-    pub mass_1: f64,
-    /// Mass of the second body in solar masses.
-    pub mass_2: f64,
-    /// Dimensionless spin of the first body.
-    pub spin_1: [f64; 3],
-    /// Dimensionless spin of the second body.
-    pub spin_2: [f64; 3],
-    /// Luminosity distance in Mpc.
-    pub luminosity_distance: f64,
-    /// Angle between the orbital angular momentum and the line of sight at
-    /// the reference frequency (rad).
-    pub inclination: f64,
-    /// Orbital reference phase (rad).
-    pub phi_ref: f64,
-    /// Reference gravitational-wave frequency in Hz; zero selects the
-    /// first (minimum) frequency of the grid, as in LALSimulation.
-    pub f_ref: f64,
-}
+/// `SimInspiralChooseFDWaveform`: the same type as [`crate::model::Binary`].
+pub type PrecessingBinary = crate::model::Binary;
 
 impl PrecessingBinary {
     /// `XLALIMRPhenomXPCheckMassesAndSpins`: masses (solar masses) and spins

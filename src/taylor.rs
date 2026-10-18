@@ -6,6 +6,7 @@ use crate::{
     constants::{MPC_SI, SOLAR_RADIUS_IN_M, SOLAR_RADIUS_IN_S},
     fastmath,
     grid::{FrequencyGrid, GridPowers, ScalePowers},
+    model::Extrinsic,
     pn::{PNPhasing, Params},
     waveform::Waveform,
 };
@@ -18,6 +19,9 @@ pub struct TaylorF2 {
     pub luminosity_distance: f64,
     /// SPA phase at the reference frequency, zero for reference at coalescence.
     reference_phase: f64,
+    /// Inclination and orbital reference phase used by
+    /// [`crate::model::FrequencyDomainModel`].
+    pub(crate) extrinsic: Extrinsic,
 }
 
 impl TaylorF2 {
@@ -39,9 +43,19 @@ impl TaylorF2 {
             total_mass,
             luminosity_distance: luminosity_distance * MPC_SI,
             reference_phase: 0.0,
+            extrinsic: Extrinsic::default(),
         };
         new.phasing = new.phasing_coefficients();
         new
+    }
+
+    /// [`Waveform::waveform`] written into `out` (of the length of
+    /// `frequencies`).
+    pub(crate) fn waveform_into(&self, frequencies: &[f64], phi_c: f64, out: &mut [Complex<f64>]) {
+        let evaluator = self.evaluator(phi_c);
+        for (h, &f) in out.iter_mut().zip(frequencies) {
+            *h = evaluator.evaluate(f);
+        }
     }
 
     fn phasing_coefficients(&self) -> PNPhasing {

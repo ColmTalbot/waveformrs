@@ -1,0 +1,519 @@
+//! A common interface to the models of the crate, in the conventions of
+//! LALSimulation's `SimInspiralChooseFDWaveform` and
+//! `SimInspiralChooseTDWaveform`.
+//!
+//! * [`Binary`] holds the parameters of a binary as LAL's `ChooseFDWaveform`
+//!   takes them (component masses, spin vectors at the reference frequency,
+//!   distance, inclination, orbital reference phase and reference
+//!   frequency).
+//! * [`FrequencyDomainModel`] is implemented by [`TaylorF2`],
+//!   [`IMRPhenomD`], [`IMRPhenomXAS`], [`IMRPhenomXHM`],
+//!   [`IMRPhenomXP`](crate::imrphenomx::IMRPhenomXP) and
+//!   [`IMRPhenomXPHM`](crate::imrphenomx::IMRPhenomXPHM);
+//!   [`TimeDomainModel`] by [`NRSur7dq4`]. All
+//!   parameters are fixed when the model is built with `from_binary`, so
+//!   the models are interchangeable.
+//! * [`Approximant`] names the models as LAL does, and [`choose_fd_model`] /
+//!   [`choose_td_model`] build a boxed model from an approximant, a binary
+//!   and [`WaveformOptions`].
+//! * Errors are [`crate::Error`].
+//!
+//! ```
+//! use waveformrs::{choose_fd_model, Approximant, Binary, FrequencyDomainModel, WaveformOptions};
+//!
+//! let binary = Binary {
+//!     mass_1: 36.0,
+//!     mass_2: 29.0,
+//!     spin_1: [0.4, 0.2, 0.3],
+//!     spin_2: [-0.2, 0.3, -0.1],
+//!     luminosity_distance: 500.0,
+//!     inclination: 0.7,
+//!     phi_ref: 1.2,
+//!     f_ref: 20.0,
+//! };
+//! let frequencies: Vec<f64> = (0..100).map(|i| 20.0 + 2.0 * i as f64).collect();
+//! let model = choose_fd_model(Approximant::IMRPhenomXPHM, &binary, &WaveformOptions::default())?;
+//! let (hplus, hcross) = model.polarizations(&frequencies)?;
+//! # assert_eq!(hplus.len(), 100);
+//! # Ok::<(), waveformrs::Error>(())
+//! ```
+
+mod frequency_domain;
+mod time_domain;
+
+use std::fmt;
+use std::str::FromStr;
+
+use num_complex::Complex;
+
+use crate::error::{Error, Result};
+use crate::grid::FrequencyGrid;
+use crate::imrphenomd::IMRPhenomD;
+use crate::imrphenomx::{IMRPhenomXAS, IMRPhenomXHM, Polarizations, PrecessionVersion};
+use crate::nrsur::{NRSur7dq4, NRSurWorkspace};
+use crate::taylor::TaylorF2;
+
+pub use crate::nrsur::{Mode as TimeSeriesMode, TimeSeriesModes, TimeSeriesPolarizations};
+
+/// The parameters of a compact binary in the conventions of
+/// `SimInspiralChooseFDWaveform` (also used by `SimInspiralChooseTDWaveform`
+/// for NRSur7dq4). [`crate::imrphenomx::PrecessingBinary`] is the same
+/// type.
+///
+/// The spins are the dimensionless spin vectors in the source frame at the
+/// reference frequency, where the Newtonian orbital angular momentum `L` is
+/// along `z` and the separation vector from the second body to the first
+/// along `x`. The line of sight has polar angle `inclination` and azimuth
+/// `pi / 2 - phi_ref` in this frame.
+///
+/// The aligned-spin models use only the `z` components, and (like LAL)
+/// refuse non-zero `x` or `y` components.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Binary {
+    /// Mass of the first body in solar masses.
+    pub mass_1: f64,
+    /// Mass of the second body in solar masses.
+    pub mass_2: f64,
+    /// Dimensionless spin of the first body.
+    pub spin_1: [f64; 3],
+    /// Dimensionless spin of the second body.
+    pub spin_2: [f64; 3],
+    /// Luminosity distance in Mpc.
+    pub luminosity_distance: f64,
+    /// Angle between the orbital angular momentum and the line of sight at
+    /// the reference frequency (rad).
+    pub inclination: f64,
+    /// Orbital reference phase (rad), LAL's `phiRef`.
+    pub phi_ref: f64,
+    /// Reference gravitational-wave frequency in Hz, LAL's `f_ref`. Zero
+    /// selects the first (minimum) frequency of the grid for the IMRPhenom
+    /// models (and `f_min` for NRSur7dq4), and coalescence for TaylorF2, as
+    /// in LALSimulation.
+    pub f_ref: f64,
+}
+
+impl Binary {
+    /// The total mass in solar masses.
+    pub fn total_mass(&self) -> f64 {
+        self.mass_1 + self.mass_2
+    }
+
+    /// Whether all in-plane (`x`, `y`) spin components are exactly zero, as
+    /// LAL requires for aligned-spin approximants.
+    pub fn has_aligned_spins(&self) -> bool {
+        self.spin_1[0] == 0.0
+            && self.spin_1[1] == 0.0
+            && self.spin_2[0] == 0.0
+            && self.spin_2[1] == 0.0
+    }
+}
+
+/// The inclination and orbital reference phase the aligned-spin models use
+/// in [`FrequencyDomainModel`] (zero for models built with their own
+/// constructors).
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub(crate) struct Extrinsic {
+    pub(crate) inclination: f64,
+    pub(crate) phi_ref: f64,
+}
+
+impl Extrinsic {
+    pub(crate) fn of(binary: &Binary) -> Self {
+        Self {
+            inclination: binary.inclination,
+            phi_ref: binary.phi_ref,
+        }
+    }
+}
+
+/// The waveform models, named as LALSimulation's `Approximant`s.
+///
+/// [`Display`](fmt::Display) gives LAL's name and [`FromStr`] parses it
+/// (case-sensitive, as `SimInspiralGetApproximantFromString`).
+///
+/// ```
+/// use waveformrs::Approximant;
+///
+/// let approximant: Approximant = "IMRPhenomXPHM".parse()?;
+/// assert_eq!(approximant, Approximant::IMRPhenomXPHM);
+/// assert_eq!(approximant.to_string(), "IMRPhenomXPHM");
+/// # Ok::<(), waveformrs::Error>(())
+/// ```
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[non_exhaustive]
+#[allow(clippy::upper_case_acronyms)]
+pub enum Approximant {
+    /// [`TaylorF2`] (frequency domain, aligned spins, (2,2) mode).
+    TaylorF2,
+    /// [`IMRPhenomD`] (frequency domain, aligned spins, (2,2) mode).
+    IMRPhenomD,
+    /// [`IMRPhenomXAS`] (frequency domain, aligned spins, (2,2) mode).
+    IMRPhenomXAS,
+    /// [`IMRPhenomXHM`] (frequency domain, aligned spins, higher modes).
+    IMRPhenomXHM,
+    /// [`IMRPhenomXP`](crate::imrphenomx::IMRPhenomXP) (frequency domain,
+    /// precessing, (2,2) mode).
+    IMRPhenomXP,
+    /// [`IMRPhenomXPHM`](crate::imrphenomx::IMRPhenomXPHM) (frequency
+    /// domain, precessing, higher modes).
+    IMRPhenomXPHM,
+    /// [`NRSur7dq4`] (time domain, precessing, `l <= 4`).
+    NRSur7dq4,
+}
+
+impl Approximant {
+    /// Every approximant of the crate.
+    pub const ALL: [Approximant; 7] = [
+        Self::TaylorF2,
+        Self::IMRPhenomD,
+        Self::IMRPhenomXAS,
+        Self::IMRPhenomXHM,
+        Self::IMRPhenomXP,
+        Self::IMRPhenomXPHM,
+        Self::NRSur7dq4,
+    ];
+
+    /// LAL's name of the approximant.
+    pub fn name(&self) -> &'static str {
+        match self {
+            Self::TaylorF2 => "TaylorF2",
+            Self::IMRPhenomD => "IMRPhenomD",
+            Self::IMRPhenomXAS => "IMRPhenomXAS",
+            Self::IMRPhenomXHM => "IMRPhenomXHM",
+            Self::IMRPhenomXP => "IMRPhenomXP",
+            Self::IMRPhenomXPHM => "IMRPhenomXPHM",
+            Self::NRSur7dq4 => "NRSur7dq4",
+        }
+    }
+
+    /// Whether the model is a [`FrequencyDomainModel`] (otherwise it is a
+    /// [`TimeDomainModel`]).
+    pub fn is_frequency_domain(&self) -> bool {
+        !matches!(self, Self::NRSur7dq4)
+    }
+
+    /// Whether the model accepts in-plane spins.
+    pub fn is_precessing(&self) -> bool {
+        matches!(
+            self,
+            Self::IMRPhenomXP | Self::IMRPhenomXPHM | Self::NRSur7dq4
+        )
+    }
+}
+
+impl fmt::Display for Approximant {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.name())
+    }
+}
+
+impl FromStr for Approximant {
+    type Err = Error;
+
+    fn from_str(name: &str) -> Result<Self> {
+        Self::ALL
+            .into_iter()
+            .find(|approximant| approximant.name() == name)
+            .ok_or_else(|| Error::UnknownApproximant(name.to_string()))
+    }
+}
+
+/// Options of [`choose_fd_model`] and [`choose_td_model`], the settings LAL
+/// takes from its `LALDict`.
+///
+/// ```
+/// use waveformrs::{imrphenomx::PrecessionVersion, WaveformOptions};
+///
+/// let options = WaveformOptions::default()
+///     .with_precession_version(PrecessionVersion::Msa)
+///     .with_mode_array(&[(2, 2), (2, -2), (3, 3), (3, -3)]);
+/// # assert!(options.mode_array.is_some());
+/// ```
+#[derive(Clone, Debug, Default, PartialEq)]
+#[non_exhaustive]
+pub struct WaveformOptions {
+    /// The Euler angles of IMRPhenomXP and IMRPhenomXPHM (LAL's
+    /// `PhenomXPrecVersion`). The default is the crate's default,
+    /// [`PrecessionVersion::SpinTaylor`] (320); note that LALSimulation 6.2.0
+    /// uses [`PrecessionVersion::Msa`] (223) when no version is given (see
+    /// [`WaveformOptions::lalsimulation_defaults`]). Ignored by the other
+    /// models.
+    pub precession_version: PrecessionVersion,
+    /// LAL's `ModeArray`: the modes `(l, m)` of IMRPhenomXHM (with the sign
+    /// of `m`), the co-precessing modes of IMRPhenomXPHM (`m` of either sign
+    /// selects `|m|`, as in LAL) or the coorbital modes of NRSur7dq4. `None`
+    /// selects all modes of the model. The (2,2)-mode models accept no mode
+    /// array.
+    pub mode_array: Option<Vec<(u32, i32)>>,
+}
+
+impl WaveformOptions {
+    /// The defaults of LALSimulation 6.2.0 when the `LALDict` is empty:
+    /// the MSA Euler angles ([`PrecessionVersion::Msa`], LAL's default
+    /// `PhenomXPrecVersion` 300 → 223) and all modes. (LAL's multibanding,
+    /// on by default, is not implemented: the models reproduce LAL with
+    /// `PhenomXHMThresholdMband = PhenomXPHMThresholdMband = 0`.)
+    pub fn lalsimulation_defaults() -> Self {
+        Self {
+            precession_version: PrecessionVersion::Msa,
+            ..Self::default()
+        }
+    }
+
+    /// Set [`WaveformOptions::precession_version`].
+    pub fn with_precession_version(mut self, version: PrecessionVersion) -> Self {
+        self.precession_version = version;
+        self
+    }
+
+    /// Set [`WaveformOptions::mode_array`].
+    pub fn with_mode_array(mut self, modes: &[(u32, i32)]) -> Self {
+        self.mode_array = Some(modes.to_vec());
+        self
+    }
+}
+
+/// A frequency-domain waveform model with all parameters fixed.
+///
+/// The models reproduce `SimInspiralChooseFDWaveformSequence(phi_ref, m1,
+/// m2, *spin_1, *spin_2, f_ref, distance, inclination, params, approximant,
+/// frequencies)` of LALSimulation 6.2.0, with multibanding switched off for
+/// IMRPhenomXHM and IMRPhenomXPHM (`PhenomXHMThresholdMband =
+/// PhenomXPHMThresholdMband = 0`). In particular:
+///
+/// * `phi_ref` is the orbital reference phase for every model;
+/// * `f_ref = 0` references the phase to the first frequency of each grid
+///   (IMRPhenomD, IMRPhenomX*) or to coalescence (TaylorF2);
+/// * the aligned-spin models reject non-zero in-plane spins
+///   ([`Error::InPlaneSpins`]), as `ChooseFDWaveform` does.
+///
+/// The polarizations are `(h_+, h_x)` in strain per hertz at the given
+/// frequencies (Hz, positive and increasing).
+///
+/// Several models have inherent methods with the same names and other
+/// arguments (for example `IMRPhenomXHM::polarizations(f, phi_ref,
+/// inclination)` and `IMRPhenomXPHM::modes()`, the list of co-precessing
+/// modes). On a value of the concrete type the inherent method takes
+/// precedence: call the trait methods through a generic parameter, a
+/// `dyn FrequencyDomainModel`, or as `FrequencyDomainModel::polarizations(&model,
+/// f)`.
+///
+/// The models are `Send + Sync`, so one model can be evaluated from several
+/// threads (see `crate::batch`).
+pub trait FrequencyDomainModel: Send + Sync + fmt::Debug {
+    /// The model for `binary`, with LAL's default settings for the
+    /// approximant (and the crate's default Euler angles for the precessing
+    /// models, see [`WaveformOptions::precession_version`]). Returns an
+    /// error where `SimInspiralChooseFDWaveform` would.
+    fn from_binary(binary: &Binary) -> Result<Self>
+    where
+        Self: Sized;
+
+    /// The approximant.
+    fn approximant(&self) -> Approximant;
+
+    /// `(h_+, h_x)` at `frequencies` (Hz).
+    fn polarizations(&self, frequencies: &[f64]) -> Result<Polarizations> {
+        let zero = Complex::new(0.0, 0.0);
+        let mut hplus = vec![zero; frequencies.len()];
+        let mut hcross = vec![zero; frequencies.len()];
+        self.polarizations_into(frequencies, &mut hplus, &mut hcross)?;
+        Ok((hplus, hcross))
+    }
+
+    /// [`FrequencyDomainModel::polarizations`] written into `hplus` and
+    /// `hcross`.
+    ///
+    /// # Panics
+    ///
+    /// If `hplus` or `hcross` do not have the length of `frequencies`.
+    fn polarizations_into(
+        &self,
+        frequencies: &[f64],
+        hplus: &mut [Complex<f64>],
+        hcross: &mut [Complex<f64>],
+    ) -> Result<()>;
+
+    /// [`FrequencyDomainModel::polarizations`] at the frequencies of a
+    /// prepared [`FrequencyGrid`], written into `hplus` and `hcross`: the
+    /// fast paths for many waveforms on the same frequencies, which agree
+    /// with [`FrequencyDomainModel::polarizations`] to rounding (~1e-13
+    /// relative) rather than bit for bit.
+    ///
+    /// # Panics
+    ///
+    /// If `hplus` or `hcross` do not have the length of the grid.
+    fn polarizations_on_grid(
+        &self,
+        grid: &FrequencyGrid,
+        hplus: &mut [Complex<f64>],
+        hcross: &mut [Complex<f64>],
+    ) -> Result<()>;
+}
+
+/// A time-domain waveform model with all parameters fixed (NRSur7dq4),
+/// reproducing `SimInspiralChooseTDWaveform` and `SimInspiralChooseTDModes`.
+pub trait TimeDomainModel: Send + Sync + fmt::Debug {
+    /// Reusable buffers for repeated evaluation (one per thread).
+    type Workspace: Default + Send;
+
+    /// The model for `binary`. Returns an error where LAL would.
+    fn from_binary(binary: &Binary) -> Result<Self>
+    where
+        Self: Sized;
+
+    /// The approximant.
+    fn approximant(&self) -> Approximant;
+
+    /// `h_+` and `h_x` sampled every `delta_t` seconds from the (2,2)
+    /// gravitational-wave frequency `f_min` (Hz; zero for the start of the
+    /// model), as `SimInspiralChooseTDWaveform`.
+    fn polarizations(&self, delta_t: f64, f_min: f64) -> Result<TimeSeriesPolarizations> {
+        let mut out = TimeSeriesPolarizations::default();
+        self.polarizations_into(&mut Self::Workspace::default(), delta_t, f_min, &mut out)?;
+        Ok(out)
+    }
+
+    /// [`TimeDomainModel::polarizations`] reusing the buffers of
+    /// `workspace` and `out`.
+    fn polarizations_into(
+        &self,
+        workspace: &mut Self::Workspace,
+        delta_t: f64,
+        f_min: f64,
+        out: &mut TimeSeriesPolarizations,
+    ) -> Result<()>;
+
+    /// The inertial-frame modes `h_lm` (without the spherical harmonics),
+    /// as `SimInspiralChooseTDModes`.
+    fn modes(&self, delta_t: f64, f_min: f64) -> Result<TimeSeriesModes> {
+        let mut out = TimeSeriesModes::default();
+        self.modes_into(&mut Self::Workspace::default(), delta_t, f_min, &mut out)?;
+        Ok(out)
+    }
+
+    /// [`TimeDomainModel::modes`] reusing the buffers of `workspace` and
+    /// `out`.
+    fn modes_into(
+        &self,
+        workspace: &mut Self::Workspace,
+        delta_t: f64,
+        f_min: f64,
+        out: &mut TimeSeriesModes,
+    ) -> Result<()>;
+}
+
+impl<T: FrequencyDomainModel + ?Sized> FrequencyDomainModel for Box<T> {
+    /// A boxed model cannot be built from a binary alone: use
+    /// [`choose_fd_model`] (this returns [`Error::InvalidRequest`]).
+    fn from_binary(_binary: &Binary) -> Result<Self> {
+        Err(Error::InvalidRequest(
+            "a boxed model cannot be built with from_binary: use choose_fd_model",
+        ))
+    }
+
+    fn approximant(&self) -> Approximant {
+        (**self).approximant()
+    }
+
+    fn polarizations(&self, frequencies: &[f64]) -> Result<Polarizations> {
+        (**self).polarizations(frequencies)
+    }
+
+    fn polarizations_into(
+        &self,
+        frequencies: &[f64],
+        hplus: &mut [Complex<f64>],
+        hcross: &mut [Complex<f64>],
+    ) -> Result<()> {
+        (**self).polarizations_into(frequencies, hplus, hcross)
+    }
+
+    fn polarizations_on_grid(
+        &self,
+        grid: &FrequencyGrid,
+        hplus: &mut [Complex<f64>],
+        hcross: &mut [Complex<f64>],
+    ) -> Result<()> {
+        (**self).polarizations_on_grid(grid, hplus, hcross)
+    }
+}
+
+/// The frequency-domain model `approximant` for `binary`, the analogue of
+/// `SimInspiralChooseFDWaveform` (see [`FrequencyDomainModel`] for the
+/// conventions): the settings of the `LALDict` are in `options`.
+///
+/// Returns [`Error::Unsupported`] for time-domain approximants and for
+/// options the approximant does not take (a mode array for the (2,2)-mode
+/// models), and the errors of the model's constructor.
+pub fn choose_fd_model(
+    approximant: Approximant,
+    binary: &Binary,
+    options: &WaveformOptions,
+) -> Result<Box<dyn FrequencyDomainModel>> {
+    let no_mode_array = || match options.mode_array {
+        Some(_) => Err(Error::Unsupported {
+            approximant,
+            what: "a mode array",
+        }),
+        None => Ok(()),
+    };
+    Ok(match approximant {
+        Approximant::TaylorF2 => {
+            no_mode_array()?;
+            Box::new(TaylorF2::from_binary(binary)?)
+        }
+        Approximant::IMRPhenomD => {
+            no_mode_array()?;
+            Box::new(IMRPhenomD::from_binary(binary)?)
+        }
+        Approximant::IMRPhenomXAS => {
+            no_mode_array()?;
+            Box::new(IMRPhenomXAS::from_binary(binary)?)
+        }
+        Approximant::IMRPhenomXHM => {
+            let mut model = IMRPhenomXHM::from_binary(binary)?;
+            if let Some(modes) = &options.mode_array {
+                model = frequency_domain::xhm_with_mode_array(model, modes)?;
+            }
+            Box::new(model)
+        }
+        Approximant::IMRPhenomXP => {
+            no_mode_array()?;
+            Box::new(frequency_domain::xp(binary, options)?)
+        }
+        Approximant::IMRPhenomXPHM => Box::new(frequency_domain::xphm(binary, options)?),
+        Approximant::NRSur7dq4 => {
+            return Err(Error::Unsupported {
+                approximant,
+                what: "frequency-domain waveforms (it is a time-domain model)",
+            })
+        }
+    })
+}
+
+/// The time-domain model `approximant` for `binary`, the analogue of
+/// `SimInspiralChooseTDWaveform`: NRSur7dq4 with the process-wide surrogate
+/// data ([`crate::nrsur::NRSur7dq4Data::global`]) and the coorbital mode
+/// array of `options`.
+///
+/// Returns [`Error::Unsupported`] for frequency-domain approximants.
+pub fn choose_td_model(
+    approximant: Approximant,
+    binary: &Binary,
+    options: &WaveformOptions,
+) -> Result<Box<dyn TimeDomainModel<Workspace = NRSurWorkspace>>> {
+    match approximant {
+        Approximant::NRSur7dq4 => {
+            let mut model = NRSur7dq4::from_binary(binary)?;
+            if let Some(modes) = &options.mode_array {
+                model = model.with_mode_array(modes)?;
+            }
+            Ok(Box::new(model))
+        }
+        _ => Err(Error::Unsupported {
+            approximant,
+            what: "time-domain waveforms (it is a frequency-domain model)",
+        }),
+    }
+}

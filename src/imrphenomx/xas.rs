@@ -14,6 +14,7 @@ use crate::imrphenomx::internals::{fma, IMRPhenomXError, UsefulPowers, WaveformS
 use crate::imrphenomx::phase::{
     phase_22, phase_22_connection_coefficients, time_shift_22, PhaseCoefficients,
 };
+use crate::model::Extrinsic;
 use crate::waveform::Waveform;
 
 /// IMRPhenomXAS (Pratten et al. 2020, arXiv:2001.11412), the (2,2) mode of
@@ -76,6 +77,9 @@ pub struct IMRPhenomXAS {
     amp_prefactor: f64,
     /// Dimensionless cutoff `f_cut * m_sec` for the single-frequency methods.
     mf_cut: f64,
+    /// Inclination and orbital reference phase used by
+    /// [`crate::model::FrequencyDomainModel`].
+    pub(crate) extrinsic: Extrinsic,
 }
 
 /// `2 sqrt(5 / (64 pi)) exp(-2 i pi / 2)`, the factor from the spin-weighted
@@ -155,6 +159,7 @@ impl IMRPhenomXAS {
             inveta: 1.0 / wf.eta,
             amp_prefactor: wf.amp0 * wf.amp_norm,
             mf_cut: wf.f_cut * wf.m_sec,
+            extrinsic: Extrinsic::default(),
         };
         if use_reference_frequency {
             new.has_reference_frequency = true;
@@ -261,6 +266,21 @@ impl IMRPhenomXAS {
             self.reference_phase_shift(wf.mf_ref) + two_phi0 + FRAC_PI_4
         };
         (phif_ref, self.wf.f_max_prime(f_max) * self.wf.m_sec)
+    }
+}
+
+impl IMRPhenomXAS {
+    /// [`Waveform::waveform`] written into `out` (of the length of
+    /// `frequencies`).
+    pub(crate) fn waveform_into(&self, frequencies: &[f64], phi_c: f64, out: &mut [Complex<f64>]) {
+        let (Some(&f_min), Some(&f_max)) = (frequencies.first(), frequencies.last()) else {
+            return;
+        };
+        let (phif_ref, mf_cut) = self.grid_phase_and_cutoff(f_min, f_max, phi_c);
+        let ylm = ylm_factor();
+        for (h, &f) in out.iter_mut().zip(frequencies) {
+            *h = self.h22(self.wf.m_sec * f, phif_ref, mf_cut) * ylm;
+        }
     }
 }
 

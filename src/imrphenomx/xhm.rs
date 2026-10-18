@@ -15,6 +15,7 @@ use crate::imrphenomx::internals::{IMRPhenomXError, UsefulPowers, WaveformStruct
 use crate::imrphenomx::phase::PhaseCoefficients;
 use crate::imrphenomx::wigner::SphericalHarmonics;
 use crate::imrphenomx::xas::IMRPhenomXAS;
+use crate::model::Extrinsic;
 
 /// The modes of IMRPhenomXHM, `(l, m)` with `m > 0`.
 pub const IMRPHENOMXHM_MODES: [(u32, u32); 5] = [(2, 2), (2, 1), (3, 3), (3, 2), (4, 4)];
@@ -77,6 +78,9 @@ pub struct IMRPhenomXHM {
     f_ref: f64,
     /// The active modes `(l, m)`.
     mode_array: Vec<(u32, i32)>,
+    /// Inclination and orbital reference phase used by
+    /// [`crate::model::FrequencyDomainModel`].
+    pub(crate) extrinsic: Extrinsic,
 }
 
 impl IMRPhenomXHM {
@@ -122,6 +126,7 @@ impl IMRPhenomXHM {
             distance: luminosity_distance * MPC_SI,
             f_ref: 0.0,
             mode_array: DEFAULT_MODE_ARRAY.to_vec(),
+            extrinsic: Extrinsic::default(),
         };
         // Check the parameters as LAL does when the waveform is generated.
         new.waveform_struct(10.0, 0.0, 0.0)?;
@@ -244,6 +249,28 @@ impl IMRPhenomXHM {
             "output length must match the grid"
         );
         self.fill_polarizations_grid(grid, phi_ref, inclination, hplus, hcross);
+    }
+
+    /// [`Self::polarizations`] written into `hplus` and `hcross` (each of the
+    /// length of `frequencies`).
+    pub(crate) fn polarizations_into(
+        &self,
+        frequencies: &[f64],
+        phi_ref: f64,
+        inclination: f64,
+        hplus: &mut [Complex<f64>],
+        hcross: &mut [Complex<f64>],
+    ) {
+        hplus.fill(Complex::new(0.0, 0.0));
+        hcross.fill(Complex::new(0.0, 0.0));
+        self.fill_polarizations(
+            frequencies,
+            phi_ref,
+            inclination,
+            |_, mf| UsefulPowers::new(mf),
+            hplus,
+            hcross,
+        );
     }
 
     /// The waveform variables, the (2,2) and higher modes and their

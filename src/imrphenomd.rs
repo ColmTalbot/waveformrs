@@ -6,6 +6,7 @@ use crate::{
     constants::{MPC_SI, SOLAR_RADIUS_IN_M, SOLAR_RADIUS_IN_S},
     fastmath,
     grid::{FrequencyGrid, ScalePowers},
+    model::Extrinsic,
     pn::{PNPhasing, Params},
     waveform::Waveform,
 };
@@ -37,6 +38,12 @@ pub struct IMRPhenomD {
     /// Phase subtracted so that the phase at the reference frequency is
     /// `-2 phi_c`.
     reference_phase: f64,
+    /// Inclination and orbital reference phase used by
+    /// [`crate::model::FrequencyDomainModel`].
+    pub(crate) extrinsic: Extrinsic,
+    /// Whether [`crate::model::FrequencyDomainModel`] references the phase to
+    /// the first frequency of each grid (LAL's `f_ref = 0`).
+    pub(crate) reference_at_first_frequency: bool,
 }
 
 impl IMRPhenomD {
@@ -61,6 +68,19 @@ impl IMRPhenomD {
             t0: mrd_phase_derivative(amplitude_prefactors.f_peak, &coeffs),
             reference_mf: amplitude_prefactors.f_peak,
             reference_phase: 0.0,
+            extrinsic: Extrinsic::default(),
+            reference_at_first_frequency: false,
+        }
+    }
+
+    /// [`Waveform::waveform`] written into `out` (of the length of
+    /// `frequencies`).
+    pub(crate) fn waveform_into(&self, frequencies: &[f64], phi_c: f64, out: &mut [Complex<f64>]) {
+        let mass_scale = self.total_mass * SOLAR_RADIUS_IN_S;
+        let amplitude_scale = self.amplitude_scale();
+        let phase_shift = 2.0 * phi_c + self.reference_phase;
+        for (h, &f) in out.iter_mut().zip(frequencies) {
+            *h = self.evaluate(f * mass_scale, amplitude_scale, phase_shift);
         }
     }
 
@@ -73,6 +93,7 @@ impl IMRPhenomD {
     /// vanishes at the peak frequency.
     pub fn with_reference_frequency(mut self, reference_frequency: f64) -> Self {
         let mf_ref = self.orbital_speed(reference_frequency);
+        self.reference_at_first_frequency = false;
         self.reference_mf = mf_ref;
         self.reference_phase = imrphenomd_phase(mf_ref, &self.coeffs, &self.phase_prefactors);
         self
