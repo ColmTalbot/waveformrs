@@ -43,6 +43,7 @@
 
 use std::f64::consts::{PI, TAU};
 
+use crate::fastmath;
 use crate::spintaylor::fp::{fma, fms, fnms};
 
 /// `GSL_DBL_EPSILON`.
@@ -107,7 +108,7 @@ impl Roots {
 
 /// Powers of the orbital velocity `v` shared by the MSA functions, each
 /// computed by the same operations as in LAL.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, Default)]
 struct VPowers {
     v: f64,
     /// `v * v`
@@ -741,6 +742,12 @@ impl MsaSystem {
     /// `IMRPhenomX_Return_SNorm_MSA`, Eq. 23
     #[inline]
     fn s_norm(&self, v: &VPowers, roots: &Roots) -> f64 {
+        self.s_norm_with(v, roots, elljac_sn)
+    }
+
+    /// [`Self::s_norm`] with the Jacobi elliptic function `sn(u | m)`.
+    #[inline(always)]
+    fn s_norm_with(&self, v: &VPowers, roots: &Roots, elljac_sn: impl Fn(f64, f64) -> f64) -> f64 {
         let sn = if roots.constant_magnitude() {
             0.0
         } else {
@@ -984,6 +991,66 @@ impl MsaSystem {
         }
     }
 
+    /// [`Self::phi_zeta_costhetal`] at the orbital velocities
+    /// `v_i = x_i^(1/3)`, passed to `out` in order: the same operations,
+    /// done in passes over blocks of points so that the (latency-bound)
+    /// evaluations at different points overlap.
+    pub(crate) fn phi_zeta_costhetal_many(&self, x: &[f64], mut out: impl FnMut(MsaAngles)) {
+        const BLOCK: usize = 32;
+        #[derive(Clone, Copy, Default)]
+        struct Point {
+            powers: VPowers,
+            l_norm: f64,
+            j_norm: f64,
+            l_norm_3pn: f64,
+            j_norm_3pn: f64,
+            roots: Roots,
+            s_norm: f64,
+            corrections: [f64; 2],
+            phiz: f64,
+        }
+        let mut points = [Point::default(); BLOCK];
+        for block in x.chunks(BLOCK) {
+            let points = &mut points[..block.len()];
+            for (point, &x) in points.iter_mut().zip(block) {
+                let v = x.cbrt();
+                let powers = VPowers::new(v);
+                let l_norm = self.eta / v;
+                let j_norm = self.j_norm(l_norm);
+                let l_norm_3pn = self.l_norm_3pn(v, powers.v2, l_norm);
+                point.powers = powers;
+                point.l_norm = l_norm;
+                point.j_norm = j_norm;
+                point.l_norm_3pn = l_norm_3pn;
+                point.j_norm_3pn = self.j_norm(l_norm_3pn);
+            }
+            for point in points.iter_mut() {
+                point.roots = self.roots(point.l_norm, point.j_norm);
+            }
+            for point in points.iter_mut() {
+                point.s_norm = self.s_norm_with(&point.powers, &point.roots, elljac_sn_fast);
+            }
+            for point in points.iter_mut() {
+                point.corrections = if point.roots.has_corrections() {
+                    self.msa_corrections(&point.powers, point.l_norm, point.j_norm, &point.roots)
+                } else {
+                    [0.0, 0.0]
+                };
+            }
+            for point in points.iter_mut() {
+                point.phiz = self.phiz(&point.powers, point.j_norm);
+            }
+            for point in points.iter() {
+                let zeta = self.zeta(&point.powers);
+                out(MsaAngles {
+                    phiz: point.phiz + point.corrections[0],
+                    zeta: zeta + point.corrections[1],
+                    cos_theta_l: cos_theta_lj(point.l_norm_3pn, point.j_norm_3pn, point.s_norm),
+                });
+            }
+        }
+    }
+
     /// Final spin of `IMRPhenomX_SetPrecessingRemnantParams` for the MSA
     /// angles (`PhenomXPFinalSpinMod` 3 with the default
     /// `PhenomXPTransPrecessionMethod` 1): from the precession-averaged
@@ -1106,6 +1173,59 @@ fn elljac_sn(u: f64, m: f64) -> f64 {
     } else {
         let (c0, _) = descend(cos_umu / sin_umu, &mu, &nu, &mut c, &mut d);
         gsl_sign(sin_umu) / gsl_hypot(1.0, c0)
+    }
+}
+
+/// [`elljac_sn`] for the grid paths, agreeing with it to a few ulp: the
+/// inlined `sin_cos` and the descending recursion
+/// `d_k = (c_{k+1}^2 / mu_{k+1} + nu_k) / (c_{k+1}^2 / mu_{k+1} + mu_k)`
+/// rearranged to one division per step.
+#[inline]
+fn elljac_sn_fast(u: f64, m: f64) -> f64 {
+    if m.abs() > 1.0 {
+        return f64::NAN;
+    }
+    if m.abs() < 2.0 * GSL_DBL_EPSILON {
+        return u.sin();
+    }
+    if (m - 1.0).abs() < 2.0 * GSL_DBL_EPSILON {
+        return u.tanh();
+    }
+    const N: usize = 16;
+    let mut mu = [0.0f64; N];
+    let mut nu = [0.0f64; N];
+    let mut n = 0;
+    mu[0] = 1.0;
+    let sqrt_1mm = (1.0 - m).sqrt();
+    nu[0] = sqrt_1mm;
+    while (mu[n] - nu[n]).abs() > 4.0 * GSL_DBL_EPSILON * (mu[n] + nu[n]).abs() {
+        mu[n + 1] = 0.5 * (mu[n] + nu[n]);
+        nu[n + 1] = (mu[n] * nu[n]).sqrt();
+        n += 1;
+        if n >= N - 1 {
+            break;
+        }
+    }
+    let (sin_umu, cos_umu) = fastmath::sin_cos(u * mu[n]);
+    // c_n = mu_n t, d_n = 1; c_k = d_{k+1} c_{k+1}; returns (c_0, d_0)
+    let descend = |t: f64| {
+        let mut c = mu[n] * t;
+        let mut d = 1.0;
+        for k in (0..n).rev() {
+            let c2 = c * c;
+            let d_k = fma(nu[k], mu[k + 1], c2) / fma(mu[k], mu[k + 1], c2);
+            c *= d;
+            d = d_k;
+        }
+        (c, d)
+    };
+    if sin_umu.abs() < cos_umu.abs() {
+        let (c0, d0) = descend(sin_umu / cos_umu);
+        // sign(cos) c0 / (d0 hypot(1, c0)), |c0| <= 1
+        (c0 / (d0 * fma(c0, c0, 1.0).sqrt())).copysign(c0 * cos_umu)
+    } else {
+        let (c0, _) = descend(cos_umu / sin_umu);
+        (1.0 / fma(c0, c0, 1.0).sqrt()).copysign(sin_umu)
     }
 }
 

@@ -772,6 +772,19 @@ impl PrecessionStruct {
             angles.cos_theta_l,
         )
     }
+
+    /// [`Self::msa_angles`] at `v = x^(1/3)` for each of `x`, passed in
+    /// order to `out(alpha, epsilon, cos(beta))` (for the grid paths).
+    pub(crate) fn msa_angles_many(&self, x: &[f64], mut out: impl FnMut(f64, f64, f64)) {
+        let msa = self.msa.as_ref().expect("MSA system");
+        msa.phi_zeta_costhetal_many(x, |angles| {
+            out(
+                angles.phiz - self.alpha_offset,
+                angles.zeta - self.epsilon_offset,
+                angles.cos_theta_l,
+            )
+        });
+    }
 }
 
 impl NnloCoefficients {

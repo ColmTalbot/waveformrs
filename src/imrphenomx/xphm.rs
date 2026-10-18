@@ -543,10 +543,9 @@ impl Setup {
                         PI * (wf.m_sec * frequencies[i]) * (2.0 / mprime as f64)
                     };
                     angles_with_reuse(&mprimes, n, argument, |arguments, angles| {
-                        for &x in arguments {
-                            let (alpha, epsilon, cos_beta) = prec.msa_angles(x.cbrt());
-                            angles.push(alpha, cos_beta, epsilon);
-                        }
+                        prec.msa_angles_many(arguments, |alpha, epsilon, cos_beta| {
+                            angles.push(alpha, cos_beta, epsilon)
+                        });
                     })
                 } else {
                     // omega = pi Mf 2 / m'

@@ -283,10 +283,9 @@ impl Setup {
                 let omega = |_, i: usize| PI * (wf.m_sec * frequencies[i]);
                 let [_, _, angles, ..] = if prec.msa.is_some() {
                     angles_with_reuse(&[2], n, omega, |omegas, angles| {
-                        for &omega in omegas {
-                            let (alpha, epsilon, cos_beta) = prec.msa_angles(omega.cbrt());
-                            angles.push(alpha, cos_beta, epsilon);
-                        }
+                        prec.msa_angles_many(omegas, |alpha, epsilon, cos_beta| {
+                            angles.push(alpha, cos_beta, epsilon)
+                        });
                     })
                 } else {
                     angles_with_reuse(&[2], n, omega, |omegas, angles| {
