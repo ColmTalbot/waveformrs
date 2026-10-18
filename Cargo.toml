@@ -6,10 +6,14 @@ edition = "2021"
 [dependencies]
 num-complex = "*"
 once_cell = "*"
+rustfft = { version = "6.2", optional = true }
 
 [features]
 
-default = []
+default = ["fft"]
+# Fourier transforms between the time and frequency domains (`fft`,
+# `conversions::td_from_fd`, `conversions::fd_from_td`).
+fft = ["dep:rustfft"]
 [dev-dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["float_roundtrip"] }
