@@ -10,8 +10,10 @@ polarizations computed with ``SimInspiralChooseFDWaveformSequence`` (or with
 for cases with ``delta_f > 0``).  The ``imrphenomxp_spintaylor_angles`` suite
 instead stores the Euler angles of ``SimIMRPhenomXPSpinTaylorAngles`` and the
 ``imrphenomxhm_modes`` suite the individual modes of
-``SimIMRPhenomXHMFrequencySequenceOneMode``. The ``choose_fd_modes`` suite
-stores the modes of ``SimInspiralChooseFDModes`` (IMRPhenomXHM and
+``SimIMRPhenomXHMFrequencySequenceOneMode`` (``imrphenomxhm_122019_modes``
+and ``imrphenomxhm_122019`` for the original release of the higher-mode
+amplitudes, ``PhenomXHMReleaseVersion = 122019``). The ``choose_fd_modes``
+suite stores the modes of ``SimInspiralChooseFDModes`` (IMRPhenomXHM and
 IMRPhenomXPHM, on uniform grids), every ``fd_modes_stride``-th sample of the
 positive- and negative-frequency halves of each mode.
 
@@ -775,6 +777,85 @@ def xhm_mode_cases():
     return cases
 
 
+XHM_RELEASE_122019 = dict(PhenomXHMReleaseVersion=122019)
+
+# Binaries whose higher modes exercise the branches of the 122019 amplitude:
+# inspiral vetoes (q < 8 for the (2,1)) and wavy collocation points, the
+# TaylorT4 (2,1) inspiral (q < 40) and its power series (q > 40), the
+# (3,2) and (3,3) corners of the inspiral, the intermediate vetoes and the
+# lowering of the polynomial order when it crosses zero (5th to 2nd order),
+# two intermediate regions (q > 70, chi1 <= 0.9), the inspiral ansatz in the
+# ringdown of the (3,3), (4,4) (q > 7, chi1 > 0.95), the (3,2) ringdown
+# cutoffs, negative amplitudes and vanishing odd modes.
+XHM_122019_BINARIES = [
+    # mass_1, mass_2, chi_1, chi_2, f_ref
+    (36.0, 29.0, 0.3, -0.4, 30.0),
+    (30.0, 30.0, 0.5, -0.5, 20.0),
+    (150.2452, 2.957, 0.945, -1.0, 30.0),
+    (79.0458, 0.2689, -0.89, 0.959, 0.0),
+    (10.7049, 10.1951, 0.63, 0.61, 0.0),
+    (100.9494, 12.6503, 0.988, -0.02, 30.0),
+    (148.5018, 3.4991, -0.914, -0.93, 20.0),
+    (109.3352, 91.2648, -0.966, 0.991, 0.0),
+    (66.0796, 65.6203, 0.77, 0.99, 0.0),
+    (109.45, 109.45, -0.947, -0.947, 20.0),
+    (91.0032, 63.1967, 0.989, 0.31, 30.0),
+    (118.8765, 113.3236, -0.991, 0.63, 30.0),
+    (28.1353, 9.1646, 0.907, -0.97, 30.0),
+    (200.0, 2.0, 0.95, 0.3, 15.0),
+]
+
+
+def xhm_122019_mode_cases():
+    """The higher modes of IMRPhenomXHM with PhenomXHMReleaseVersion = 122019."""
+    negative = [(2, -1), (3, -3), (3, -2), (4, -4)]
+    cases = list()
+    for i, (m1, m2, c1, c2, fref) in enumerate(XHM_122019_BINARIES):
+        modes = negative + [(2, 1), (3, 2)] if i == 0 else negative
+        cases.append(
+            dict(
+                approximant="IMRPhenomXHM",
+                mass_1=m1,
+                mass_2=m2,
+                chi_1=c1,
+                chi_2=c2,
+                luminosity_distance=500.0,
+                phi_ref=0.1 + 0.4 * i,
+                f_min=10.0,
+                f_ref=fref,
+                f_max=f_max_imr(0.3)(m1 + m2),
+                mode_list=modes,
+                lal_flags=XHM_RELEASE_122019,
+            )
+        )
+    return cases
+
+
+def xhm_122019_cases():
+    """Polarizations of IMRPhenomXHM with PhenomXHMReleaseVersion = 122019
+    (the (3,2) recycles the (2,2) in its ringdown)."""
+    cases = list()
+    for i in (0, 3, 5, 6, 8, 9, 11, 13):
+        m1, m2, c1, c2, fref = XHM_122019_BINARIES[i]
+        cases.append(
+            dict(
+                approximant="IMRPhenomXHM",
+                mass_1=m1,
+                mass_2=m2,
+                chi_1=c1,
+                chi_2=c2,
+                luminosity_distance=500.0,
+                inclination=0.3 + 0.35 * i,
+                phi_ref=0.2 + 0.5 * i,
+                f_min=10.0,
+                f_ref=fref,
+                f_max=f_max_imr(0.3)(m1 + m2),
+                lal_flags=dict(XHM_RELEASE_122019, **NO_MULTIBANDING),
+            )
+        )
+    return cases
+
+
 def unit(vector, magnitude):
     vector = np.asarray(vector, dtype=float)
     return (magnitude * vector / np.linalg.norm(vector)).tolist()
@@ -1038,6 +1119,8 @@ SUITES = dict(
         "IMRPhenomXHM", f_max_imr(0.3), lal_flags=NO_MULTIBANDING
     ),
     imrphenomxhm_modes=xhm_mode_cases,
+    imrphenomxhm_122019_modes=xhm_122019_mode_cases,
+    imrphenomxhm_122019=xhm_122019_cases,
     imrphenomxp_nnlo=lambda: precessing_cases(
         "IMRPhenomXP", f_max_imr(0.3), lal_flags=dict(PhenomXPrecVersion=102)
     ),
