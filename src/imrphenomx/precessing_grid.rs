@@ -191,20 +191,20 @@ impl TwistArrays {
 }
 
 /// Fill `scratch` for [`fastmath::polar_to_complex_conj`] with the
-/// co-precessing mode `exp(-i m' epsilon) h / 2` at the grid points
-/// `offset + i`, where `h = A exp(i phi)` with `(A, phi) =
-/// amplitude_phase(offset + i)`, stored as `(A / 2, m' epsilon - phi)`.
+/// co-precessing mode `exp(-i m' epsilon) h / 2` at the first
+/// `scratch.len()` grid points, where `h = A exp(i phi)` with `(A, phi) =
+/// amplitude_phase(i)` at grid point `i`, stored as `(A / 2, m' epsilon -
+/// phi)`.
 fn fill_polar(
     scratch: &mut [Complex<f64>],
-    offset: usize,
     mprime: u32,
     epsilon: &[f64],
     amplitude_phase: impl Fn(usize) -> (f64, f64),
 ) {
     let m = mprime as f64;
-    let epsilon = &epsilon[offset..offset + scratch.len()];
+    let epsilon = &epsilon[..scratch.len()];
     for (i, (value, &epsilon)) in scratch.iter_mut().zip(epsilon).enumerate() {
-        let (amplitude, phase) = amplitude_phase(offset + i);
+        let (amplitude, phase) = amplitude_phase(i);
         *value = Complex::new(0.5 * amplitude, m * epsilon - phase);
     }
 }
@@ -218,7 +218,7 @@ pub(crate) fn coprecessing_mode(
     epsilon: &[f64],
     amplitude_phase: impl Fn(usize) -> (f64, f64),
 ) {
-    fill_polar(scratch, 0, mprime, epsilon, amplitude_phase);
+    fill_polar(scratch, mprime, epsilon, amplitude_phase);
     fastmath::polar_to_complex_conj(scratch);
 }
 
@@ -241,12 +241,13 @@ pub(crate) fn coprecessing_mode_generator(
         let powers = grid.powers(scale, i);
         generator.amplitude_phase(powers.itself, &UsefulPowers::from_grid(&powers))
     };
-    let Some((mode, amp0, start)) = generator.mixing_ringdown() else {
+    let Some((mode, amp0, mf_start)) = generator.mixing_ringdown() else {
         return coprecessing_mode(scratch, mprime, epsilon, amplitude_phase);
     };
-    let start = grid.frequencies()[..n].partition_point(|&f| scale.value * f < start);
+    // the first grid point with Mf >= mf_start
+    let start = grid.frequencies()[..n].partition_point(|&f| scale.value * f < mf_start);
     let (inspiral, ringdown) = scratch.split_at_mut(start);
-    fill_polar(inspiral, 0, mprime, epsilon, amplitude_phase);
+    fill_polar(inspiral, mprime, epsilon, amplitude_phase);
     extra.clear();
     extra.resize(ringdown.len(), Complex::new(0.0, 0.0));
     let m = mprime as f64;
