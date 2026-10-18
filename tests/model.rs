@@ -457,8 +457,7 @@ fn errors_wrap_the_model_errors() {
 /// NRSur7dq4 through the time-domain interface is the model-specific API.
 #[test]
 fn nrsur7dq4_through_the_time_domain_interface() {
-    if waveformrs::nrsur::find_data_file().is_none() {
-        println!("skipping: NRSur7dq4_v1.0.h5 not found (set NRSUR7DQ4_DATA or LAL_DATA_PATH)");
+    if common::nrsur7dq4_data().is_none() {
         return;
     }
     let b = Binary {

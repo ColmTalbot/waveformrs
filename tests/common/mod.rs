@@ -77,6 +77,27 @@ fn zip_complex(re: &[f64], im: &[f64]) -> Vec<C64> {
     re.iter().zip(im).map(|(&r, &i)| C64::new(r, i)).collect()
 }
 
+/// The NRSur7dq4 data, located as `waveformrs::nrsur::find_data_file` does
+/// (`NRSUR7DQ4_DATA`, `LAL_DATA_PATH`) or else in `<CARGO_MANIFEST_DIR>/lal_data/`;
+/// `None`, with a message, when it is not available.
+#[allow(dead_code)]
+pub fn nrsur7dq4_data() -> Option<&'static waveformrs::nrsur::NRSur7dq4Data> {
+    if waveformrs::nrsur::find_data_file().is_none() {
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("lal_data")
+            .join(waveformrs::nrsur::NRSUR7DQ4_DATAFILE);
+        if !path.is_file() {
+            println!(
+                "skipping: {} not found (set NRSUR7DQ4_DATA or LAL_DATA_PATH)",
+                waveformrs::nrsur::NRSUR7DQ4_DATAFILE
+            );
+            return None;
+        }
+        std::env::set_var("NRSUR7DQ4_DATA", path);
+    }
+    waveformrs::nrsur::NRSur7dq4Data::global().ok()
+}
+
 /// The reference data `<name>.json`: from the directory in
 /// `WAVEFORMRS_REFERENCE_DATA` if set (data generated with the lalsimulation
 /// of this machine, e.g. by `scripts/linux/reference.sh`), else from the

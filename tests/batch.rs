@@ -1,5 +1,7 @@
 //! Batched evaluation: one thread is exactly a serial loop, and the results
 //! do not depend on the number of threads.
+mod common;
+
 use num_complex::Complex;
 use waveformrs::{
     batch::Batch,
@@ -7,7 +9,7 @@ use waveformrs::{
     grid::FrequencyGrid,
     imrphenomx::{IMRPhenomXAS, IMRPhenomXPHM, PrecessionVersion},
     model::TimeSeriesPolarizations,
-    nrsur::{NRSur7dq4, NRSur7dq4Data, NRSurWorkspace},
+    nrsur::{NRSur7dq4, NRSurWorkspace},
     Approximant, Binary, Error, FrequencyDomainModel, TimeDomainModel, WaveformOptions,
 };
 
@@ -185,8 +187,7 @@ fn thread_counts() {
 /// depend on the number of threads and equals the direct evaluation.
 #[test]
 fn nrsur7dq4_batches_do_not_depend_on_threads() {
-    let Ok(data) = NRSur7dq4Data::global() else {
-        println!("skipping: NRSur7dq4_v1.0.h5 not found (set NRSUR7DQ4_DATA or LAL_DATA_PATH)");
+    let Some(data) = common::nrsur7dq4_data() else {
         return;
     };
     // from the start of the surrogate
