@@ -173,6 +173,19 @@ def bench(args):
                             max_rel_diff=float(m["diff"]))
             for m in map(GRID_LINE.match, grid.read_text().splitlines()) if m
         }
+    batch = directory / "batch.txt"
+    if batch.exists():
+        lines = batch.read_text().splitlines()
+        threads = [int(t) for t in re.findall(r"(\d+) threads?\b", next(
+            (line for line in lines if line.startswith("model")), ""))]
+        rows = dict()
+        for line in lines:
+            m = re.match(r"^(?P<name>.+?)\s+(?P<n>\d+)\s+(?P<cells>\d+\s+\(.*)$", line)
+            if m:
+                rates = [float(r) for r in re.findall(r"(\d+)\s+\(\s*[\d.]+x\)", m["cells"])]
+                rows[m["name"]] = dict(n=int(m["n"]), waveforms_per_second=dict(
+                    zip(map(str, threads), rates)))
+        entry["batch"] = dict(threads=threads, models=rows)
     output = Path(args.output)
     combined = json.loads(output.read_text()) if output.exists() else dict()
     combined.setdefault("description", (
@@ -180,7 +193,8 @@ def bench(args):
         "+ polarizations, 5921 frequencies, best of 10 batches) against "
         "SimInspiralChooseFDWaveformSequence (report/lal_benchmark.py); serial: random "
         "binaries one after another on a fixed grid (report/serial_benchmark.py); grid: "
-        "examples/grid_benchmark.rs. Emulated (linux/amd64 on Apple silicon) timings are "
+        "examples/grid_benchmark.rs; batch: examples/batch_benchmark.rs, waveforms per second "
+        "on 1 to all threads of the machine. Emulated (linux/amd64 on Apple silicon) timings are "
         "not meaningful as absolute numbers."))
     combined[args.label] = entry
     output.write_text(json.dumps(combined, indent=1) + "\n")

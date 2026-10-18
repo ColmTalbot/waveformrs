@@ -1,5 +1,11 @@
 {
  "lalsimulation linux-arm64 vs osx-arm64": {
+  "choose_fd_modes": {
+   "max_relative_error": 0.0006972915102128395,
+   "max_mismatch": 2.1325545740413787e-07,
+   "fraction_bit_identical": 0.2681262141019583,
+   "notes": []
+  },
   "imrphenomd": {
    "max_relative_error": 1.0669991521003896e-12,
    "max_mismatch": 1.1102230246251565e-16,
@@ -136,6 +142,12 @@
   }
  },
  "lalsimulation linux-amd64 vs osx-arm64": {
+  "choose_fd_modes": {
+   "max_relative_error": 0.0011635880602957746,
+   "max_mismatch": 3.266410071312009e-07,
+   "fraction_bit_identical": 0.2656717593321783,
+   "notes": []
+  },
   "imrphenomd": {
    "max_relative_error": 8.891612490759711e-13,
    "max_mismatch": 2.220446049250313e-16,
@@ -272,6 +284,12 @@
   }
  },
  "lalsimulation linux-amd64 vs linux-arm64": {
+  "choose_fd_modes": {
+   "max_relative_error": 0.0012082732336564086,
+   "max_mismatch": 6.403933509036008e-07,
+   "fraction_bit_identical": 0.26561925762587285,
+   "notes": []
+  },
   "imrphenomd": {
    "max_relative_error": 8.891612490759711e-13,
    "max_mismatch": 2.220446049250313e-16,

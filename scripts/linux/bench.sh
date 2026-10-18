@@ -7,10 +7,11 @@
 #
 # Runs report/lal_benchmark.py (examples/benchmark.rs against
 # SimInspiralChooseFDWaveformSequence), report/serial_benchmark.py
-# (examples/serial_benchmark.rs) and examples/grid_benchmark.rs, all on one
-# thread. Pass RUSTFLAGS (e.g. "-C target-cpu=native") and --label to time
-# another build of the crate. --skip-lal keeps the LAL timings of an
-# earlier run with the same label set and only times the crate.
+# (examples/serial_benchmark.rs) and examples/grid_benchmark.rs on one
+# thread, and examples/batch_benchmark.rs on 1 to all threads. Use the
+# options of docker/run.sh (e.g. --target-cpu native) to time
+# another build of the crate; --skip-lal then times only the crate (single
+# calls, grid and batch).
 #
 # Timings under emulation (linux/amd64 on Apple silicon) are not meaningful
 # as absolute numbers.
@@ -42,5 +43,8 @@ else
         >"$out/benchmark.json"
 fi
 cargo run --quiet --release --example grid_benchmark | tee "$out/grid.txt"
+# throughput on 1, 2, 4, 8 and all threads (examples/batch_benchmark.rs)
+NRSUR7DQ4_DATA=lal_data/NRSur7dq4_v1.0.h5 cargo run --quiet --release --example batch_benchmark \
+    | tee "$out/batch.txt"
 python scripts/linux/summarise.py bench "$out" --label "$label" \
     --output "report/data/linux_timings_${platform#linux-}.json"

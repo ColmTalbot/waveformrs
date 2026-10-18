@@ -1,0 +1,703 @@
+{
+ "description": "waveformrs against the lalsimulation of the same Linux container (conda-forge build), random draws of scripts/validate_against_lalsimulation.py and scripts/validate_nrsur7dq4.py with OMP_NUM_THREADS=1. Relative errors are max|h_rs - h_lal| / max|h_lal| over both polarisations; bit-identical draws have zero error. Speed-ups are only meaningful on native (arm64) runs.",
+ "linux-arm64": {
+  "environment": {
+   "platform": "linux-arm64",
+   "kernel": "6.12.54-linuxkit",
+   "glibc": "glibc 2.36",
+   "cpu": {
+    "machine": "aarch64",
+    "features": [
+     "asimd",
+     "fphp"
+    ],
+    "n_cpu": 24
+   },
+   "rustc": "rustc 1.90.0 (1159e78c4 2025-09-14)",
+   "rustflags": "",
+   "packages": {
+    "gsl": "2.8-h575f6a0_2",
+    "libblas": "3.11.0-11_haddc8a3_openblas",
+    "liblal": "7.7.0-fftw_h676d998_105",
+    "liblalsimulation": "6.2.0-py312h9c6f4fe_4",
+    "libopenblas": "0.3.34-pthreads_h4148b7d_2",
+    "numpy": "2.5.4-py312hfb93532_0",
+    "python": "3.12.15-h94ad73b_2_cpython",
+    "python-lalsimulation": "6.2.0-py312h0f83b7d_4"
+   },
+   "omp_num_threads": "1"
+  },
+  "models": {
+   "IMRPhenomD": {
+    "n_draws": 200,
+    "n_compared": 200,
+    "n_bit_identical": 0,
+    "max_relative_error": 4.045846349812293e-11,
+    "median_relative_error": 6.413351503658085e-13,
+    "p90_relative_error": 7.048179906085747e-12,
+    "max_mismatch": 4.440892098500626e-16,
+    "median_mismatch": 0.0,
+    "median_speedup": 1.2062637076734384,
+    "failures": [],
+    "n_lal_errno_fallback": 0,
+    "worst_draw": {
+     "mass_1": 5.068853988975889,
+     "mass_2": 0.3202117150689867,
+     "spin_1": [
+      0.0,
+      0.0,
+      -0.10742089838858238
+     ],
+     "spin_2": [
+      0.0,
+      0.0,
+      -0.8019621472025578
+     ],
+     "f_min": 15.0,
+     "f_ref": 31.275036591786314
+    }
+   },
+   "IMRPhenomXAS": {
+    "n_draws": 200,
+    "n_compared": 200,
+    "n_bit_identical": 0,
+    "max_relative_error": 6.151888775713909e-11,
+    "median_relative_error": 1.009999670814216e-12,
+    "p90_relative_error": 1.1233747597736813e-11,
+    "max_mismatch": 3.3306690738754696e-16,
+    "median_mismatch": 0.0,
+    "median_speedup": 1.1074347876669934,
+    "failures": [],
+    "n_lal_errno_fallback": 0,
+    "worst_draw": {
+     "mass_1": 5.095264315600594,
+     "mass_2": 0.2938013884442814,
+     "spin_1": [
+      0.0,
+      0.0,
+      -0.10742089838858238
+     ],
+     "spin_2": [
+      0.0,
+      0.0,
+      -0.8019621472025578
+     ],
+     "f_min": 15.0,
+     "f_ref": 31.275036591786314
+    }
+   },
+   "IMRPhenomXHM": {
+    "n_draws": 200,
+    "n_compared": 200,
+    "n_bit_identical": 0,
+    "max_relative_error": 1.603599094673754e-05,
+    "median_relative_error": 9.726517511313665e-09,
+    "p90_relative_error": 1.0269891714082592e-06,
+    "max_mismatch": 4.602780823148578e-09,
+    "median_mismatch": 1.5543122344752192e-15,
+    "median_speedup": 1.2488805392781583,
+    "failures": [],
+    "n_lal_errno_fallback": 0,
+    "worst_draw": {
+     "mass_1": 104.57450652710489,
+     "mass_2": 23.509992950780315,
+     "spin_1": [
+      0.0,
+      0.0,
+      0.913453672719098
+     ],
+     "spin_2": [
+      0.0,
+      0.0,
+      -0.7842282876480852
+     ],
+     "f_min": 10.0,
+     "f_ref": 23.608945744521392
+    }
+   },
+   "IMRPhenomXP": {
+    "n_draws": 200,
+    "n_compared": 200,
+    "n_bit_identical": 0,
+    "max_relative_error": 9.33682856634238e-07,
+    "median_relative_error": 1.115363529730987e-12,
+    "p90_relative_error": 2.9129489668574653e-09,
+    "max_mismatch": 1.6653345369377348e-15,
+    "median_mismatch": 0.0,
+    "median_speedup": 2.221558548463225,
+    "failures": [],
+    "n_lal_errno_fallback": 0,
+    "worst_draw": {
+     "mass_1": 4.88670124599677,
+     "mass_2": 2.0854244156069814,
+     "spin_1": [
+      -0.1309830968113894,
+      0.17797734980429492,
+      0.12908226728005107
+     ],
+     "spin_2": [
+      0.1750851561632532,
+      -0.21865913656901476,
+      0.21697108184177344
+     ],
+     "f_min": 15.0,
+     "f_ref": 41.68846567751081
+    }
+   },
+   "IMRPhenomXPHM": {
+    "n_draws": 200,
+    "n_compared": 200,
+    "n_bit_identical": 0,
+    "max_relative_error": 0.00012647292538833611,
+    "median_relative_error": 3.6519487562888147e-07,
+    "p90_relative_error": 4.125751064872096e-06,
+    "max_mismatch": 8.686245056566122e-09,
+    "median_mismatch": 2.3876456367588617e-12,
+    "median_speedup": 1.7477908899981056,
+    "failures": [],
+    "n_lal_errno_fallback": 0,
+    "worst_draw": {
+     "mass_1": 138.74103854340035,
+     "mass_2": 106.20518186751858,
+     "spin_1": [
+      0.043523753186356685,
+      -0.1251141765912088,
+      0.3874317560994613
+     ],
+     "spin_2": [
+      -0.5167178860646563,
+      0.7349258743999123,
+      0.1813629437075351
+     ],
+     "f_min": 15.0,
+     "f_ref": 17.371344953910707
+    }
+   },
+   "IMRPhenomXPHM_MSA": {
+    "n_draws": 200,
+    "n_compared": 200,
+    "n_bit_identical": 0,
+    "max_relative_error": 2.024053587279281e-05,
+    "median_relative_error": 3.9317386197118514e-08,
+    "p90_relative_error": 1.8115368460504497e-06,
+    "max_mismatch": 3.7203964353693664e-09,
+    "median_mismatch": 2.503552920529728e-14,
+    "median_speedup": 1.6817324989937055,
+    "failures": [],
+    "n_lal_errno_fallback": 0,
+    "worst_draw": {
+     "mass_1": 138.74103854340035,
+     "mass_2": 106.20518186751858,
+     "spin_1": [
+      0.043523753186356685,
+      -0.1251141765912088,
+      0.3874317560994613
+     ],
+     "spin_2": [
+      -0.5167178860646563,
+      0.7349258743999123,
+      0.1813629437075351
+     ],
+     "f_min": 15.0,
+     "f_ref": 17.371344953910707
+    }
+   },
+   "IMRPhenomXPHM_NNLO": {
+    "n_draws": 200,
+    "n_compared": 200,
+    "n_bit_identical": 0,
+    "max_relative_error": 8.780696768596215e-06,
+    "median_relative_error": 1.4358097662906263e-08,
+    "p90_relative_error": 1.3707217070562812e-06,
+    "max_mismatch": 1.1940521904563184e-09,
+    "median_mismatch": 3.497202527569243e-15,
+    "median_speedup": 1.8136518183001695,
+    "failures": [],
+    "n_lal_errno_fallback": 0,
+    "worst_draw": {
+     "mass_1": 170.85664730490086,
+     "mass_2": 84.83600310175368,
+     "spin_1": [
+      0.13326841908975126,
+      0.3095410595464788,
+      -0.44464973779532346
+     ],
+     "spin_2": [
+      0.01987895290402811,
+      -0.05326380720575046,
+      -0.005538963765970949
+     ],
+     "f_min": 20.0,
+     "f_ref": 20.0
+    }
+   },
+   "IMRPhenomXP_MSA": {
+    "n_draws": 200,
+    "n_compared": 200,
+    "n_bit_identical": 0,
+    "max_relative_error": 9.372165295135883e-09,
+    "median_relative_error": 6.795507442761326e-14,
+    "p90_relative_error": 1.2586201472790474e-12,
+    "max_mismatch": 4.440892098500626e-16,
+    "median_mismatch": 0.0,
+    "median_speedup": 1.3765419054897818,
+    "failures": [],
+    "n_lal_errno_fallback": 0,
+    "worst_draw": {
+     "mass_1": 12.564178158731087,
+     "mass_2": 3.574541129266832,
+     "spin_1": [
+      -0.25817005766338724,
+      0.3478976524007932,
+      0.7717146415318714
+     ],
+     "spin_2": [
+      0.5088503682277595,
+      0.7233050944522245,
+      0.1866916084878568
+     ],
+     "f_min": 20.0,
+     "f_ref": 20.0
+    }
+   },
+   "IMRPhenomXP_NNLO": {
+    "n_draws": 200,
+    "n_compared": 200,
+    "n_bit_identical": 0,
+    "max_relative_error": 2.919814568113737e-12,
+    "median_relative_error": 3.514780753037459e-14,
+    "p90_relative_error": 4.3928435562912993e-13,
+    "max_mismatch": 3.3306690738754696e-16,
+    "median_mismatch": 0.0,
+    "median_speedup": 1.4729291589978932,
+    "failures": [],
+    "n_lal_errno_fallback": 0,
+    "worst_draw": {
+     "mass_1": 10.514533272645503,
+     "mass_2": 0.6464204972409391,
+     "spin_1": [
+      0.12608094540185077,
+      0.094825733527196,
+      0.9134458511358169
+     ],
+     "spin_2": [
+      0.008403497068420496,
+      0.032202644804981875,
+      0.017753443211633302
+     ],
+     "f_min": 10.0,
+     "f_ref": 10.0
+    }
+   },
+   "NRSur7dq4": {
+    "n_draws": 200,
+    "n_compared": 200,
+    "n_bit_identical": 0,
+    "max_relative_error": 1.498432430620005e-13,
+    "median_relative_error": 1.3020693974026946e-14,
+    "p90_relative_error": 4.574913756132068e-14,
+    "max_mismatch": 3.3306690738754696e-16,
+    "median_mismatch": 0.0,
+    "median_speedup": 4.937261916065055,
+    "failures": [],
+    "n_epoch_mismatch": 0,
+    "n_length_mismatch": 0,
+    "worst_draw": {
+     "mass_1": 27.40911389410336,
+     "mass_2": 9.029857653575158,
+     "spin_1": [
+      0.12599894877030363,
+      0.22015747115036788,
+      -0.19705275542618106
+     ],
+     "spin_2": [
+      0.7509008025961299,
+      -0.20481654336875638,
+      0.35202442962701636
+     ],
+     "f_min": 34.548186512791375,
+     "f_ref": 34.548186512791375
+    }
+   },
+   "TaylorF2": {
+    "n_draws": 200,
+    "n_compared": 200,
+    "n_bit_identical": 0,
+    "max_relative_error": 4.9020110809940716e-11,
+    "median_relative_error": 7.847856235056028e-13,
+    "p90_relative_error": 7.341678423402206e-12,
+    "max_mismatch": 3.3306690738754696e-16,
+    "median_mismatch": 0.0,
+    "median_speedup": 1.146875162376015,
+    "failures": [],
+    "n_lal_errno_fallback": 0,
+    "worst_draw": {
+     "mass_1": 5.095264315600594,
+     "mass_2": 0.2938013884442814,
+     "spin_1": [
+      0.0,
+      0.0,
+      -0.10742089838858238
+     ],
+     "spin_2": [
+      0.0,
+      0.0,
+      -0.8019621472025578
+     ],
+     "f_min": 15.0,
+     "f_ref": 31.275036591786314
+    }
+   }
+  }
+ },
+ "linux-arm64-fma-off": {
+  "environment": {
+   "platform": "linux-arm64",
+   "kernel": "6.12.54-linuxkit",
+   "glibc": "glibc 2.36",
+   "cpu": {
+    "machine": "aarch64",
+    "features": [
+     "asimd",
+     "fphp"
+    ],
+    "n_cpu": 24
+   },
+   "rustc": "rustc 1.90.0 (1159e78c4 2025-09-14)",
+   "rustflags": "--cfg waveformrs_fma=\"off\"",
+   "packages": {
+    "gsl": "2.8-h575f6a0_2",
+    "libblas": "3.11.0-11_haddc8a3_openblas",
+    "liblal": "7.7.0-fftw_h676d998_105",
+    "liblalsimulation": "6.2.0-py312h9c6f4fe_4",
+    "libopenblas": "0.3.34-pthreads_h4148b7d_2",
+    "numpy": "2.5.4-py312hfb93532_0",
+    "python": "3.12.15-h94ad73b_2_cpython",
+    "python-lalsimulation": "6.2.0-py312h0f83b7d_4"
+   },
+   "omp_num_threads": "1"
+  },
+  "models": {
+   "IMRPhenomD": {
+    "n_draws": 100,
+    "n_compared": 100,
+    "n_bit_identical": 0,
+    "max_relative_error": 4.045846349812293e-11,
+    "median_relative_error": 6.396419493425072e-13,
+    "p90_relative_error": 6.0857656179704965e-12,
+    "max_mismatch": 4.440892098500626e-16,
+    "median_mismatch": 0.0,
+    "median_speedup": 1.2643553222059944,
+    "failures": [],
+    "n_lal_errno_fallback": 0,
+    "worst_draw": {
+     "mass_1": 5.068853988975889,
+     "mass_2": 0.3202117150689867,
+     "spin_1": [
+      0.0,
+      0.0,
+      -0.10742089838858238
+     ],
+     "spin_2": [
+      0.0,
+      0.0,
+      -0.8019621472025578
+     ],
+     "f_min": 15.0,
+     "f_ref": 31.275036591786314
+    }
+   },
+   "IMRPhenomXAS": {
+    "n_draws": 100,
+    "n_compared": 100,
+    "n_bit_identical": 0,
+    "max_relative_error": 6.571332235395608e-11,
+    "median_relative_error": 8.405421177002239e-13,
+    "p90_relative_error": 1.0448066362424987e-11,
+    "max_mismatch": 4.440892098500626e-16,
+    "median_mismatch": 0.0,
+    "median_speedup": 1.1355806958648986,
+    "failures": [],
+    "n_lal_errno_fallback": 0,
+    "worst_draw": {
+     "mass_1": 5.095264315600594,
+     "mass_2": 0.2938013884442814,
+     "spin_1": [
+      0.0,
+      0.0,
+      -0.10742089838858238
+     ],
+     "spin_2": [
+      0.0,
+      0.0,
+      -0.8019621472025578
+     ],
+     "f_min": 15.0,
+     "f_ref": 31.275036591786314
+    }
+   },
+   "IMRPhenomXHM": {
+    "n_draws": 100,
+    "n_compared": 100,
+    "n_bit_identical": 0,
+    "max_relative_error": 3.116440859139801e-05,
+    "median_relative_error": 4.522550238461895e-07,
+    "p90_relative_error": 6.2292374053577745e-06,
+    "max_mismatch": 2.0210684237298437e-09,
+    "median_mismatch": 4.566236277980806e-12,
+    "median_speedup": 1.358418117432589,
+    "failures": [],
+    "n_lal_errno_fallback": 0,
+    "worst_draw": {
+     "mass_1": 233.3206118016117,
+     "mass_2": 29.808377652311066,
+     "spin_1": [
+      0.0,
+      0.0,
+      0.9039005037698231
+     ],
+     "spin_2": [
+      0.0,
+      0.0,
+      0.1910735238433463
+     ],
+     "f_min": 20.0,
+     "f_ref": 20.0
+    }
+   },
+   "IMRPhenomXP": {
+    "n_draws": 100,
+    "n_compared": 100,
+    "n_bit_identical": 0,
+    "max_relative_error": 7.396916588434817e-06,
+    "median_relative_error": 2.1363418030089297e-12,
+    "p90_relative_error": 1.066224287981359e-08,
+    "max_mismatch": 7.138734048339757e-14,
+    "median_mismatch": 1.1102230246251565e-16,
+    "median_speedup": 2.153420761641007,
+    "failures": [],
+    "n_lal_errno_fallback": 0,
+    "worst_draw": {
+     "mass_1": 4.674552911223648,
+     "mass_2": 2.440987479880314,
+     "spin_1": [
+      -0.05740398548098481,
+      0.005028140859643805,
+      -0.03854715442759955
+     ],
+     "spin_2": [
+      -0.27070022090912615,
+      0.1608913172389734,
+      0.06624356859995137
+     ],
+     "f_min": 15.0,
+     "f_ref": 37.66416842061763
+    }
+   },
+   "IMRPhenomXPHM": {
+    "n_draws": 100,
+    "n_compared": 100,
+    "n_bit_identical": 0,
+    "max_relative_error": 6.839175745479928e-05,
+    "median_relative_error": 6.110036012174308e-07,
+    "p90_relative_error": 6.128762845305368e-06,
+    "max_mismatch": 4.0820742341907135e-09,
+    "median_mismatch": 8.351486169289046e-12,
+    "median_speedup": 1.5557213638957887,
+    "failures": [],
+    "n_lal_errno_fallback": 0,
+    "worst_draw": {
+     "mass_1": 138.74103854340035,
+     "mass_2": 106.20518186751858,
+     "spin_1": [
+      0.043523753186356685,
+      -0.1251141765912088,
+      0.3874317560994613
+     ],
+     "spin_2": [
+      -0.5167178860646563,
+      0.7349258743999123,
+      0.1813629437075351
+     ],
+     "f_min": 15.0,
+     "f_ref": 17.371344953910707
+    }
+   },
+   "IMRPhenomXPHM_MSA": {
+    "n_draws": 100,
+    "n_compared": 100,
+    "n_bit_identical": 0,
+    "max_relative_error": 7.579615972304817e-05,
+    "median_relative_error": 4.83758538080705e-07,
+    "p90_relative_error": 4.298562085772136e-06,
+    "max_mismatch": 6.790631279507409e-09,
+    "median_mismatch": 4.959144206395649e-12,
+    "median_speedup": 1.6453833699348523,
+    "failures": [],
+    "n_lal_errno_fallback": 0,
+    "worst_draw": {
+     "mass_1": 138.74103854340035,
+     "mass_2": 106.20518186751858,
+     "spin_1": [
+      0.043523753186356685,
+      -0.1251141765912088,
+      0.3874317560994613
+     ],
+     "spin_2": [
+      -0.5167178860646563,
+      0.7349258743999123,
+      0.1813629437075351
+     ],
+     "f_min": 15.0,
+     "f_ref": 17.371344953910707
+    }
+   },
+   "IMRPhenomXPHM_NNLO": {
+    "n_draws": 100,
+    "n_compared": 100,
+    "n_bit_identical": 0,
+    "max_relative_error": 9.177983171412119e-05,
+    "median_relative_error": 5.053750640369461e-07,
+    "p90_relative_error": 3.2071068666133127e-06,
+    "max_mismatch": 5.0704737519779997e-08,
+    "median_mismatch": 4.862887870160648e-12,
+    "median_speedup": 1.8757928236082209,
+    "failures": [],
+    "n_lal_errno_fallback": 0,
+    "worst_draw": {
+     "mass_1": 55.81735796430162,
+     "mass_2": 33.04060583642489,
+     "spin_1": [
+      0.42943211678518584,
+      0.6554002853868868,
+      0.5050924441831574
+     ],
+     "spin_2": [
+      -0.6142543771487454,
+      0.1714323290149873,
+      -0.03109687710607032
+     ],
+     "f_min": 15.0,
+     "f_ref": 15.0
+    }
+   },
+   "IMRPhenomXP_MSA": {
+    "n_draws": 100,
+    "n_compared": 100,
+    "n_bit_identical": 0,
+    "max_relative_error": 2.9220321491016578e-08,
+    "median_relative_error": 2.0384927805887172e-13,
+    "p90_relative_error": 3.975274496949153e-12,
+    "max_mismatch": 3.3306690738754696e-16,
+    "median_mismatch": 0.0,
+    "median_speedup": 1.28789868230451,
+    "failures": [],
+    "n_lal_errno_fallback": 0,
+    "worst_draw": {
+     "mass_1": 60.216843381045685,
+     "mass_2": 34.995046145778055,
+     "spin_1": [
+      0.10441366055737694,
+      -0.18024722876214558,
+      0.339293028784313
+     ],
+     "spin_2": [
+      -0.05234435875321552,
+      0.3604354657462738,
+      0.21473448521538516
+     ],
+     "f_min": 15.0,
+     "f_ref": 15.0
+    }
+   },
+   "IMRPhenomXP_NNLO": {
+    "n_draws": 100,
+    "n_compared": 100,
+    "n_bit_identical": 0,
+    "max_relative_error": 2.3556555219198996e-12,
+    "median_relative_error": 8.832342301519503e-14,
+    "p90_relative_error": 7.937488991138053e-13,
+    "max_mismatch": 4.440892098500626e-16,
+    "median_mismatch": 0.0,
+    "median_speedup": 1.415786211352092,
+    "failures": [],
+    "n_lal_errno_fallback": 0,
+    "worst_draw": {
+     "mass_1": 3.2684559326269733,
+     "mass_2": 2.951623385650051,
+     "spin_1": [
+      -0.11593478226822418,
+      0.5900545387511836,
+      -0.1798004891639426
+     ],
+     "spin_2": [
+      0.323191407979705,
+      0.13677436974335605,
+      -0.10346929119500767
+     ],
+     "f_min": 10.0,
+     "f_ref": 10.0
+    }
+   },
+   "NRSur7dq4": {
+    "n_draws": 50,
+    "n_compared": 50,
+    "n_bit_identical": 0,
+    "max_relative_error": 9.94505619023471e-13,
+    "median_relative_error": 9.518885334475037e-14,
+    "p90_relative_error": 2.781324867012469e-13,
+    "max_mismatch": 3.3306690738754696e-16,
+    "median_mismatch": 0.0,
+    "median_speedup": 5.273689527223561,
+    "failures": [],
+    "n_epoch_mismatch": 0,
+    "n_length_mismatch": 0,
+    "worst_draw": {
+     "mass_1": 112.72176742947269,
+     "mass_2": 23.369801913428525,
+     "spin_1": [
+      0.19605822842575107,
+      0.12934253300596374,
+      0.18632900845890588
+     ],
+     "spin_2": [
+      -0.45186784472024616,
+      0.8730841429947445,
+      -0.06434054120647299
+     ],
+     "f_min": 10.819461989525722,
+     "f_ref": 14.368295866843052
+    }
+   },
+   "TaylorF2": {
+    "n_draws": 100,
+    "n_compared": 100,
+    "n_bit_identical": 0,
+    "max_relative_error": 4.9020110809940716e-11,
+    "median_relative_error": 9.880316402348953e-13,
+    "p90_relative_error": 7.907861359735777e-12,
+    "max_mismatch": 3.3306690738754696e-16,
+    "median_mismatch": 0.0,
+    "median_speedup": 1.0973651821129284,
+    "failures": [],
+    "n_lal_errno_fallback": 0,
+    "worst_draw": {
+     "mass_1": 5.095264315600594,
+     "mass_2": 0.2938013884442814,
+     "spin_1": [
+      0.0,
+      0.0,
+      -0.10742089838858238
+     ],
+     "spin_2": [
+      0.0,
+      0.0,
+      -0.8019621472025578
+     ],
+     "f_min": 15.0,
+     "f_ref": 31.275036591786314
+    }
+   }
+  }
+ }
+}

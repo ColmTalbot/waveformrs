@@ -91,6 +91,15 @@ def compare_suite(name, test, ref):
                 rel, mm = fd_compare(b["frequencies"], x, y)
                 tally.rel, tally.mismatch = max(tally.rel, rel), max(tally.mismatch, mm)
                 tally.bits(np.concatenate([x.real, x.imag]), np.concatenate([y.real, y.imag]))
+        elif name == "choose_fd_modes":
+            for ma, mb in zip(a["modes"], b["modes"]):
+                for half in ("positive", "negative"):
+                    x = np.asarray(ma[f"{half}_real"]) + 1j * np.asarray(ma[f"{half}_imag"])
+                    y = np.asarray(mb[f"{half}_real"]) + 1j * np.asarray(mb[f"{half}_imag"])
+                    rel, mm = fd_compare(np.arange(len(y), dtype=float), x, y)
+                    tally.rel, tally.mismatch = max(tally.rel, rel), max(tally.mismatch, mm)
+                    tally.bits(np.concatenate([x.real, x.imag]),
+                               np.concatenate([y.real, y.imag]))
         elif name == "imrphenomxp_spintaylor_angles":
             if a["length"] != b["length"]:
                 tally.notes.append("length differs")
