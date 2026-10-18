@@ -15,7 +15,7 @@
 //! Precessing approximants are `IMRPhenomXP` (SpinTaylor angles,
 //! `PhenomXPrecVersion` 320), `IMRPhenomXP_NNLO` (102) and
 //! `IMRPhenomXP_MSA` (223), and the same for `IMRPhenomXPHM` (multibanding
-//! off).
+//! off), and `IMRPhenomXPNR`.
 use std::io::Read;
 use std::time::Instant;
 
@@ -25,7 +25,8 @@ use serde::{Deserialize, Serialize};
 use waveformrs::{
     imrphenomd::IMRPhenomD,
     imrphenomx::{
-        IMRPhenomXAS, IMRPhenomXHM, IMRPhenomXP, IMRPhenomXPHM, PrecessingBinary, PrecessionVersion,
+        IMRPhenomXAS, IMRPhenomXHM, IMRPhenomXP, IMRPhenomXPHM, IMRPhenomXPNR, PrecessingBinary,
+        PrecessionVersion,
     },
     taylor::TaylorF2,
     waveform::Waveform,
@@ -136,6 +137,9 @@ fn generate(case: &Case) -> Result<Polarizations, String> {
         "IMRPhenomXPHM" => precessing_hm(case, PrecessionVersion::SpinTaylor)?,
         "IMRPhenomXPHM_NNLO" => precessing_hm(case, PrecessionVersion::Nnlo)?,
         "IMRPhenomXPHM_MSA" => precessing_hm(case, PrecessionVersion::Msa)?,
+        "IMRPhenomXPNR" => IMRPhenomXPNR::new(&binary(case))
+            .and_then(|model| model.polarizations(&case.frequencies))
+            .map_err(|err| err.to_string())?,
         other => panic!("unsupported approximant {other}"),
     })
 }

@@ -48,6 +48,7 @@ PRECESSING = {
     "IMRPhenomXPHM",
     "IMRPhenomXPHM_NNLO",
     "IMRPhenomXPHM_MSA",
+    "IMRPhenomXPNR",
 }
 
 # Approximant -> (dimensionless cutoff frequency, extra lal flags, max mass
@@ -103,6 +104,8 @@ SETTINGS = dict(
         q_min=1 / 20,
         lal_approximant="IMRPhenomXPHM",
     ),
+    # SimInspiralChooseFDWaveformSequence switches multibanding off
+    IMRPhenomXPNR=dict(mf_max=0.3, flags=dict(), q_min=1 / 20),
 )
 
 

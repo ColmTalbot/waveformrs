@@ -51,6 +51,8 @@ CASES = {
         PRECESSING,
         dict(PhenomXPrecVersion=320, **NO_MULTIBANDING),
     ),
+    # (the frequency-sequence driver switches multibanding off)
+    "IMRPhenomXPNR": ("IMRPhenomXPNR", PRECESSING, dict()),
 }
 # Uniform grids (SimInspiralChooseFDWaveform, which stops at Mf = 0.3), with
 # multibanding off and with the default multibanding thresholds.
@@ -67,6 +69,8 @@ UNIFORM = {
         PRECESSING,
         dict(PhenomXPrecVersion=320),
     ),
+    "IMRPhenomXPNR (uniform)": ("IMRPhenomXPNR", PRECESSING, NO_MULTIBANDING),
+    "IMRPhenomXPNR (uniform, default multibanding)": ("IMRPhenomXPNR", PRECESSING, dict()),
 }
 
 

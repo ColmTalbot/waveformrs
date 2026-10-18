@@ -31,7 +31,7 @@ mkdir -p "$outdir"
 python scripts/validate_against_lalsimulation.py --n-draws "$n_draws" --outdir "$outdir" \
     --approximants TaylorF2 IMRPhenomD IMRPhenomXAS IMRPhenomXHM \
     IMRPhenomXP_NNLO IMRPhenomXP_MSA IMRPhenomXP \
-    IMRPhenomXPHM_NNLO IMRPhenomXPHM_MSA IMRPhenomXPHM
+    IMRPhenomXPHM_NNLO IMRPhenomXPHM_MSA IMRPhenomXPHM IMRPhenomXPNR
 if [[ $nrsur_draws -gt 0 && -f lal_data/NRSur7dq4_v1.0.h5 ]]; then
     NRSUR7DQ4_DATA=lal_data/NRSur7dq4_v1.0.h5 LAL_DATA_PATH=lal_data \
         python scripts/validate_nrsur7dq4.py --n-draws "$nrsur_draws" --outdir "$outdir"

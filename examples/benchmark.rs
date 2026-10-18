@@ -13,7 +13,8 @@ use std::time::Instant;
 use waveformrs::{
     imrphenomd::IMRPhenomD,
     imrphenomx::{
-        IMRPhenomXAS, IMRPhenomXHM, IMRPhenomXP, IMRPhenomXPHM, PrecessingBinary, PrecessionVersion,
+        IMRPhenomXAS, IMRPhenomXHM, IMRPhenomXP, IMRPhenomXPHM, IMRPhenomXPNR, PrecessingBinary,
+        PrecessionVersion,
     },
     taylor::TaylorF2,
     waveform::Waveform,
@@ -122,6 +123,11 @@ fn main() {
         });
     }
 
+    run("IMRPhenomXPNR", &mut || {
+        let wf = IMRPhenomXPNR::new(&binary).unwrap();
+        black_box(wf.polarizations(black_box(&freqs)).unwrap());
+    });
+
     // Uniform grids as SimInspiralChooseFDWaveform evaluates them: from f_min
     // in steps of delta_f, stopping at Mf = 0.3 (about 1015 Hz here).
     let mtsun_si = 4.925490947641267e-6;
@@ -134,6 +140,10 @@ fn main() {
     });
     run("IMRPhenomXPHM (320) (uniform)", &mut || {
         let wf = IMRPhenomXPHM::with_version(&binary, PrecessionVersion::SpinTaylor).unwrap();
+        black_box(wf.polarizations_uniform(0.25, 20.0, 1500.0).unwrap());
+    });
+    run("IMRPhenomXPNR (uniform)", &mut || {
+        let wf = IMRPhenomXPNR::new(&binary).unwrap();
         black_box(wf.polarizations_uniform(0.25, 20.0, 1500.0).unwrap());
     });
 
