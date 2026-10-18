@@ -352,8 +352,9 @@ impl Setup {
     /// the splines of alpha and cos(beta) and the spline of gamma between
     /// `(f_min - buffer) 2 / M_MAX` and
     /// `(max(f_max, fRING + 4 fDAMP) + buffer) 2 / M_MIN`. Also sets the
-    /// final spin from the end of the PN integration.
-    fn initialize_euler_angles(&mut self) -> Result<SpinTaylorAngles, IMRPhenomXError> {
+    /// final spin from the end of the PN integration. `fast` selects the
+    /// vectorised merger-ringdown integration of gamma of the grid path.
+    fn initialize_euler_angles(&mut self, fast: bool) -> Result<SpinTaylorAngles, IMRPhenomXError> {
         let wf = &mut self.wf;
         let prec = &self.prec;
         let buffer = prec.integration_buffer;
@@ -386,7 +387,7 @@ impl Setup {
         let mf_needed = (wf.f_max_prime * wf.m_sec * (2.0 / prec.m_min as f64))
             .max(wf.mf_ref)
             .max(angles.ftrans_mrd);
-        angles.interpolate_gamma(wf, f_min_angles, f_max_angles, Some(mf_needed))?;
+        angles.interpolate_gamma(wf, f_min_angles, f_max_angles, Some(mf_needed), fast)?;
         angles.set_alpha_ref(wf.mf_ref)?;
         // alpha, cos(beta) and gamma are evaluated at ftrans_MRD (used by
         // the versions with constant angles in the ringdown).
@@ -412,7 +413,7 @@ impl Setup {
             return Err(IMRPhenomXError::InvalidFrequencies("fCut <= f_min"));
         }
         let angles = if self.prec.precessing_tag == 3 {
-            Some(self.initialize_euler_angles()?)
+            Some(self.initialize_euler_angles(false)?)
         } else {
             None
         };
@@ -445,7 +446,7 @@ impl Setup {
             }
             for &mprime in &mprimes {
                 let (alpha, cos_beta, epsilon) = match &angles {
-                    Some(angles) => spintaylor_angles(
+                    Some(angles) => spintaylor_angles::<true>(
                         angles,
                         wf,
                         prec,
@@ -515,7 +516,7 @@ impl Setup {
             return Err(IMRPhenomXError::InvalidFrequencies("fCut <= f_min"));
         }
         let spintaylor = if self.prec.precessing_tag == 3 {
-            Some(self.initialize_euler_angles()?)
+            Some(self.initialize_euler_angles(true)?)
         } else {
             None
         };
@@ -589,6 +590,8 @@ impl Setup {
 /// The SpinTaylor Euler angles of [`spintaylor_angles`] for each `m'` in
 /// `mprimes` (increasing) at the frequencies `frequencies`, returning the
 /// error the per-frequency loop of [`Setup::generate`] meets first.
+/// `cos(beta)` in the merger-ringdown uses the vectorised functions of
+/// [`SpinTaylorAngles::mrd_cos_beta_fast`] (agreeing to rounding).
 fn spintaylor_angle_arrays(
     angles: &SpinTaylorAngles,
     wf: &WaveformStruct,
@@ -605,7 +608,8 @@ fn spintaylor_angle_arrays(
         let mut cursor = AngleCursor::default();
         let mut arrays = AngleArrays::with_capacity(frequencies.len());
         for (i, &f) in frequencies[..end].iter().enumerate() {
-            match spintaylor_angles(angles, wf, prec, wf.m_sec * f, mprime, &mut cursor) {
+            let mf = wf.m_sec * f;
+            match spintaylor_angles::<false>(angles, wf, prec, mf, mprime, &mut cursor) {
                 Ok((alpha, cos_beta, epsilon)) => arrays.push(alpha, cos_beta, epsilon),
                 Err(error) => {
                     first_error = Some((i, error));
@@ -613,6 +617,16 @@ fn spintaylor_angle_arrays(
                 }
             }
         }
+        // cos(beta) in the merger-ringdown, Mf' >= ftrans_MRD (a suffix)
+        let factor = 2.0 / mprime as f64;
+        let n = arrays.cos_beta.len();
+        let start =
+            frequencies[..n].partition_point(|&f| wf.m_sec * f * factor < angles.ftrans_mrd);
+        let mfprime: Vec<f64> = frequencies[start..n]
+            .iter()
+            .map(|&f| wf.m_sec * f * factor)
+            .collect();
+        angles.mrd_cos_beta_fast(&mfprime, &mut arrays.cos_beta[start..]);
         out[mprime as usize] = Some(arrays);
     }
     match first_error {
@@ -625,9 +639,10 @@ fn spintaylor_angle_arrays(
 /// at the frequency `Mf' = Mf 2 / m'`, as in `IMRPhenomXPHMTwistUp`: from the
 /// splines in the inspiral and the MRD continuation above `ftrans_MRD`,
 /// with `gamma` from its spline or, beyond it, integrated from the previous
-/// frequency.
+/// frequency. Without `MRD_COS_BETA`, `cos(beta)` is left as NaN in the
+/// merger-ringdown (for the grid path, which evaluates it separately).
 #[inline]
-fn spintaylor_angles(
+fn spintaylor_angles<const MRD_COS_BETA: bool>(
     angles: &SpinTaylorAngles,
     wf: &WaveformStruct,
     prec: &PrecessionStruct,
@@ -652,7 +667,11 @@ fn spintaylor_angles(
         )
     } else {
         let alpha_i = angles.alpha_mrd.alpha(mfprime);
-        let cos_beta = angles.beta_mrd.beta(mfprime).cos();
+        let cos_beta = if MRD_COS_BETA {
+            angles.beta_mrd.beta(mfprime).cos()
+        } else {
+            f64::NAN
+        };
         let gamma = if gamma_spline.contains(mfprime) {
             cursor.gamma_hint = gamma_spline.locate(mfprime, cursor.gamma_hint);
             gamma_spline.eval_in(cursor.gamma_hint, mfprime)

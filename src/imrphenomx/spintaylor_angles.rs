@@ -27,6 +27,7 @@
 use std::f64::consts::PI;
 
 use crate::constants::{C_SI, G_SI, REAL4_EPS};
+use crate::fastmath;
 use crate::imrphenomx::internals::{IMRPhenomXError, WaveformStruct};
 use crate::imrphenomx::precession::{
     delta_mf_from_wfstruct, hz_to_mf, mf_to_hz, precessing_final_spin_2017, rotate_y_cs,
@@ -39,6 +40,23 @@ use crate::spintaylor::{SpinTaylorOrbit, SpinTaylorT4};
 /// Knots of the `gamma` grid integrated beyond the last frequency at which
 /// the spline is evaluated, see [`SpinTaylorAngles::interpolate_gamma`].
 const GAMMA_SPLINE_MARGIN: usize = 64;
+
+/// Steps of `gamma` integrated together by the vectorised merger-ringdown
+/// integration of the grid paths.
+const MRD_BLOCK: usize = 256;
+
+/// Boole's rule for `-int cos(beta) dalpha` over four intervals of `step`
+/// with the integrand `a` at the five points (`7 a0 + 32 a1 + 12 a2 + 32 a3
+/// + 7 a4` as contracted by clang).
+#[inline]
+fn boole(a: &[f64; 5], step: f64) -> f64 {
+    let sum = fma(
+        7.,
+        a[4],
+        fma(32., a[3], fma(12., a[2], fma(7., a[0], 32. * a[1]))),
+    );
+    -2. * step / 45. * sum
+}
 
 /// The solution of the PN precession equations used for the angles
 /// (`PhenomXPInspiralArrays`): `v = (pi M f)^(1/3)`, the dimensionless spins
@@ -291,6 +309,16 @@ impl AlphaMrd {
         let mf5 = mf2 * mf3;
         4. * self.b / mf5 + 2. * self.c / mf3
     }
+
+    /// Multiply each of `out` by [`Self::dalpha`] at the corresponding `mf`,
+    /// with one division (for the grid paths; agrees to rounding).
+    fn mul_dalpha_fast(&self, mf: &[f64], out: &mut [f64]) {
+        for (out, &mf) in out.iter_mut().zip(mf) {
+            let inv = 1.0 / mf;
+            let inv2 = inv * inv;
+            *out *= inv2 * inv * fma(4. * self.b, inv2, 2. * self.c);
+        }
+    }
 }
 
 /// Coefficients of the merger-ringdown continuation of `beta`,
@@ -392,6 +420,29 @@ impl BetaMrd {
                 self.d,
             )
         }
+    }
+
+    /// `cos(betaMRD)` at each of `mf`, written to `out`, with the inlined
+    /// `exp` and `cos` in vectorisable loops and one division (for the grid
+    /// paths; agrees with `self.beta(mf).cos()` to rounding).
+    fn cos_beta_fast(&self, mf: &[f64], out: &mut [f64]) {
+        let out = &mut out[..mf.len()];
+        if self.flat {
+            out.fill(self.cosbeta_sign.acos().cos());
+            return;
+        }
+        let kappa = 2. * PI * self.dfdamp;
+        for (out, &mf) in out.iter_mut().zip(mf) {
+            *out = -mf * kappa;
+        }
+        fastmath::exp_in_place(out);
+        for (out, &mf) in out.iter_mut().zip(mf) {
+            // exp(-kappa Mf) / Mf (a / Mf + b / Mf^2 + c / Mf^3) + d
+            let inv = 1.0 / mf;
+            let sum = inv * fma(inv, fma(self.c, inv, self.b), self.a);
+            *out = fma(*out * inv, sum, self.d);
+        }
+        fastmath::cos_in_place(out);
     }
 }
 
@@ -607,14 +658,87 @@ impl SpinTaylorAngles {
             value: alphadotcosbeta[4],
             valid: true,
         };
-        let a = alphadotcosbeta;
-        // 7 a0 + 32 a1 + 12 a2 + 32 a3 + 7 a4 as contracted by clang
-        let sum = fma(
-            7.,
-            a[4],
-            fma(32., a[3], fma(12., a[2], fma(7., a[0], 32. * a[1]))),
-        );
-        Ok(-2. * step / 45. * sum)
+        Ok(boole(&alphadotcosbeta, step))
+    }
+
+    /// For the grid paths: `cos(beta)` of the merger-ringdown continuation
+    /// at each of `mf`, written to `out` (see [`BetaMrd::cos_beta_fast`]).
+    pub(crate) fn mrd_cos_beta_fast(&self, mf: &[f64], out: &mut [f64]) {
+        self.beta_mrd.cos_beta_fast(mf, out);
+    }
+
+    /// For the grid paths: the merger-ringdown integrand `cos(beta)
+    /// dalpha/df` of [`Self::gamma_step`] at each of `mf`, written to `out`.
+    fn mrd_integrand_fast(&self, mf: &[f64], out: &mut [f64]) {
+        self.beta_mrd.cos_beta_fast(mf, out);
+        self.alpha_mrd.mul_dalpha_fast(mf, out);
+    }
+
+    /// For the grid paths: the steps of `gamma` in the merger-ringdown from
+    /// each of `mf` to `mf + delta_mf` ([`Self::gamma_step`] above
+    /// `ftrans_MRD`) with the vectorised integrand, added in turn to
+    /// `gamma` (starting from `gamma_start`) and pushed to `out`. With
+    /// `shared_ends` the steps follow each other (`mf + delta_mf` is the
+    /// next `mf` up to rounding) and the integrand at the end of each step
+    /// is reused for the next.
+    fn push_mrd_gamma_fast(
+        &self,
+        mf: &[f64],
+        delta_mf: impl Fn(usize) -> f64,
+        shared_ends: bool,
+        gamma_start: f64,
+        out: &mut Vec<f64>,
+    ) {
+        let mut points = Vec::with_capacity(5 * MRD_BLOCK);
+        let mut values = vec![0.0; 5 * MRD_BLOCK];
+        let mut gamma = gamma_start;
+        let mut previous_end: Option<f64> = None;
+        let points_per_step = if shared_ends { 4 } else { 5 };
+        for (block_index, block) in mf.chunks(MRD_BLOCK).enumerate() {
+            let offset = block_index * MRD_BLOCK;
+            points.clear();
+            let first_point = shared_ends && previous_end.is_none();
+            if first_point {
+                points.push(block[0]);
+            }
+            for (k, &mf) in block.iter().enumerate() {
+                let step = ((mf + delta_mf(offset + k)) - mf) * 0.25;
+                for j in 5 - points_per_step..5 {
+                    points.push(fma(j as f64, step, mf));
+                }
+            }
+            let values = &mut values[..points.len()];
+            self.mrd_integrand_fast(&points, values);
+            let mut next = usize::from(first_point);
+            if first_point {
+                previous_end = Some(values[0]);
+            }
+            for (k, &mf) in block.iter().enumerate() {
+                let step = ((mf + delta_mf(offset + k)) - mf) * 0.25;
+                let a = if shared_ends {
+                    let a0 = previous_end.expect("integrand at the start");
+                    [
+                        a0,
+                        values[next],
+                        values[next + 1],
+                        values[next + 2],
+                        values[next + 3],
+                    ]
+                } else {
+                    [
+                        values[next],
+                        values[next + 1],
+                        values[next + 2],
+                        values[next + 3],
+                        values[next + 4],
+                    ]
+                };
+                next += points_per_step;
+                previous_end = Some(a[4]);
+                gamma += boole(&a, step);
+                out.push(gamma);
+            }
+        }
     }
 
     /// `IMRPhenomX_InterpolateGamma_SpinTaylor`: integrate `gamma` on the
@@ -628,12 +752,17 @@ impl SpinTaylorAngles {
     /// factor `~(2 - sqrt(3))^k`, `~1e-37` for 64 knots, so the spline below
     /// `mf_needed` is unchanged to the last bit while the (expensive)
     /// merger-ringdown part of the integration is skipped.
+    ///
+    /// With `fast` (for the grid paths) the merger-ringdown part (versions
+    /// 320 and 321) is integrated with the vectorised integrand of
+    /// [`Self::push_mrd_gamma_fast`], which agrees to rounding.
     pub(crate) fn interpolate_gamma(
         &mut self,
         wf: &WaveformStruct,
         f_min: f64,
         f_max: f64,
         mf_needed: Option<f64>,
+        fast: bool,
     ) -> Result<(), IMRPhenomXError> {
         let mf_min = hz_to_mf(f_min, wf.m_tot);
         if f_min <= 0.0 || f_max <= 0.0 || f_max <= f_min || wf.f_ref < f_min {
@@ -671,8 +800,19 @@ impl SpinTaylorAngles {
         gamma.push(0.);
         let mut hint = 0;
         let mut cache = BooleCache::default();
+        let fast = fast && self.continues_analytically();
         for i in 1..n_knots {
             let mf = fma(i as f64, delta_mf, mf_min);
+            if fast && mf > self.ftrans_mrd {
+                // the merger-ringdown steps at the remaining knots
+                let knots: Vec<f64> = (i..n_knots)
+                    .map(|i| fma(i as f64, delta_mf, mf_min))
+                    .collect();
+                let start = gamma[i - 1];
+                self.push_mrd_gamma_fast(&knots, |_| delta_mf, true, start, &mut gamma);
+                frequencies.extend_from_slice(&knots);
+                break;
+            }
             frequencies.push(mf);
             let previous = gamma[i - 1];
             let deltagamma = if mf < self.ftrans_mrd || self.continues_analytically() {
@@ -721,12 +861,17 @@ impl SpinTaylorAngles {
     ///
     /// Angles are only returned up to the last frequency with `Mf <= mf_cut`
     /// (the waveform vanishes above), which leaves those values unchanged.
+    ///
+    /// With `fast` (for the grid paths) `cos(beta)` and the steps of `gamma`
+    /// in the merger-ringdown (versions 320 and 321) use the vectorised
+    /// functions of [`Self::push_mrd_gamma_fast`], which agree to rounding.
     pub(crate) fn angles_imr(
         &mut self,
         wf: &WaveformStruct,
         prec: &PrecessionStruct,
         frequencies: &[f64],
         mf_cut: f64,
+        fast: bool,
     ) -> Result<EulerAngles, IMRPhenomXError> {
         let n = frequencies.len();
         let f_min = frequencies[0];
@@ -744,7 +889,8 @@ impl SpinTaylorAngles {
             return Err(IMRPhenomXError::InvalidFrequencies("fRef must be >= fmin"));
         }
         // The gamma spline is evaluated below ftrans_MRD and at f_ref.
-        self.interpolate_gamma(wf, f_min, f_max, Some(self.ftrans_mrd.max(wf.mf_ref)))?;
+        let mf_needed = Some(self.ftrans_mrd.max(wf.mf_ref));
+        self.interpolate_gamma(wf, f_min, f_max, mf_needed, fast)?;
         if !self.alpha_spline.contains(mf_min) {
             return Err(IMRPhenomXError::SpinTaylorAngles(
                 "could not evaluate alpha(f_min)",
@@ -767,6 +913,28 @@ impl SpinTaylorAngles {
         for i in 1..n {
             let mf = hz_to_mf(frequencies[i], wf.m_tot);
             if mf > mf_cut {
+                break;
+            }
+            if fast && self.continues_analytically() && mf > self.ftrans_mrd {
+                // the merger-ringdown up to the cutoff
+                let end =
+                    i + frequencies[i..].partition_point(|&f| hz_to_mf(f, wf.m_tot) <= mf_cut);
+                let mfs: Vec<f64> = frequencies[i..end]
+                    .iter()
+                    .map(|&f| hz_to_mf(f, wf.m_tot))
+                    .collect();
+                angles.alpha.extend(
+                    mfs.iter()
+                        .map(|&mf| self.alpha_mrd.alpha(mf) + alpha_offset),
+                );
+                let start = angles.cos_beta.len();
+                angles.cos_beta.resize(start + mfs.len(), 0.0);
+                self.beta_mrd
+                    .cos_beta_fast(&mfs, &mut angles.cos_beta[start..]);
+                let delta_mf =
+                    |k: usize| hz_to_mf(frequencies[i + k] - frequencies[i + k - 1], wf.m_tot);
+                let gamma_start = angles.gamma[i - 1];
+                self.push_mrd_gamma_fast(&mfs, delta_mf, false, gamma_start, &mut angles.gamma);
                 break;
             }
             if mf < self.ftrans_mrd {

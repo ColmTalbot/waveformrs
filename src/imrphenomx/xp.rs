@@ -152,10 +152,12 @@ impl Setup {
     /// with the final spin they set. Failures of the PN integration are
     /// returned as [`IMRPhenomXError::SpinTaylorFallbackToMsa`] and handled
     /// by [`fallback_to_msa`] (`IMRPhenomXGetAndSetPrecessionVariables`
-    /// integration step and `IMRPhenomXPSpinTaylorAnglesIMR`).
+    /// integration step and `IMRPhenomXPSpinTaylorAnglesIMR`). `fast`
+    /// selects the vectorised merger-ringdown angles of the grid path.
     fn spintaylor_angles(
         &mut self,
         frequencies: &[f64],
+        fast: bool,
     ) -> Result<(EulerAngles, f64), IMRPhenomXError> {
         let prec = &self.prec;
         let f_low = (self.wf.f_min - prec.integration_buffer) * 2. / prec.m_max as f64;
@@ -167,7 +169,7 @@ impl Setup {
         let arrays = inspiral_angles_spintaylor(&self.wf, prec, f_low)?;
         let mut angles = SpinTaylorAngles::new(&mut self.wf, prec, &arrays)?;
         let mf_cut = self.wf.f_max_prime * self.wf.m_sec;
-        let euler = angles.angles_imr(&self.wf, prec, frequencies, mf_cut)?;
+        let euler = angles.angles_imr(&self.wf, prec, frequencies, mf_cut, fast)?;
         self.xas = Some(IMRPhenomXAS::from_waveform_struct(self.wf, true));
         Ok((euler, angles.gamma_ref))
     }
@@ -179,7 +181,7 @@ impl Setup {
         let mut hp = vec![Complex::new(0.0, 0.0); n];
         let mut hc = vec![Complex::new(0.0, 0.0); n];
         let spintaylor = if self.prec.precessing_tag == 3 {
-            Some(self.spintaylor_angles(frequencies)?)
+            Some(self.spintaylor_angles(frequencies, false)?)
         } else {
             None
         };
@@ -254,7 +256,7 @@ impl Setup {
     ) -> Result<(), IMRPhenomXError> {
         let frequencies = grid.frequencies();
         let spintaylor = if self.prec.precessing_tag == 3 {
-            Some(self.spintaylor_angles(frequencies)?)
+            Some(self.spintaylor_angles(frequencies, true)?)
         } else {
             None
         };
