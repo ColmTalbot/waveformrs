@@ -210,48 +210,61 @@ fn twist_up<const L: usize, const M: usize>(
     let n = h.len();
     let (rotation, half) = (&rotation[..n], &half[..n]);
     let (hplus, hcross) = (&mut hplus[..n], &mut hcross[..n]);
+    // Only constant indices below, so that the arrays live in registers.
     for i in 0..n {
+        // exp(i k alpha) by multiplication, as in LAL
         let e1 = rotation[i];
-        let mut cos_k = [1.0; 5];
-        let mut sin_k = [0.0; 5];
-        let mut e = e1;
-        for k in 1..=L {
-            if k > 1 {
-                e = e1 * e;
-            }
-            cos_k[k] = e.re;
-            sin_k[k] = e.im;
-        }
+        let e2 = e1 * e1;
+        let e3 = e1 * e2;
+        let e4 = e1 * e3;
         let [cb, sb] = half[i];
-        let mut c = [1.0; 9];
-        let mut s = [1.0; 9];
-        for k in 1..=2 * L {
-            c[k] = cb * c[k - 1];
-            s[k] = sb * s[k - 1];
-        }
-        let d = wigner_d(L as u32, M as u32, &c, &s);
-        let mut p = [0.0; 9];
-        let mut q = [0.0; 9];
-        for index in 0..=2 * L {
+        let d = wigner_d(L as u32, M as u32, &powers(cb), &powers(sb));
+        // (a + b, b - a) at index L + k
+        let pq = |k: isize| {
+            let index = (L as isize + k) as usize;
             let a = ya[index] * d[2 * L - index];
             let b = yb[index] * d[index];
-            p[index] = a + b;
-            q[index] = b - a;
-        }
-        let mut hp_re = p[L];
+            (a + b, b - a)
+        };
+        let (p0, q0) = pq(0);
+        let mut hp_re = p0;
         let mut hp_im = 0.0;
         let mut hc_re = 0.0;
-        let mut hc_im = -q[L];
-        for k in 1..=L {
-            hp_re += (p[L + k] + p[L - k]) * cos_k[k];
-            hc_im -= (q[L + k] + q[L - k]) * cos_k[k];
-            hp_im += (q[L + k] - q[L - k]) * sin_k[k];
-            hc_re += (p[L + k] - p[L - k]) * sin_k[k];
+        let mut hc_im = -q0;
+        let mut add = |k: isize, e: Complex<f64>| {
+            let (p_plus, q_plus) = pq(k);
+            let (p_minus, q_minus) = pq(-k);
+            hp_re += (p_plus + p_minus) * e.re;
+            hc_im -= (q_plus + q_minus) * e.re;
+            hp_im += (q_plus - q_minus) * e.im;
+            hc_re += (p_plus - p_minus) * e.im;
+        };
+        add(1, e1);
+        add(2, e2);
+        if L >= 3 {
+            add(3, e3);
+        }
+        if L >= 4 {
+            add(4, e4);
         }
         let hi = h[i];
         hplus[i] += hi * Complex::new(hp_re, hp_im);
         hcross[i] += hi * Complex::new(hc_re, hc_im);
     }
+}
+
+/// `1, x, ..., x^8` by successive multiplication (as `cBetah2 = cBetah *
+/// cBetah`, ... in LAL).
+#[inline(always)]
+fn powers(x: f64) -> [f64; 9] {
+    let x2 = x * x;
+    let x3 = x * x2;
+    let x4 = x * x3;
+    let x5 = x * x4;
+    let x6 = x * x5;
+    let x7 = x * x6;
+    let x8 = x * x7;
+    [1.0, x, x2, x3, x4, x5, x6, x7, x8]
 }
 
 /// Rotate the polarisations by `2 zeta` (the end of

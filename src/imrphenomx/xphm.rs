@@ -146,7 +146,7 @@ impl Twist {
 
 /// `d^l_{k, m'}(beta)` for `k = -l..l` (Appendix A of arXiv:2004.06503),
 /// written as in `IMRPhenomXPHMTwistUp`.
-#[inline]
+#[inline(always)]
 pub(crate) fn wigner_d(ell: u32, mprime: u32, c: &[f64; 9], s: &[f64; 9]) -> [f64; 9] {
     let mut d = [0.0; 9];
     match (ell, mprime) {
