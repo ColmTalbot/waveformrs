@@ -1361,4 +1361,51 @@ mod tests {
         assert!((gsl_hypot(3.0, 4.0) - 5.0).abs() < 1e-15);
         assert_eq!(gsl_hypot(f64::INFINITY, f64::NAN), f64::INFINITY);
     }
+
+    /// The batched evaluation of the grid paths gives the angles of
+    /// `phi_zeta_costhetal`: `phi_z` and `zeta` bit for bit (they are
+    /// ill-conditioned for nearly aligned spins, where changes of the roots
+    /// in the last bit change them by up to 1e-5 at high frequencies), and
+    /// `cos(theta_L)`, which uses the rearranged `sn`, to rounding.
+    #[test]
+    fn batch_matches_single_frequency_angles() {
+        let spins = [
+            ([0.4, -0.3, 0.2], [0.1, 0.5, -0.3]),
+            ([0.9, 0.1, 0.3], [0.1, 0.5, -0.3]),
+            ([0.05, 0.02, 0.9], [0.01, 0.0, 0.9]),
+            ([0.7, 0.0, -0.7], [-0.6, 0.3, 0.6]),
+            ([0.2, 0.2, 0.0], [0.0, 0.0, 0.0]),
+        ];
+        let pi_m = PI * 60.0 * 4.925490947641267e-6;
+        let x: Vec<f64> = (0..20000)
+            .map(|i| pi_m * (5.0 + 0.125 * i as f64))
+            .collect();
+        let mut systems = 0;
+        for (chi1, chi2) in spins {
+            for (m1, m2) in [(2.0 / 3.0, 1.0 / 3.0), (0.5, 0.5), (0.9, 0.1)] {
+                let Some(msa) = MsaSystem::new(&MsaInputs {
+                    eta: m1 * m2,
+                    m1,
+                    m2,
+                    m1_2: m1 * m1,
+                    m2_2: m2 * m2,
+                    chi1,
+                    chi2,
+                    pi_gm: pi_m,
+                    f_ref: 20.0,
+                }) else {
+                    continue;
+                };
+                systems += 1;
+                let mut batch = Vec::with_capacity(x.len());
+                msa.phi_zeta_costhetal_many(&x, |angles| batch.push(angles));
+                for (x, b) in x.iter().zip(&batch) {
+                    let a = msa.phi_zeta_costhetal(x.cbrt());
+                    assert_eq!((a.phiz, a.zeta), (b.phiz, b.zeta), "{chi1:?} {m1} {x}");
+                    assert!((a.cos_theta_l - b.cos_theta_l).abs() < 1e-14);
+                }
+            }
+        }
+        assert!(systems > 10);
+    }
 }
