@@ -304,6 +304,21 @@ fn twist_up<const L: usize, const M: usize>(
         ya[index] = if parity == 0 { ylm[index] } else { -ylm[index] };
         yb[index] = sigma * ylm[index];
     }
+    // With p_k = a_k + b_k and q_k = b_k - a_k, the sums need for k > 0
+    // p_k +- p_{-k} and q_k +- q_{-k}, which are combinations of d_k and
+    // d_{-k} with the coefficients
+    // [b_k + a_{-k}, a_k + b_{-k}, b_k - a_{-k}, b_{-k} - a_k].
+    let mut coefficients = [[0.0; 4]; 5];
+    for (k, coefficients) in coefficients.iter_mut().enumerate().take(L + 1).skip(1) {
+        let (plus, minus) = (L + k, L - k);
+        *coefficients = [
+            yb[plus] + ya[minus],
+            ya[plus] + yb[minus],
+            yb[plus] - ya[minus],
+            yb[minus] - ya[plus],
+        ];
+    }
+    let (p0, q0) = (ya[L] + yb[L], yb[L] - ya[L]);
     let n = h.len();
     let (rotation, half) = (&rotation[..n], &half[..n]);
     let (hplus, hcross) = (&mut hplus[..n], &mut hcross[..n]);
@@ -316,25 +331,19 @@ fn twist_up<const L: usize, const M: usize>(
         let e4 = e1 * e3;
         let [cb, sb] = half[i];
         let d = wigner_d(L as u32, M as u32, &powers(cb), &powers(sb));
-        // (a + b, b - a) at index L + k
-        let pq = |k: isize| {
-            let index = (L as isize + k) as usize;
-            let a = ya[index] * d[2 * L - index];
-            let b = yb[index] * d[index];
-            (a + b, b - a)
-        };
-        let (p0, q0) = pq(0);
-        let mut hp_re = p0;
+        let mut hp_re = p0 * d[L];
         let mut hp_im = 0.0;
         let mut hc_re = 0.0;
-        let mut hc_im = -q0;
-        let mut add = |k: isize, e: Complex<f64>| {
-            let (p_plus, q_plus) = pq(k);
-            let (p_minus, q_minus) = pq(-k);
-            hp_re += (p_plus + p_minus) * e.re;
-            hc_im -= (q_plus + q_minus) * e.re;
-            hp_im += (q_plus - q_minus) * e.im;
-            hc_re += (p_plus - p_minus) * e.im;
+        let mut hc_im = -q0 * d[L];
+        let mut add = |k: usize, e: Complex<f64>| {
+            let [a, b, c, dd] = coefficients[k];
+            let (x1, x2) = (a * d[L + k], b * d[L - k]);
+            let (x3, x4) = (c * d[L + k], dd * d[L - k]);
+            // p_k + p_{-k}, q_k + q_{-k}, q_k - q_{-k}, p_k - p_{-k}
+            hp_re += (x1 + x2) * e.re;
+            hc_im -= (x3 + x4) * e.re;
+            hp_im += (x1 - x2) * e.im;
+            hc_re += (x3 - x4) * e.im;
         };
         add(1, e1);
         add(2, e2);
