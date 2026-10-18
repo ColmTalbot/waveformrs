@@ -20,9 +20,13 @@
 //! the same arguments); the modes and the twisting up agree with it to
 //! rounding.
 
+use std::f64::consts::PI;
+
 use num_complex::Complex;
 
 use crate::fastmath;
+use crate::grid::FrequencyGrid;
+use crate::imrphenomx::precession::PrecessionStruct;
 use crate::imrphenomx::wigner::half_angles;
 use crate::imrphenomx::xphm::wigner_d;
 
@@ -50,6 +54,32 @@ impl AngleArrays {
         self.alpha.push(alpha);
         self.cos_beta.push(cos_beta);
         self.epsilon.push(epsilon);
+    }
+
+    /// The NNLO angles of `m'` at `omega = pi M f 2 / m'` for the first `n`
+    /// frequencies `f` of `grid` (`m_sec` is `M` in seconds).
+    pub(crate) fn nnlo(
+        prec: &PrecessionStruct,
+        eta: f64,
+        grid: &FrequencyGrid,
+        m_sec: f64,
+        mprime: u32,
+        n: usize,
+    ) -> Self {
+        let mut angles = Self {
+            alpha: vec![0.0; n],
+            cos_beta: vec![0.0; n],
+            epsilon: vec![0.0; n],
+        };
+        prec.nnlo_angles_on_grid(
+            eta,
+            grid,
+            PI * m_sec * 2.0 / mprime as f64,
+            &mut angles.alpha,
+            &mut angles.epsilon,
+            &mut angles.cos_beta,
+        );
+        angles
     }
 }
 

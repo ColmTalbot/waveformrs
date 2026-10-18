@@ -534,32 +534,24 @@ impl Setup {
         mprimes.dedup();
         let angles = match &spintaylor {
             Some(angles) => spintaylor_angle_arrays(angles, wf, prec, &frequencies[..n], &mprimes)?,
-            None => {
+            None if prec.msa.is_some() => {
                 // Evaluate m' = 2 first: the other m' reuse its angles.
                 mprimes.sort_by_key(|&mprime| mprime != 2);
-                if prec.msa.is_some() {
-                    // v = (pi Mf 2 / m')^(1/3) as in the per-frequency path
-                    let argument = |mprime: u32, i: usize| {
-                        PI * (wf.m_sec * frequencies[i]) * (2.0 / mprime as f64)
-                    };
-                    angles_with_reuse(&mprimes, n, argument, |arguments, angles| {
-                        prec.msa_angles_many(arguments, |alpha, epsilon, cos_beta| {
-                            angles.push(alpha, cos_beta, epsilon)
-                        });
-                    })
-                } else {
-                    // omega = pi Mf 2 / m'
-                    let argument = |mprime: u32, i: usize| {
-                        PI * (wf.m_sec * frequencies[i]) * 2. / mprime as f64
-                    };
-                    angles_with_reuse(&mprimes, n, argument, |arguments, angles| {
-                        for &omega in arguments {
-                            let (alpha, epsilon, cos_beta) = prec.nnlo_angles(omega, wf.eta);
-                            angles.push(alpha, cos_beta, epsilon);
-                        }
-                    })
-                }
+                // v = (pi Mf 2 / m')^(1/3) as in the per-frequency path
+                let argument = |mprime: u32, i: usize| {
+                    PI * (wf.m_sec * frequencies[i]) * (2.0 / mprime as f64)
+                };
+                angles_with_reuse(&mprimes, n, argument, |arguments, angles| {
+                    prec.msa_angles_many(arguments, |alpha, epsilon, cos_beta| {
+                        angles.push(alpha, cos_beta, epsilon)
+                    });
+                })
             }
+            None => std::array::from_fn(|mprime| {
+                mprimes
+                    .contains(&(mprime as u32))
+                    .then(|| AngleArrays::nnlo(prec, wf.eta, grid, wf.m_sec, mprime as u32, n))
+            }),
         };
         let twists: [Option<TwistArrays>; 5] =
             std::array::from_fn(|mprime| angles[mprime].as_ref().map(TwistArrays::new));
@@ -1073,6 +1065,53 @@ mod tests {
         );
         let subset = model.with_mode_array(&[(4, 4), (2, 2)]).unwrap();
         assert_eq!(subset.modes(), &[(2, 2), (4, 4)]);
+    }
+
+    /// The NNLO and MSA angles of the grid path (with the angles shared
+    /// between m') agree with those of the per-frequency loop.
+    #[test]
+    fn grid_angles_match_per_frequency_angles() {
+        let grid = FrequencyGrid::uniform(20.0, 1024.0, 0.125);
+        let frequencies = grid.frequencies();
+        let n = grid.len();
+        let modes = IMRPHENOMXHM_MODES.to_vec();
+        for version in [PrecessionVersion::Nnlo, PrecessionVersion::Msa] {
+            let setup = Setup::new(&binary(), version, &modes, 0.0, 20.0, 1024.0).unwrap();
+            let (wf, prec) = (&setup.wf, &setup.prec);
+            let angles: [Option<AngleArrays>; 5] = if version == PrecessionVersion::Msa {
+                let argument = |mprime: u32, i: usize| {
+                    PI * (wf.m_sec * frequencies[i]) * (2.0 / mprime as f64)
+                };
+                angles_with_reuse(&[2, 1, 3, 4], n, argument, |arguments, angles| {
+                    prec.msa_angles_many(arguments, |alpha, epsilon, cos_beta| {
+                        angles.push(alpha, cos_beta, epsilon)
+                    });
+                })
+            } else {
+                std::array::from_fn(|mprime| {
+                    (mprime > 0)
+                        .then(|| AngleArrays::nnlo(prec, wf.eta, &grid, wf.m_sec, mprime as u32, n))
+                })
+            };
+            for mprime in 1..=4u32 {
+                let angles = angles[mprime as usize].as_ref().unwrap();
+                for (i, &f) in frequencies.iter().enumerate() {
+                    let mf = wf.m_sec * f;
+                    let (alpha, epsilon, cos_beta) = if version == PrecessionVersion::Msa {
+                        prec.msa_angles((PI * mf * (2.0 / mprime as f64)).cbrt())
+                    } else {
+                        prec.nnlo_angles(PI * mf * 2. / mprime as f64, wf.eta)
+                    };
+                    let close = |a: f64, b: f64| (a - b).abs() <= 1e-13 * b.abs().max(1.0);
+                    assert!(
+                        close(angles.alpha[i], alpha)
+                            && close(angles.epsilon[i], epsilon)
+                            && close(angles.cos_beta[i], cos_beta),
+                        "{version:?} m' = {mprime}, f = {f}"
+                    );
+                }
+            }
+        }
     }
 
     /// Where the SpinTaylor integration does not reach the first frequency

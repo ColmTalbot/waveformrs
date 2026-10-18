@@ -19,6 +19,7 @@
 use std::f64::consts::{FRAC_PI_2, PI};
 
 use crate::constants::{C_SI, G_SI, MSUN_SI, MTSUN_SI};
+use crate::grid::{FrequencyGrid, ScalePowers};
 use crate::imrphenomx::internals::{IMRPhenomXError, WaveformStruct, POWERS_OF_LALPI};
 use crate::imrphenomx::msa::{MsaInputs, MsaSystem};
 use crate::imrphenomx::utilities::final_spin_2017;
@@ -753,6 +754,66 @@ impl PrecessionStruct {
         let s2 = s * s;
         let cos_beta = 1.0f64.copysign(l + self.sl) / (1.0 + s2).sqrt();
         (alpha, epsilon, cos_beta)
+    }
+
+    /// [`Self::nnlo_angles`] at `omega = scale f` for the first `alpha.len()`
+    /// frequencies `f` of `grid`, written to `alpha`, `epsilon` and
+    /// `cos_beta` (for the grid paths): the powers of `omega` are products
+    /// of those stored in the grid, which leaves a loop without
+    /// transcendental functions (agreeing with [`Self::nnlo_angles`] to
+    /// rounding).
+    pub(crate) fn nnlo_angles_on_grid(
+        &self,
+        eta: f64,
+        grid: &FrequencyGrid,
+        scale: f64,
+        alpha: &mut [f64],
+        epsilon: &mut [f64],
+        cos_beta: &mut [f64],
+    ) {
+        let scale = ScalePowers::new(scale);
+        let n = alpha.len();
+        let (epsilon, cos_beta) = (&mut epsilon[..n], &mut cos_beta[..n]);
+        let c = &self.nnlo;
+        let l = &self.l;
+        let sperp2 = self.sperp * self.sperp;
+        for i in 0..n {
+            let powers = grid.powers(&scale, i);
+            let (inv, cbrt, log) = (powers.inv, powers.cbrt, powers.ln);
+            // omega^(-1/3) and omega^(-2/3)
+            let inv_cbrt = cbrt * cbrt * inv;
+            let inv_cbrt2 = cbrt * inv;
+            alpha[i] = fma(
+                c.alpha5,
+                cbrt,
+                fma(
+                    c.alpha4l,
+                    log,
+                    c.alpha1 * inv + c.alpha2 * inv_cbrt2 + c.alpha3 * inv_cbrt,
+                ),
+            ) - self.alpha_offset;
+            epsilon[i] = fma(
+                c.epsilon5,
+                cbrt,
+                fma(
+                    c.epsilon4l,
+                    log,
+                    c.epsilon1 * inv + c.epsilon2 * inv_cbrt2 + c.epsilon3 * inv_cbrt,
+                ),
+            ) - self.epsilon_offset;
+            // OrbitalAngularMomentum::ansatz_3pn at v = omega^(1/3)
+            let v = cbrt;
+            let x = v * v;
+            let x2 = x * x;
+            let mut sum = fma(l.l2, x, l.l0);
+            sum = fma(l.l3, x * v, sum);
+            sum = fma(l.l4, x2, sum);
+            sum = fma(l.l5, x2 * v, sum);
+            sum = fma(l.l6, x2 * x, sum);
+            let l_total = fma(eta * inv_cbrt, sum, self.sl);
+            // sign(L) / sqrt(1 + (Sp / L)^2)
+            cos_beta[i] = l_total / fma(l_total, l_total, sperp2).sqrt();
+        }
     }
 
     /// MSA Euler angles `(alpha, epsilon, cos(beta))` at the orbital
