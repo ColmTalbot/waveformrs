@@ -854,32 +854,37 @@ impl<'f> Dataset<'f> {
                 self.path, self.dtype
             )));
         };
-        self.raw()
-            .chunks_exact(size)
-            .map(|b| {
-                let mut le = [0u8; 8];
-                if big_endian {
-                    for (dst, src) in le.iter_mut().zip(b.iter().rev()) {
-                        *dst = *src;
-                    }
-                } else {
-                    le[..size].copy_from_slice(b);
+        let raw = self.raw();
+        if size == 8 && signed && !big_endian {
+            // the common case, without per-element branches
+            return Ok(raw
+                .chunks_exact(8)
+                .map(|b| i64::from_le_bytes(b.try_into().unwrap()))
+                .collect());
+        }
+        let mut out = Vec::with_capacity(raw.len() / size);
+        for b in raw.chunks_exact(size) {
+            let mut le = [0u8; 8];
+            if big_endian {
+                for (dst, src) in le.iter_mut().zip(b.iter().rev()) {
+                    *dst = *src;
                 }
-                let negative = signed && le[size - 1] & 0x80 != 0;
-                if negative {
-                    le[size..].fill(0xff);
-                }
-                let value = u64::from_le_bytes(le);
-                if !signed && value > i64::MAX as u64 {
-                    Err(Hdf5Error::Type(format!(
-                        "{}: unsigned value {value} does not fit in i64",
-                        self.path
-                    )))
-                } else {
-                    Ok(value as i64)
-                }
-            })
-            .collect()
+            } else {
+                le[..size].copy_from_slice(b);
+            }
+            if signed && le[size - 1] & 0x80 != 0 {
+                le[size..].fill(0xff);
+            }
+            let value = u64::from_le_bytes(le);
+            if !signed && value > i64::MAX as u64 {
+                return Err(Hdf5Error::Type(format!(
+                    "{}: unsigned value {value} does not fit in i64",
+                    self.path
+                )));
+            }
+            out.push(value as i64);
+        }
+        Ok(out)
     }
 }
 
