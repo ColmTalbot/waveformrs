@@ -20,7 +20,9 @@ use crate::imrphenomx::phase::{
     dphase_22, phase_22, phase_22_connection_coefficients, time_shift_22, PhaseCoefficients,
 };
 use crate::imrphenomx::utilities::psi4_to_strain;
-use crate::imrphenomx::{hm_inspiral, hm_intermediate, hm_qnm, hm_ringdown, libm, ringdown};
+use crate::imrphenomx::{
+    hm_amp_122019, hm_inspiral, hm_intermediate, hm_qnm, hm_ringdown, libm, ringdown,
+};
 
 /// `FALSE_ZERO`: value replacing negative amplitudes.
 const FALSE_ZERO: f64 = 1.0e-15;
@@ -91,6 +93,10 @@ pub(crate) struct HMWaveformStruct {
     pub(crate) delta_t: f64,
     /// Start of the exponential fall-off of the ringdown amplitude.
     pub(crate) f_amp_rd_falloff: f64,
+    /// `IMRPhenomXHMReleaseVersion`, from `WaveformStruct::hm_release`.
+    pub(crate) release: u32,
+    /// Flags and versions of the 122019 release.
+    pub(crate) v122019: hm_amp_122019::Flags,
 }
 
 impl HMWaveformStruct {
@@ -146,6 +152,8 @@ impl HMWaveformStruct {
             amp0: wf.amp0,
             delta_t: -2. * PI * (500. + psi4tostrain),
             f_amp_rd_falloff: 0.0,
+            release: wf.hm_release,
+            v122019: hm_amp_122019::Flags::default(),
         }
     }
 }
@@ -163,7 +171,8 @@ fn mixing_coefficients(af: f64) -> [Complex<f64>; 4] {
     ]
 }
 
-/// Equivalent of `IMRPhenomXHMAmpCoefficients` for the 122022 release.
+/// Equivalent of `IMRPhenomXHMAmpCoefficients` (the 122022 release, with
+/// the coefficients only the 122019 release uses in `v122019`).
 #[derive(Clone, Copy, Debug, Default)]
 pub(crate) struct HMAmpCoefficients {
     /// Inspiral-intermediate transition, `fAmpMatchIN`.
@@ -202,6 +211,8 @@ pub(crate) struct HMAmpCoefficients {
     pub(crate) colloc_values_rd_aux: [f64; 4],
     /// Cubic polynomial of the auxiliary ringdown region of the (3,2).
     pub(crate) rd_aux_coefficients: [f64; 4],
+    /// Coefficients of the 122019 release.
+    pub(crate) v122019: hm_amp_122019::AmpCoefficients,
 }
 
 /// Equivalent of `IMRPhenomXHMPhaseCoefficients` for the 122019 phase.
@@ -282,6 +293,11 @@ impl HMMode {
         phase22: &PhaseCoefficients,
     ) -> Self {
         let mut wfhm = HMWaveformStruct::new(ell, emm, wf);
+        match wf.hm_release {
+            hm_amp_122019::RELEASE_122022 => {}
+            hm_amp_122019::RELEASE_122019 => hm_amp_122019::set_waveform_variables(&mut wfhm, wf),
+            other => panic!("IMRPhenomXHM: PhenomXHMReleaseVersion {other} is not valid"),
+        }
         let mut amp = HMAmpCoefficients::default();
         let mut phase = HMPhaseCoefficients::default();
         if wfhm.amp_zero {
@@ -334,6 +350,9 @@ impl HMMode {
     ) -> f64 {
         if self.wfhm.amp_zero {
             return 0.0;
+        }
+        if self.wfhm.release == hm_amp_122019::RELEASE_122019 {
+            return hm_amp_122019::amplitude(powers, &self.wfhm, &self.amp, || rotation(powers));
         }
         let mf = powers.itself;
         let amp = if mf < self.amp.f_amp_match_in {
@@ -424,9 +443,12 @@ impl HMMode {
             + self.wfhm.phiref22;
         let rotation = libm::cexp_i(phi22);
         let mut wf22r = Complex::new(amp22 * rotation.re, amp22 * rotation.im);
-        // RingdownAmpVersion != 0: rescale with the leading order.
-        let rescale = self.wfhm.amp_norm * powers.m_seven_sixths;
-        wf22r = Complex::new(wf22r.re * rescale, wf22r.im * rescale);
+        if self.wfhm.ringdown_amp_version != 0 {
+            // Rescale with the leading order (the 122019 release keeps both
+            // modes rescaled by it).
+            let rescale = self.wfhm.amp_norm * powers.m_seven_sixths;
+            wf22r = Complex::new(wf22r.re * rescale, wf22r.im * rescale);
+        }
         self.rotate(powers, wf22r)
     }
 
@@ -439,7 +461,11 @@ impl HMMode {
         powers: &UsefulPowers,
         wf22: Complex<f64>,
     ) -> Complex<f64> {
-        let wf22r = Complex::new(wf22.re / self.wfhm.amp0, wf22.im / self.wfhm.amp0);
+        let mut wf22r = Complex::new(wf22.re / self.wfhm.amp0, wf22.im / self.wfhm.amp0);
+        if self.wfhm.ringdown_amp_version == 0 {
+            let rescale = self.wfhm.amp_norm * powers.m_seven_sixths;
+            wf22r = Complex::new(wf22r.re / rescale, wf22r.im / rescale);
+        }
         self.rotate(powers, wf22r)
     }
 
@@ -479,11 +505,26 @@ impl HMMode {
         ) + self.wfhm.phaseshift
             + self.wfhm.phiref22;
         let rescale = self.wfhm.amp_norm * powers.m_seven_sixths;
-        let amplm = hm_ringdown::amp_ansatz(powers, &self.wfhm, &self.amp);
+        let mut amplm = self.ringdown_amp_ansatz(powers);
+        if self.wfhm.ringdown_amp_version == 0 {
+            // The 122019 ringdown is rescaled by the leading order of the 22.
+            amplm *= rescale;
+        }
         let philm = hm_ringdown::phase_ansatz_int(mf, powers, &self.wfhm, &self.phase);
         let p = &self.phase;
         let lin = fma(p.c1_rd, mf, p.c_rd) + p.deltaphi_lm;
         (lin, [(amp22 * rescale, phi22), (amplm, philm)])
+    }
+
+    /// `IMRPhenomXHM_RD_Amp_Ansatz` for the ringdown version of the mode (the
+    /// spheroidal ringdown for the (3,2)).
+    #[inline]
+    fn ringdown_amp_ansatz(&self, powers: &UsefulPowers) -> f64 {
+        if self.wfhm.ringdown_amp_version == 0 {
+            hm_amp_122019::rd_amp_ansatz(powers, &self.wfhm, &self.amp)
+        } else {
+            hm_ringdown::amp_ansatz(powers, &self.wfhm, &self.amp)
+        }
     }
 
     /// The coefficients `conj(a322)`, `conj(a323)` of the 22 ringdown and
@@ -498,7 +539,7 @@ impl HMMode {
     #[inline]
     fn rotate(&self, powers: &UsefulPowers, wf22r: Complex<f64>) -> Complex<f64> {
         let mf = powers.itself;
-        let amplm = hm_ringdown::amp_ansatz(powers, &self.wfhm, &self.amp);
+        let amplm = self.ringdown_amp_ansatz(powers);
         let philm = hm_ringdown::phase_ansatz_int(mf, powers, &self.wfhm, &self.phase);
         let [_, _, mix2, mix3] = self.wfhm.mixing_coeffs;
         // conj(mix2) * wf22r
@@ -597,7 +638,7 @@ fn intermediate_colloc_pts_freqs(
 /*                          Amplitude coefficients                         */
 /* ---------------------------------------------------------------------- */
 
-/// `IMRPhenomXHM_GetAmplitudeCoefficients` (release 122022).
+/// `IMRPhenomXHM_GetAmplitudeCoefficients`.
 fn get_amplitude_coefficients(
     amp: &mut HMAmpCoefficients,
     phase: &HMPhaseCoefficients,
@@ -605,6 +646,14 @@ fn get_amplitude_coefficients(
     wfhm: &mut HMWaveformStruct,
     wf: &WaveformStruct,
 ) {
+    if wfhm.release == hm_amp_122019::RELEASE_122019 {
+        // The rotation only uses quantities the amplitude does not change.
+        let wfhm_rotation = *wfhm;
+        hm_amp_122019::get_amplitude_coefficients(amp, wfhm, wf, |powers, amp| {
+            rotated_32(powers, *amp, phase, mixing, &wfhm_rotation)
+        });
+        return;
+    }
     amp.amp_norm = wf.amp_norm;
     amp.pn_dominant = wf.amp_norm * (2. / wfhm.emm as f64).powf(-7. / 6.);
     wfhm.f_amp_rd_falloff = 0.;

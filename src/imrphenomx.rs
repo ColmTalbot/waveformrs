@@ -30,12 +30,19 @@
 //! | `hm_intermediate` | `LALSimIMRPhenomXHM_intermediate.c`                 |
 //! | `hm_ringdown`  | `LALSimIMRPhenomXHM_ringdown.c`                        |
 //! | `hm_qnm`       | `LALSimIMRPhenomXHM_qnm.c`                             |
+//! | `hm_amp_122019` | amplitude of the original IMRPhenomXHM release (122019) |
+//! | `hm_fits_122018` | parameter-space fits of the 122019 amplitude        |
+//! | `hm_poly_122019` | intermediate amplitude polynomial of the 122019 release |
+//! | `poly_roots`   | GSL's `gsl_poly_complex_solve`                         |
 //! | `libm`         | the C library's `cexp`                                 |
 
 mod amplitude;
+mod hm_amp_122019;
+mod hm_fits_122018;
 mod hm_inspiral;
 mod hm_intermediate;
 mod hm_internals;
+mod hm_poly_122019;
 mod hm_qnm;
 mod hm_ringdown;
 mod inspiral;
@@ -45,6 +52,7 @@ pub(crate) mod libm;
 mod linalg;
 mod msa;
 mod phase;
+mod poly_roots;
 mod precessing_grid;
 mod precession;
 mod qnm;

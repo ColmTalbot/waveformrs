@@ -354,6 +354,10 @@ pub(crate) struct WaveformStruct {
     pub(crate) quadparam1: f64,
     pub(crate) quadparam2: f64,
 
+    /// `PhenomXHMReleaseVersion` of the higher modes: 122022 (default) or
+    /// 122019 (original amplitudes, used by IMRPhenomXPNR).
+    pub(crate) hm_release: u32,
+
     // Frequencies and reference values
     /// Reference frequency in Hz (`f_min` if zero was requested).
     pub(crate) f_ref: f64,
@@ -574,6 +578,7 @@ impl WaveformStruct {
             lambda2: 0.0,
             quadparam1: 1.0,
             quadparam2: 1.0,
+            hm_release: 122022,
             f_ref,
             phi_ref_in: phi0,
             phi0,

@@ -83,6 +83,8 @@ pub struct IMRPhenomXHM {
     /// Inclination and orbital reference phase used by
     /// [`crate::model::FrequencyDomainModel`].
     pub(crate) extrinsic: Extrinsic,
+    /// `PhenomXHMReleaseVersion`.
+    hm_release: u32,
 }
 
 impl IMRPhenomXHM {
@@ -129,6 +131,7 @@ impl IMRPhenomXHM {
             f_ref: 0.0,
             mode_array: DEFAULT_MODE_ARRAY.to_vec(),
             extrinsic: Extrinsic::default(),
+            hm_release: 122022,
         };
         // Check the parameters as LAL does when the waveform is generated.
         new.waveform_struct(10.0, 0.0, 0.0)?;
@@ -165,6 +168,24 @@ impl IMRPhenomXHM {
         self
     }
 
+    /// Select LAL's `PhenomXHMReleaseVersion`: 122022 (the default, with
+    /// the recalibrated higher-mode amplitudes) or 122019 (the original
+    /// release of arXiv:2001.10914, used internally by IMRPhenomXPNR). The
+    /// phases are the same in both releases except for the ringdown of the
+    /// (3,2), which follows from its amplitude.
+    ///
+    /// # Panics
+    ///
+    /// If `version` is neither 122019 nor 122022.
+    pub fn with_release_version(mut self, version: u32) -> Self {
+        assert!(
+            version == 122019 || version == 122022,
+            "IMRPhenomXHM: PhenomXHMReleaseVersion {version} is not valid (122019 or 122022)"
+        );
+        self.hm_release = version;
+        self
+    }
+
     /// Total mass in solar masses.
     pub fn total_mass(&self) -> f64 {
         self.m1_si / MSUN_SI + self.m2_si / MSUN_SI
@@ -181,7 +202,7 @@ impl IMRPhenomXHM {
         f_max: f64,
         phi_ref: f64,
     ) -> Result<WaveformStruct, IMRPhenomXError> {
-        WaveformStruct::from_si(
+        let mut wf = WaveformStruct::from_si(
             self.m1_si,
             self.m2_si,
             self.chi_1,
@@ -193,7 +214,9 @@ impl IMRPhenomXHM {
             f_max,
             self.distance,
             0.0,
-        )
+        )?;
+        wf.hm_release = self.hm_release;
+        Ok(wf)
     }
 
     /// The polarizations `(hplus, hcross)` at `frequencies` (Hz, increasing)
