@@ -24,6 +24,7 @@ use waveformrs::{
     imrphenomx::{
         IMRPhenomXAS, IMRPhenomXHM, IMRPhenomXP, IMRPhenomXPHM, PrecessingBinary, PrecessionVersion,
     },
+    nrsur::{NRSur7dq4, NRSur7dq4Data, NRSurWorkspace, TimeSeriesPolarizations},
     taylor::TaylorF2,
     waveform::Waveform,
 };
@@ -236,5 +237,52 @@ fn main() {
              \"grid_seconds\": {grid_entry}}}"
         ));
     }
+    if let Ok(data) = NRSur7dq4Data::global() {
+        entries.push(nrsur_serial(data, &input.draws));
+    }
     println!("{{{}}}", entries.join(", "));
+}
+
+/// NRSur7dq4 in the time domain at 4096 Hz from the start of the surrogate
+/// (`f_min = f_ref = 0`): a fresh workspace per call, and one reused
+/// workspace and output (`grid_seconds`).
+fn nrsur_serial(data: &NRSur7dq4Data, draws: &[Draw]) -> String {
+    let delta_t = 1.0 / 4096.0;
+    let binary = |draw: &Draw| PrecessingBinary {
+        f_ref: 0.0,
+        ..draw.binary()
+    };
+    for draw in draws.iter().take(5) {
+        let _ = NRSur7dq4::new(data, &binary(draw)).and_then(|wf| wf.polarizations(delta_t, 0.0));
+    }
+    let mut failures = 0;
+    let start = Instant::now();
+    for draw in draws {
+        let result =
+            NRSur7dq4::new(data, &binary(draw)).and_then(|wf| wf.polarizations(delta_t, 0.0));
+        if black_box(result).is_err() {
+            failures += 1;
+        }
+    }
+    let per_call = start.elapsed().as_secs_f64() / draws.len() as f64;
+    let mut ws = NRSurWorkspace::new();
+    let mut out = TimeSeriesPolarizations::default();
+    let start = Instant::now();
+    for draw in draws {
+        let _ = NRSur7dq4::new(data, &binary(draw))
+            .and_then(|wf| wf.polarizations_with(&mut ws, delta_t, 0.0, &mut out));
+        black_box(&out);
+    }
+    let reused = start.elapsed().as_secs_f64() / draws.len() as f64;
+    eprintln!(
+        "{:<22} {:>9.1} us per waveform ({failures} errors)\n{:<22} {:>9.1} us with a reused workspace",
+        "NRSur7dq4",
+        per_call * 1e6,
+        "",
+        reused * 1e6
+    );
+    format!(
+        "\"NRSur7dq4\": {{\"seconds\": {per_call:e}, \"failures\": {failures}, \
+         \"grid_seconds\": {reused:e}}}"
+    )
 }

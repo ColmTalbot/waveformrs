@@ -9,10 +9,13 @@ for waveformrs (``examples/serial_benchmark.rs``) and lalsimulation
 (``SimInspiralChooseFDWaveformSequence``, multibanding off) on the same
 draws.
 
-    OMP_NUM_THREADS=1 python report/serial_benchmark.py [--n-draws 300]
+    OMP_NUM_THREADS=1 LAL_DATA_PATH=lal_data python report/serial_benchmark.py [--n-draws 300]
+
+NRSur7dq4 is included when ``lal_data/NRSur7dq4_v1.0.h5`` exists.
 """
 import argparse
 import json
+import os
 import subprocess
 import tempfile
 import time
@@ -23,6 +26,10 @@ import lalsimulation as ls
 import numpy as np
 
 ROOT = Path(__file__).resolve().parent.parent
+# NRSur7dq4 data (git-ignored), for both codes; LAL reads LAL_DATA_PATH at import
+LAL_DATA = ROOT / "lal_data"
+ENV = dict(os.environ, NRSUR7DQ4_DATA=str(LAL_DATA / "NRSur7dq4_v1.0.h5"))
+os.environ.setdefault("LAL_DATA_PATH", str(LAL_DATA))
 NO_MULTIBANDING = dict(PhenomXHMThresholdMband=0.0, PhenomXPHMThresholdMband=0.0)
 MODELS = {
     "TaylorF2": ("TaylorF2", dict()),
@@ -103,6 +110,32 @@ def lal_serial(name, cases, frequencies):
     return dict(seconds=(time.perf_counter() - start) / len(cases), failures=failures)
 
 
+def lal_nrsur(cases, delta_t=1 / 4096):
+    """NRSur7dq4 with SimInspiralChooseTDWaveform from the start of the
+    surrogate (f_min = f_ref = 0)."""
+    def call(case):
+        return ls.SimInspiralChooseTDWaveform(
+            case["mass_1"] * lal.MSUN_SI, case["mass_2"] * lal.MSUN_SI,
+            *case["spin_1"], *case["spin_2"], case["luminosity_distance"] * 1e6 * lal.PC_SI,
+            case["inclination"], case["phi_ref"], 0.0, 0.0, 0.0, delta_t, 0.0, 0.0,
+            None, ls.NRSur7dq4,
+        )
+
+    failures = 0
+    for case in cases[:5]:
+        try:
+            call(case)
+        except RuntimeError:
+            pass
+    start = time.perf_counter()
+    for case in cases:
+        try:
+            call(case)
+        except RuntimeError:
+            failures += 1
+    return dict(seconds=(time.perf_counter() - start) / len(cases), failures=failures)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--n-draws", type=int, default=300)
@@ -120,10 +153,14 @@ def main():
         path.write_text(json.dumps(dict(frequencies=frequencies.tolist(), draws=cases)))
         result = subprocess.run(
             ["cargo", "run", "--quiet", "--release", "--example", "serial_benchmark", "--", str(path)],
-            cwd=ROOT, capture_output=True, text=True, check=True,
+            cwd=ROOT, capture_output=True, text=True, check=True, env=ENV,
         )
     rust = json.loads(result.stdout)
     lal_results = {name: lal_serial(name, cases, frequencies) for name in MODELS}
+    names = list(MODELS)
+    if "NRSur7dq4" in rust:
+        lal_results["NRSur7dq4"] = lal_nrsur(cases)
+        names.append("NRSur7dq4")
 
     # Cost of a call through the Python bindings with (almost) no work.
     tiny = np.array([args.f_min, args.f_min + args.delta_f])
@@ -143,7 +180,7 @@ def main():
           f"{overhead * 1e6:.1f} us")
     print(f"{'model':<22}{'rust [us]':>12}{'grid [us]':>12}{'LAL [us]':>12}"
           f"{'speed-up':>10}{'grid':>8}")
-    for name in MODELS:
+    for name in names:
         t_rust, t_lal = rust[name]["seconds"], lal_results[name]["seconds"]
         t_grid = rust[name].get("grid_seconds")
         grid_text = f"{t_grid * 1e6:12.1f}" if t_grid else f"{'-':>12}"
