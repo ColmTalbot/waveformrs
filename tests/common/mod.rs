@@ -93,15 +93,17 @@ pub fn data_path(name: &str) -> std::path::PathBuf {
 /// osx-arm64 build (clang's fused multiply-adds, Apple's libm) to rounding,
 /// mostly bit for bit.
 ///
-/// Elsewhere, whether against the committed data or against data from this
-/// machine's lalsimulation (`WAVEFORMRS_REFERENCE_DATA`), the arithmetic
-/// differs in the last bits: another libm (glibc), and a LAL compiled by GCC,
-/// which contracts across statements on aarch64 and not at all on x86-64.
-/// The ill-conditioned parts of the models turn that into much larger
-/// differences, in LAL itself as much as here (docs/linux.md): the
-/// IMRPhenomXHM (3,2) mode (relative ~1e-3 between LAL's own Linux and
-/// macOS builds) and, through it, every IMRPhenomXHM/XPHM polarisation, and
-/// the MSA angles.
+/// Elsewhere the arithmetic differs in the last bits. Against the committed
+/// data the libm differs (glibc's `sin`, `pow`, `cbrt`, ... are not Apple's)
+/// and so do the fused multiply-adds on x86-64. Against data from this
+/// machine's lalsimulation (`WAVEFORMRS_REFERENCE_DATA`), LAL is compiled
+/// by GCC, which on aarch64 also fuses products and sums in different
+/// statements (on x86-64 a few untraced last-bit differences remain). The
+/// ill-conditioned parts of the models turn that into much
+/// larger differences, in LAL itself as much as here (docs/linux.md): the
+/// IMRPhenomXHM (3,2) mode (relative ~2e-3 between LAL's own Linux and
+/// macOS builds) and, through it, every IMRPhenomXHM/XPHM polarisation and
+/// the l = 3 modes of IMRPhenomXPHM, and the MSA angles.
 pub fn mirrored_build() -> bool {
     cfg!(all(target_os = "macos", target_arch = "aarch64"))
 }
@@ -112,10 +114,14 @@ pub fn mirrored_build() -> bool {
 /// the osx-arm64 or the Linux lalsimulation, which are themselves of the
 /// size of the differences between lalsimulation's own builds
 /// (report/data/linux_reference_comparison.json).
-const CROSS_BUILD_TOLERANCES: [(&str, (f64, f64)); 11] = [
+const CROSS_BUILD_TOLERANCES: [(&str, (f64, f64)); 14] = [
     ("imrphenomxhm", (1e-3, 1e-6)),
-    // the (3,+-2) modes; the other modes keep the strict tolerances
+    // the (3,+-2) modes, and the others (up to 2e-9 at mass ratio 30)
     ("imrphenomxhm_modes_32", (2e-2, 4e-5)),
+    ("imrphenomxhm_modes", (2e-8, 1e-12)),
+    // the l = 3 modes of IMRPhenomXHM and XPHM (tests/modes.rs)
+    ("choose_fd_modes_l3", (2e-2, 4e-5)),
+    ("choose_fd_modes", (1e-8, 1e-12)),
     ("imrphenomxphm_spintaylor", (1e-3, 1e-6)),
     ("imrphenomxphm_nnlo", (1e-3, 1e-6)),
     ("imrphenomxphm_msa", (1e-3, 1e-6)),
