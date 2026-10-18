@@ -81,6 +81,31 @@ use crate::imrphenomx::xphm::wigner_d;
 /// The PNR angles require the reference frequency to lie between the first
 /// and last frequencies (for a uniform grid: between `f_min` and the
 /// cutoff), as in LAL.
+///
+/// The J-frame modes are available through
+/// [`crate::FrequencyDomainModel::modes`] (the single-mode functions of
+/// LAL with the flags of IMRPhenomXPNR) and [`crate::choose_fd_modes`]
+/// (`SimInspiralChooseFDModes`).
+///
+/// ```
+/// use waveformrs::imrphenomx::{IMRPhenomXPNR, PrecessingBinary};
+///
+/// let binary = PrecessingBinary {
+///     mass_1: 36.0,
+///     mass_2: 29.0,
+///     spin_1: [0.4, 0.2, 0.3],
+///     spin_2: [-0.2, 0.3, -0.1],
+///     luminosity_distance: 500.0,
+///     inclination: 0.7,
+///     phi_ref: 1.2,
+///     f_ref: 20.0,
+/// };
+/// let frequencies: Vec<f64> = (0..200).map(|i| 20.0 + 2.0 * i as f64).collect();
+/// let (hplus, hcross) = IMRPhenomXPNR::new(&binary)?.polarizations(&frequencies)?;
+/// # assert_eq!(hplus.len(), 200);
+/// # assert_eq!(hcross.len(), 200);
+/// # Ok::<(), waveformrs::imrphenomx::IMRPhenomXError>(())
+/// ```
 #[derive(Clone, Debug)]
 pub struct IMRPhenomXPNR {
     binary: PrecessingBinary,
@@ -137,6 +162,8 @@ struct ModeAngles<'a> {
     mf_low: f64,
     mf_high: f64,
     mf_rd_lm: f64,
+    /// The interval of the splines at the previous frequency.
+    hint: std::cell::Cell<usize>,
 }
 
 impl<'a> ModeAngles<'a> {
@@ -169,6 +196,7 @@ impl<'a> ModeAngles<'a> {
             mf_low,
             mf_high,
             mf_rd_lm,
+            hint: std::cell::Cell::new(0),
         }
     }
 
@@ -192,7 +220,9 @@ impl<'a> ModeAngles<'a> {
                     "invalid transition frequencies of the frequency map",
                 ))?;
                 let f_mapped = mf_to_hz(mf_mapped, wf.m_tot);
-                let (alpha, beta, gamma) = splines.angles(f_mapped)?;
+                let mut hint = self.hint.get();
+                let (alpha, beta, gamma) = splines.angles_from(f_mapped, &mut hint)?;
+                self.hint.set(hint);
                 Ok((
                     alpha - prec.alpha_offset,
                     beta.cos(),

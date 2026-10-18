@@ -247,6 +247,29 @@ impl PnrSplines {
         }
         Ok((self.alpha.eval(f), self.beta.eval(f), self.gamma.eval(f)))
     }
+
+    /// [`PnrSplines::angles`] searching the interval of `f` from `hint`,
+    /// which it updates (the three splines share their knots; the result
+    /// does not depend on the hint).
+    #[inline]
+    pub(crate) fn angles_from(
+        &self,
+        f: f64,
+        hint: &mut usize,
+    ) -> Result<(f64, f64, f64), IMRPhenomXError> {
+        if !self.alpha.contains(f) {
+            return Err(IMRPhenomXError::PnrAngles(
+                "interpolation of the PNR angles out of range",
+            ));
+        }
+        let index = self.alpha.locate(f, *hint);
+        *hint = index;
+        Ok((
+            self.alpha.eval_in(index, f),
+            self.beta.eval_in(index, f),
+            self.gamma.eval_in(index, f),
+        ))
+    }
 }
 
 /// The modes the SpinTaylor and PNR angles must cover: `M_MIN`, `M_MAX`
@@ -1962,7 +1985,17 @@ impl PnrPrecession {
         // gamma from the minimal rotation condition with Boole's rule
         let mut gamma = Vec::with_capacity(freqs_22.len());
         gamma.push(0.0);
-        let integrand = |t: f64| alphadot_cosbeta(alpha_spline.derivative(t), beta_spline.eval(t));
+        // (the interval search starts from the previous one, as with GSL's
+        // accelerators; the interval found does not depend on it)
+        let hint = std::cell::Cell::new(0);
+        let integrand = |t: f64| {
+            let index = alpha_spline.locate(t, hint.get());
+            hint.set(index);
+            alphadot_cosbeta(
+                alpha_spline.derivative_in(index, t),
+                beta_spline.eval_in(index, t),
+            )
+        };
         for i in 1..freqs_22.len() {
             let previous = gamma[i - 1];
             gamma.push(boole_step(
