@@ -282,7 +282,62 @@ def generate_dynamics(case):
     return case
 
 
+def sincos_sensitive_angles(n_per_kind, rng):
+    """Polar angles in [0, pi] for which Darwin's __sincos_stret returns a
+    different sine than sin() for theta/2, theta, 2 theta, 3 theta or
+    4 theta (empty elsewhere): clang combines sin and cos of the same
+    argument into __sincos_stret, so these angles test which calls the
+    harmonics make."""
+    import ctypes
+    import platform
+
+    if platform.system() != "Darwin":
+        return []
+
+    class SinCos(ctypes.Structure):
+        _fields_ = [("sin", ctypes.c_double), ("cos", ctypes.c_double)]
+
+    libm = ctypes.CDLL("/usr/lib/libSystem.B.dylib")
+    libm.__sincos_stret.restype = SinCos
+    libm.__sincos_stret.argtypes = [ctypes.c_double]
+    libm.sin.restype = ctypes.c_double
+    libm.sin.argtypes = [ctypes.c_double]
+    found = [0] * 5
+    angles = list()
+    while min(found) < n_per_kind:
+        theta = float(rng.uniform(0, np.pi))
+        for k, arg in enumerate([theta / 2, theta, 2 * theta, 3 * theta, 4 * theta]):
+            if found[k] < n_per_kind and libm.__sincos_stret(arg).sin != libm.sin(arg):
+                found[k] += 1
+                angles.append(theta)
+    return angles
+
+
+def spin_weighted_harmonic_cases():
+    """XLALSpinWeightedSphericalHarmonic(theta, phi, -2, l, m) for l <= 4."""
+    rng = np.random.default_rng(1729)
+    thetas = sincos_sensitive_angles(20, rng)
+    thetas += [0.0, np.pi / 2, np.pi, 1.5321585045470605, 1.5168235141421997, 1.497194552179717]
+    thetas += rng.uniform(0, np.pi, 40).tolist()
+    phis = rng.uniform(-np.pi, 2 * np.pi, len(thetas)).tolist()
+    return [dict(theta=thetas, phi=phis, harmonics=True)]
+
+
+def generate_harmonics(case):
+    case = dict(case)
+    case.pop("harmonics")
+    case["values"] = list()
+    for theta, phi in zip(case["theta"], case["phi"]):
+        for ell in range(2, 5):
+            for emm in range(-ell, ell + 1):
+                y = lal.SpinWeightedSphericalHarmonic(theta, phi, -2, ell, emm)
+                case["values"].append([ell, emm, y.real, y.imag])
+    return case
+
+
 def generate(case, n_frequencies):
+    if "harmonics" in case:
+        return generate_harmonics(case)
     if "sample_stride" in case:
         return generate_td_modes(case)
     if "delta_t" in case:
@@ -825,6 +880,7 @@ SUITES = dict(
     nrsur7dq4=nrsur7dq4_cases,
     nrsur7dq4_modes=nrsur7dq4_mode_cases,
     nrsur7dq4_dynamics=nrsur7dq4_dynamics_cases,
+    spin_weighted_harmonics=spin_weighted_harmonic_cases,
 )
 
 

@@ -218,47 +218,100 @@ fn gps_epoch(t: f64) -> f64 {
 }
 
 /// `XLALSpinWeightedSphericalHarmonic(theta, phi, -2, ell, m)` for `ell <=
-/// 4`, with the expressions contracted as in LAL's arm64 build.
+/// 4`, with the expressions contracted as in LAL's arm64 build. Each case
+/// of LAL's switch is a basic block of its own, in which clang combines
+/// `sin(x)` and `cos(x)` of the same argument into `__sincos_stret` (see
+/// [`crate::nrsur::trig`]); the other calls stay separate.
 pub(crate) fn spin_weighted_spherical_harmonic(
     theta: f64,
     phi: f64,
     ell: usize,
     m: i32,
 ) -> Complex<f64> {
-    let c = theta.cos();
-    let s = theta.sin();
-    let ch = (theta / 2.0).cos();
-    let sh = (theta / 2.0).sin();
-    let s2 = (2.0 * theta).sin();
-    let s3 = (3.0 * theta).sin();
-    let s4 = (4.0 * theta).sin();
-    let c2 = (2.0 * theta).cos();
+    let half = theta / 2.0;
+    let sin = separate_sin;
+    let cos = separate_cos;
     let fac = match (ell, m) {
-        (2, -2) => (5.0 / (64.0 * PI)).sqrt() * (1.0 - c) * (1.0 - c),
-        (2, -1) => (5.0 / (16.0 * PI)).sqrt() * s * (1.0 - c),
-        (2, 0) => (15.0 / (32.0 * PI)).sqrt() * s * s,
-        (2, 1) => (5.0 / (16.0 * PI)).sqrt() * s * (1.0 + c),
-        (2, 2) => (5.0 / (64.0 * PI)).sqrt() * (1.0 + c) * (1.0 + c),
-        (3, -3) => (21.0 / (2.0 * PI)).sqrt() * ch * sh.powf(5.0),
-        (3, -2) => (7.0 / (4.0 * PI)).sqrt() * fma(3.0, c, 2.0) * sh.powf(4.0),
-        (3, -1) => (35.0 / (2.0 * PI)).sqrt() * fma(-3.0, s3, fma(4.0, s2, s)) / 32.0,
-        (3, 0) => ((105.0 / (2.0 * PI)).sqrt() * c * (s * s)) / 4.0,
-        (3, 1) => -(35.0 / (2.0 * PI)).sqrt() * fma(-3.0, s3, fma(-4.0, s2, s)) / 32.0,
-        (3, 2) => (7.0 / PI).sqrt() * ch.powf(4.0) * fma(3.0, c, -2.0) / 2.0,
-        (3, 3) => -(21.0 / (2.0 * PI)).sqrt() * ch.powf(5.0) * sh,
-        (4, -4) => 3.0 * (7.0 / PI).sqrt() * (ch * ch) * sh.powf(6.0),
-        (4, -3) => 3.0 * (7.0 / (2.0 * PI)).sqrt() * ch * fma(2.0, c, 1.0) * sh.powf(5.0),
-        (4, -2) => (3.0 * fma(7.0, c2, fma(14.0, c, 9.0)) * sh.powf(4.0)) / (4.0 * PI.sqrt()),
+        (2, -2) => {
+            let c = cos(theta);
+            (5.0 / (64.0 * PI)).sqrt() * (1.0 - c) * (1.0 - c)
+        }
+        (2, -1) => {
+            let (s, c) = sincos(theta);
+            (5.0 / (16.0 * PI)).sqrt() * s * (1.0 - c)
+        }
+        (2, 0) => {
+            let s = sin(theta);
+            (15.0 / (32.0 * PI)).sqrt() * s * s
+        }
+        (2, 1) => {
+            let (s, c) = sincos(theta);
+            (5.0 / (16.0 * PI)).sqrt() * s * (1.0 + c)
+        }
+        (2, 2) => {
+            let c = cos(theta);
+            (5.0 / (64.0 * PI)).sqrt() * (1.0 + c) * (1.0 + c)
+        }
+        (3, -3) => {
+            let (sh, ch) = sincos(half);
+            (21.0 / (2.0 * PI)).sqrt() * ch * sh.powf(5.0)
+        }
+        (3, -2) => (7.0 / (4.0 * PI)).sqrt() * fma(3.0, cos(theta), 2.0) * sin(half).powf(4.0),
+        (3, -1) => {
+            let (s, s2, s3) = (sin(theta), sin(2.0 * theta), sin(3.0 * theta));
+            (35.0 / (2.0 * PI)).sqrt() * fma(-3.0, s3, fma(4.0, s2, s)) / 32.0
+        }
+        (3, 0) => {
+            let (s, c) = sincos(theta);
+            ((105.0 / (2.0 * PI)).sqrt() * c * (s * s)) / 4.0
+        }
+        (3, 1) => {
+            let (s, s2, s3) = (sin(theta), sin(2.0 * theta), sin(3.0 * theta));
+            -(35.0 / (2.0 * PI)).sqrt() * fma(-3.0, s3, fma(-4.0, s2, s)) / 32.0
+        }
+        (3, 2) => (7.0 / PI).sqrt() * cos(half).powf(4.0) * fma(3.0, cos(theta), -2.0) / 2.0,
+        (3, 3) => {
+            let (sh, ch) = sincos(half);
+            -(21.0 / (2.0 * PI)).sqrt() * ch.powf(5.0) * sh
+        }
+        (4, -4) => {
+            let (sh, ch) = sincos(half);
+            3.0 * (7.0 / PI).sqrt() * (ch * ch) * sh.powf(6.0)
+        }
+        (4, -3) => {
+            let (sh, ch) = sincos(half);
+            3.0 * (7.0 / (2.0 * PI)).sqrt() * ch * fma(2.0, cos(theta), 1.0) * sh.powf(5.0)
+        }
+        (4, -2) => {
+            let (c, c2, sh) = (cos(theta), cos(2.0 * theta), sin(half));
+            (3.0 * fma(7.0, c2, fma(14.0, c, 9.0)) * sh.powf(4.0)) / (4.0 * PI.sqrt())
+        }
         (4, -1) => {
+            let (s, s2) = (sin(theta), sin(2.0 * theta));
+            let (s3, s4) = (sin(3.0 * theta), sin(4.0 * theta));
             (3.0 * fma(-7.0, s4, fma(7.0, s3, fma(3.0, s, 2.0 * s2)))) / (32.0 * (2.0 * PI).sqrt())
         }
-        (4, 0) => (3.0 * (5.0 / (2.0 * PI)).sqrt() * fma(7.0, c2, 5.0) * (s * s)) / 16.0,
+        (4, 0) => {
+            let (c2, s) = (cos(2.0 * theta), sin(theta));
+            (3.0 * (5.0 / (2.0 * PI)).sqrt() * fma(7.0, c2, 5.0) * (s * s)) / 16.0
+        }
         (4, 1) => {
+            let (s, s2) = (sin(theta), sin(2.0 * theta));
+            let (s3, s4) = (sin(3.0 * theta), sin(4.0 * theta));
             (3.0 * fma(7.0, s4, fma(7.0, s3, fms(3.0, s, 2.0 * s2)))) / (32.0 * (2.0 * PI).sqrt())
         }
-        (4, 2) => (3.0 * ch.powf(4.0) * fma(7.0, c2, fma(-14.0, c, 9.0))) / (4.0 * PI.sqrt()),
-        (4, 3) => -3.0 * (7.0 / (2.0 * PI)).sqrt() * ch.powf(5.0) * fma(2.0, c, -1.0) * sh,
-        (4, 4) => 3.0 * (7.0 / PI).sqrt() * ch.powf(6.0) * (sh * sh),
+        (4, 2) => {
+            let (ch, c, c2) = (cos(half), cos(theta), cos(2.0 * theta));
+            (3.0 * ch.powf(4.0) * fma(7.0, c2, fma(-14.0, c, 9.0))) / (4.0 * PI.sqrt())
+        }
+        (4, 3) => {
+            let (sh, ch) = sincos(half);
+            -3.0 * (7.0 / (2.0 * PI)).sqrt() * ch.powf(5.0) * fma(2.0, cos(theta), -1.0) * sh
+        }
+        (4, 4) => {
+            let (sh, ch) = sincos(half);
+            3.0 * (7.0 / PI).sqrt() * ch.powf(6.0) * (sh * sh)
+        }
         _ => panic!("spin-weighted spherical harmonic ({ell}, {m}) not implemented"),
     };
     if m != 0 {
@@ -957,5 +1010,42 @@ mod tests {
                 assert!((sum - expected).abs() < 1e-14, "{ell} {theta}");
             }
         }
+    }
+
+    /// Bit for bit against `XLALSpinWeightedSphericalHarmonic`, including
+    /// angles where `__sincos_stret` and `sin` differ.
+    #[test]
+    fn harmonics_match_lal() {
+        #[derive(serde::Deserialize)]
+        struct Case {
+            theta: Vec<f64>,
+            phi: Vec<f64>,
+            values: Vec<(usize, i32, f64, f64)>,
+        }
+        #[derive(serde::Deserialize)]
+        struct File {
+            cases: Vec<Case>,
+        }
+        let path = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/tests/data/spin_weighted_harmonics.json"
+        );
+        let file: File = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+        let case = &file.cases[0];
+        let mut values = case.values.iter();
+        let mut mismatches = Vec::new();
+        for (&theta, &phi) in case.theta.iter().zip(&case.phi) {
+            for ell in 2..=4usize {
+                for m in -(ell as i32)..=ell as i32 {
+                    let &(l, mm, re, im) = values.next().unwrap();
+                    assert_eq!((l, mm), (ell, m));
+                    let y = spin_weighted_spherical_harmonic(theta, phi, ell, m);
+                    if y.re.to_bits() != re.to_bits() || y.im.to_bits() != im.to_bits() {
+                        mismatches.push(format!("({ell}, {m}) theta={theta}"));
+                    }
+                }
+            }
+        }
+        assert!(mismatches.is_empty(), "{}", mismatches.join("\n"));
     }
 }
