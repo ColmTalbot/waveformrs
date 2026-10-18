@@ -6,19 +6,29 @@
 //! a grid the same quantities are computed one at a time over all
 //! frequencies:
 //!
-//! 1. the Euler angles of each `m'` into arrays ([`AngleArrays`]), reusing
-//!    the angles of another `m'` where the argument of the angle functions
-//!    is bit-for-bit the same ([`angles_with_reuse`]);
+//! 1. the Euler angles of each `m'` into arrays ([`AngleArrays`]):
+//!    - NNLO: from the powers of `omega` stored in the grid, in a loop
+//!      without transcendental functions ([`AngleArrays::nnlo`]);
+//!    - MSA: with the operations of the per-frequency path done in passes
+//!      over blocks of frequencies (`MsaSystem::phi_zeta_costhetal_many`),
+//!      and reusing the angles of `m' = 2` where the argument `2 pi Mf / m'`
+//!      of another `m'` is bit-for-bit the same ([`angles_with_reuse`]; on
+//!      a uniform grid this saves ~30% of the evaluations for IMRPhenomXPHM);
+//!    - SpinTaylor: the splines of the per-frequency path, with the
+//!      merger-ringdown continuation (including the integration of `gamma`)
+//!      in vectorised loops;
 //! 2. `exp(i alpha)` and the half-angle cosine and sine of `beta`
 //!    ([`TwistArrays`]), with the vectorised `sin_cos`;
 //! 3. each co-precessing mode, with the powers of `Mf` from the grid and
 //!    `exp(-i m' epsilon)` folded into its phase, converted to complex
-//!    values in one vectorised pass, and twisted up into the polarisations
-//!    ([`add_twisted_mode`]).
+//!    values in one vectorised pass ([`coprecessing_mode`],
+//!    [`coprecessing_mode_generator`]), and twisted up into the
+//!    polarisations ([`add_twisted_mode`]).
 //!
-//! The angles are those of the per-frequency path (the same functions of
-//! the same arguments); the modes and the twisting up agree with it to
-//! rounding.
+//! The MSA and SpinTaylor angles are those of the per-frequency path up to
+//! rounding (`phi_z` and `zeta` of the MSA angles bit for bit: they are
+//! ill-conditioned for nearly aligned spins); the modes and the twisting up
+//! agree with it to rounding.
 
 use std::f64::consts::PI;
 
