@@ -1,0 +1,114 @@
+{
+ "lalsimulation_version": "6.2.0",
+ "n_draws": 300,
+ "n_frequencies": 8033,
+ "grid": {
+  "f_min": 20.0,
+  "f_max": 1024.0,
+  "delta_f": 0.125
+ },
+ "lal_python_call_overhead": 1.7459737136960029e-06,
+ "rust": {
+  "TaylorF2": {
+   "seconds": 0.00022770138666666667,
+   "failures": 0,
+   "grid_seconds": 6.003944333333334e-05
+  },
+  "IMRPhenomD": {
+   "seconds": 0.00018965986,
+   "failures": 0,
+   "grid_seconds": 0.00011462041666666666
+  },
+  "IMRPhenomXAS": {
+   "seconds": 0.00017464805666666665,
+   "failures": 0,
+   "grid_seconds": 9.979625e-05
+  },
+  "IMRPhenomXHM": {
+   "seconds": 0.0013789690266666668,
+   "failures": 0,
+   "grid_seconds": 0.0009818672233333334
+  },
+  "IMRPhenomXP (102)": {
+   "seconds": 0.0005977331933333333,
+   "failures": 0,
+   "grid_seconds": 0.00017717180666666668
+  },
+  "IMRPhenomXP (223)": {
+   "seconds": 0.0018268422233333333,
+   "failures": 0,
+   "grid_seconds": 0.0010104894433333334
+  },
+  "IMRPhenomXP (320)": {
+   "seconds": 0.0012328076366666667,
+   "failures": 0,
+   "grid_seconds": 0.0007888323599999999
+  },
+  "IMRPhenomXPHM (102)": {
+   "seconds": 0.0033031393066666665,
+   "failures": 0,
+   "grid_seconds": 0.0009450231933333333
+  },
+  "IMRPhenomXPHM (223)": {
+   "seconds": 0.008069049166666667,
+   "failures": 0,
+   "grid_seconds": 0.00337679764
+  },
+  "IMRPhenomXPHM (320)": {
+   "seconds": 0.0050142686133333335,
+   "failures": 0,
+   "grid_seconds": 0.002627103056666667
+  },
+  "NRSur7dq4": {
+   "seconds": 0.00102444153,
+   "failures": 0,
+   "grid_seconds": 0.00099525528
+  }
+ },
+ "lal": {
+  "TaylorF2": {
+   "seconds": 0.00023533930691579979,
+   "failures": 0
+  },
+  "IMRPhenomD": {
+   "seconds": 0.0003902772224197785,
+   "failures": 0
+  },
+  "IMRPhenomXAS": {
+   "seconds": 0.0003486729164918264,
+   "failures": 0
+  },
+  "IMRPhenomXHM": {
+   "seconds": 0.0023220573629563054,
+   "failures": 0
+  },
+  "IMRPhenomXP (102)": {
+   "seconds": 0.0011093531968072057,
+   "failures": 0
+  },
+  "IMRPhenomXP (223)": {
+   "seconds": 0.002559810552435617,
+   "failures": 0
+  },
+  "IMRPhenomXP (320)": {
+   "seconds": 0.0033625587495043872,
+   "failures": 0
+  },
+  "IMRPhenomXPHM (102)": {
+   "seconds": 0.0077787643065676095,
+   "failures": 0
+  },
+  "IMRPhenomXPHM (223)": {
+   "seconds": 0.014756461110276481,
+   "failures": 0
+  },
+  "IMRPhenomXPHM (320)": {
+   "seconds": 0.012324190416062872,
+   "failures": 0
+  },
+  "NRSur7dq4": {
+   "seconds": 0.005606101943800847,
+   "failures": 0
+  }
+ }
+}

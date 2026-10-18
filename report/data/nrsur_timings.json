@@ -1,0 +1,159 @@
+{
+ "rust": {
+  "load_first": 0.017540083,
+  "load_cached_file": 0.007989427,
+  "sampler": 0.000757325,
+  "configurations": [
+   {
+    "total_mass": 60,
+    "sampling_rate": 4096,
+    "f_min": 20,
+    "samples": 4048,
+    "fresh": 0.001012294,
+    "reused": 0.000993699,
+    "extrinsic": 6.0093e-05,
+    "modes": 0.001424565
+   },
+   {
+    "total_mass": 60,
+    "sampling_rate": 16384,
+    "f_min": 20,
+    "samples": 16191,
+    "fresh": 0.001100599,
+    "reused": 0.001079715,
+    "extrinsic": 0.000147433,
+    "modes": 0.002085529
+   },
+   {
+    "total_mass": 20,
+    "sampling_rate": 4096,
+    "f_min": 55,
+    "samples": 1721,
+    "fresh": 0.000982127,
+    "reused": 0.000969833,
+    "extrinsic": 4.319e-05,
+    "modes": 0.001304285
+   },
+   {
+    "total_mass": 20,
+    "sampling_rate": 16384,
+    "f_min": 55,
+    "samples": 6882,
+    "fresh": 0.001022089,
+    "reused": 0.001006092,
+    "extrinsic": 8.1728e-05,
+    "modes": 0.001569961
+   },
+   {
+    "total_mass": 100,
+    "sampling_rate": 4096,
+    "f_min": 20,
+    "samples": 1672,
+    "fresh": 0.000999197,
+    "reused": 0.000986294,
+    "extrinsic": 4.0837e-05,
+    "modes": 0.001279902
+   },
+   {
+    "total_mass": 100,
+    "sampling_rate": 1024,
+    "f_min": 20,
+    "samples": 418,
+    "fresh": 0.000989007,
+    "reused": 0.000977519,
+    "extrinsic": 3.0901e-05,
+    "modes": 0.001224282
+   },
+   {
+    "total_mass": 200,
+    "sampling_rate": 2048,
+    "f_min": 20,
+    "samples": 400,
+    "fresh": 0.000999953,
+    "reused": 0.000995906,
+    "extrinsic": 3.0061e-05,
+    "modes": 0.00121353
+   },
+   {
+    "total_mass": 300,
+    "sampling_rate": 1024,
+    "f_min": 20,
+    "samples": 202,
+    "fresh": 0.001001167,
+    "reused": 0.000993805,
+    "extrinsic": 2.8452e-05,
+    "modes": 0.001203851
+   }
+  ]
+ },
+ "lal": {
+  "configurations": [
+   {
+    "total_mass": 60.0,
+    "sampling_rate": 4096.0,
+    "f_min": 20.0,
+    "samples": 4048,
+    "polarizations": 0.005271193201310541,
+    "modes": 0.0078136842494132
+   },
+   {
+    "total_mass": 60.0,
+    "sampling_rate": 16384.0,
+    "f_min": 20.0,
+    "samples": 16191,
+    "polarizations": 0.005396330193366094,
+    "modes": 0.010850392922919283
+   },
+   {
+    "total_mass": 20.0,
+    "sampling_rate": 4096.0,
+    "f_min": 55.0,
+    "samples": 1721,
+    "polarizations": 0.005190184585981727,
+    "modes": 0.007901430438001325
+   },
+   {
+    "total_mass": 20.0,
+    "sampling_rate": 16384.0,
+    "f_min": 55.0,
+    "samples": 6882,
+    "polarizations": 0.00578143858388497,
+    "modes": 0.009274095296859741
+   },
+   {
+    "total_mass": 100.0,
+    "sampling_rate": 4096.0,
+    "f_min": 20.0,
+    "samples": 1672,
+    "polarizations": 0.005906132351168815,
+    "modes": 0.0074044711997403815
+   },
+   {
+    "total_mass": 100.0,
+    "sampling_rate": 1024.0,
+    "f_min": 20.0,
+    "samples": 418,
+    "polarizations": 0.005876796298295434,
+    "modes": 0.007011326635582047
+   },
+   {
+    "total_mass": 200.0,
+    "sampling_rate": 2048.0,
+    "f_min": 20.0,
+    "samples": 400,
+    "polarizations": 0.006020743263227319,
+    "modes": 0.007007168703614832
+   },
+   {
+    "total_mass": 300.0,
+    "sampling_rate": 1024.0,
+    "f_min": 20.0,
+    "samples": 202,
+    "polarizations": 0.006028912650107081,
+    "modes": 0.006945634839616509
+   }
+  ],
+  "first_call": 0.07929154112935066,
+  "sampler": 0.005432644415646792
+ }
+}
