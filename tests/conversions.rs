@@ -10,6 +10,8 @@
 //! `tests/nrsur.rs`) and are skipped without it.
 #![cfg(feature = "fft")]
 
+mod common;
+
 use std::collections::HashMap;
 use std::path::PathBuf;
 
@@ -26,6 +28,12 @@ use waveformrs::{Approximant, Binary, WaveformOptions};
 
 /// Tolerance on `max |rust - lal| / max |lal|`.
 const TOLERANCE: f64 = 1e-10;
+
+/// [`TOLERANCE`], or the cross-build tolerance of the higher-mode models on
+/// builds the crate does not mirror (tests/common).
+fn tolerance(approximant: &str) -> f64 {
+    common::tolerances(&format!("conversions {approximant}"), (TOLERANCE, 0.0)).0
+}
 
 #[derive(Deserialize)]
 struct File<C> {
@@ -188,7 +196,7 @@ fn check_td(case: &TdCase, hplus: &TimeSeries, hcross: &TimeSeries) -> Vec<Strin
             epoch.seconds(),
             case.binary.label()
         );
-        if error.is_nan() || error > TOLERANCE {
+        if error.is_nan() || error > tolerance(&case.binary.approximant) {
             failures.push(format!("{name}: error {error:e} | {}", case.binary.label()));
         }
     }
@@ -247,7 +255,7 @@ fn check_fd(case: &FdCase, hplus: &FrequencySeries, hcross: &FrequencySeries) ->
             epoch.seconds(),
             case.binary.label()
         );
-        if error.is_nan() || error > TOLERANCE {
+        if error.is_nan() || error > tolerance(&case.binary.approximant) {
             failures.push(format!("{name}: error {error:e} | {}", case.binary.label()));
         }
     }

@@ -43,6 +43,8 @@
 //!
 //! The tests are skipped in debug builds, which take minutes for these grids;
 //! run them with `cargo test --release` (a few seconds).
+mod common;
+
 use std::collections::HashMap;
 use std::sync::OnceLock;
 
@@ -267,6 +269,11 @@ impl Failures {
         (hplus, hcross): (Vec<C64>, Vec<C64>),
         tolerance: f64,
     ) {
+        // at least the cross-build tolerance where the crate does not mirror
+        // LAL's build (the SpinTaylor angles and the (3,2) mode amplify
+        // last-bit differences; tests/common)
+        let floor = common::tolerances(&format!("long {}", case.approximant), (0.0, 0.0)).0;
+        let tolerance = tolerance.max(floor);
         let [(plus, at_plus), (cross, at_cross)] = case.errors(&hplus, &hcross);
         println!(
             "{:<58} {path:<8} plus {plus:.2e} ({at_plus:7.2} Hz), cross {cross:.2e} ({at_cross:7.2} Hz), \

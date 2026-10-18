@@ -15,7 +15,8 @@
 # Commands
 #   build             build the image waveformrs-linux:<platform>
 #   test [args]       cargo test --release [args]
-#   check             cargo build (no warnings), clippy and fmt for this platform
+#   check             cargo build (no warnings, also --no-default-features),
+#                     clippy and fmt for this platform
 #   validate [args]   scripts/linux/validate.sh: random draws against the
 #                     container's lalsimulation (OMP_NUM_THREADS=1)
 #   bench [args]      scripts/linux/bench.sh: timings against lalsimulation
@@ -57,7 +58,7 @@ while [[ $# -gt 0 ]]; do
         shift 2
         ;;
     -h | --help)
-        sed -n '2,31p' "${BASH_SOURCE[0]}"
+        sed -n '2,32p' "${BASH_SOURCE[0]}"
         exit 0
         ;;
     *) break ;;
@@ -114,8 +115,12 @@ run() {
 case "$command" in
 shell) run bash ;;
 test) run cargo test --release "$@" ;;
-check) run bash -c 'cargo build --all-targets 2>&1 | tee /dev/stderr | { ! grep -q "^warning"; } \
-    && cargo clippy --all-targets -- -D warnings && cargo fmt --check' ;;
+# (clippy 1.90 lints that the toolchain of the reference checks, 1.86, lacks are
+# allowed)
+check) run bash -c 'set -o pipefail; { cargo build --all-targets && cargo build --all-targets --no-default-features; } 2>&1 | tee /tmp/build.log \
+    && ! grep -q "^warning" /tmp/build.log \
+    && cargo clippy --all-targets -- -D warnings -A clippy::neg_multiply -A clippy::manual_is_multiple_of \
+    && cargo fmt --check' ;;
 validate) run bash scripts/linux/validate.sh "$@" ;;
 bench) run bash scripts/linux/bench.sh "$@" ;;
 reference) run bash scripts/linux/reference.sh "$@" ;;
