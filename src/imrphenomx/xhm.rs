@@ -8,6 +8,8 @@ use std::f64::consts::FRAC_PI_2;
 use num_complex::Complex;
 
 use crate::constants::{MPC_SI, MSUN_SI};
+use crate::fastmath;
+use crate::grid::{FrequencyGrid, ScalePowers};
 use crate::imrphenomx::hm_internals::HMMode;
 use crate::imrphenomx::internals::{IMRPhenomXError, UsefulPowers, WaveformStruct};
 use crate::imrphenomx::phase::PhaseCoefficients;
@@ -202,16 +204,54 @@ impl IMRPhenomXHM {
         phi_ref: f64,
         inclination: f64,
     ) -> (Vec<Complex<f64>>, Vec<Complex<f64>>) {
-        let (Some(&f_min), Some(&f_max)) = (frequencies.first(), frequencies.last()) else {
-            return (Vec::new(), Vec::new());
-        };
-        let wf = self
-            .waveform_struct(f_min, f_max, phi_ref)
-            .unwrap_or_else(|e| panic!("IMRPhenomXHM: {e}"));
         let zero = Complex::new(0.0, 0.0);
         let n = frequencies.len();
         let mut hplus = vec![zero; n];
         let mut hcross = vec![zero; n];
+        // The powers as LAL computes them: with these the phases of long
+        // inspirals (~1e6 rad) agree with LAL to the last bit.
+        self.fill_polarizations(
+            frequencies,
+            phi_ref,
+            inclination,
+            |_, mf| UsefulPowers::new(mf),
+            &mut hplus,
+            &mut hcross,
+        );
+        (hplus, hcross)
+    }
+
+    /// [`Self::polarizations`] on a prepared [`FrequencyGrid`], written into
+    /// `hplus` and `hcross` (each with the length of the grid).
+    ///
+    /// For evaluating many waveforms on the same frequencies: the powers of
+    /// `Mf` are products of factors stored in the grid rather than LAL's
+    /// `pow` calls, and nothing is allocated per frequency. The result agrees
+    /// with [`Self::polarizations`] to rounding (~1e-13 relative, more for
+    /// inspirals with phases of order 1e6 rad).
+    pub fn polarizations_on_grid(
+        &self,
+        grid: &FrequencyGrid,
+        phi_ref: f64,
+        inclination: f64,
+        hplus: &mut [Complex<f64>],
+        hcross: &mut [Complex<f64>],
+    ) {
+        assert_eq!(hplus.len(), grid.len(), "output length must match the grid");
+        assert_eq!(
+            hcross.len(),
+            grid.len(),
+            "output length must match the grid"
+        );
+        self.fill_polarizations_grid(grid, phi_ref, inclination, hplus, hcross);
+    }
+
+    /// The waveform variables, the (2,2) and higher modes and their
+    /// coefficients in the polarizations, for a grid from `f_min` to `f_max`.
+    fn mode_sum(&self, f_min: f64, f_max: f64, phi_ref: f64, inclination: f64) -> ModeSum {
+        let wf = self
+            .waveform_struct(f_min, f_max, phi_ref)
+            .unwrap_or_else(|e| panic!("IMRPhenomXHM: {e}"));
 
         // The (2,2) mode from XLALSimIMRPhenomXASFrequencySequence, which
         // sets up its own waveform variables from the LAL ones.
@@ -251,29 +291,50 @@ impl IMRPhenomXHM {
                     continue;
                 }
                 let mode = HMMode::new(ell, emm, &wf, &phase22);
+                if mode.wfhm.amp_zero {
+                    continue;
+                }
                 let amp0 = minus_one_to(ell) * wf.amp0;
                 let (factor_plus, factor_cross) = add_mode_factors(inclination, ell, emm, pos, neg);
                 modes.push((mode, amp0, factor_plus, factor_cross));
             }
         }
-        let (factor_plus_22, factor_cross_22) = add_mode_factors(inclination, 2, 2, pos22, neg22);
+        ModeSum {
+            wf,
+            xas,
+            modes,
+            factors22: add_mode_factors(inclination, 2, 2, pos22, neg22),
+        }
+    }
 
+    /// The mode sum of `IMRPhenomXHM_MultiMode` on `frequencies`, with the
+    /// powers of `Mf` at frequency `i` given by `powers_at(i, Mf)`.
+    fn fill_polarizations(
+        &self,
+        frequencies: &[f64],
+        phi_ref: f64,
+        inclination: f64,
+        powers_at: impl Fn(usize, f64) -> UsefulPowers,
+        hplus: &mut [Complex<f64>],
+        hcross: &mut [Complex<f64>],
+    ) {
+        let (Some(&f_min), Some(&f_max)) = (frequencies.first(), frequencies.last()) else {
+            return;
+        };
+        let sum = self.mode_sum(f_min, f_max, phi_ref, inclination);
+        let zero = Complex::new(0.0, 0.0);
+        let (factor_plus_22, factor_cross_22) = sum.factors22;
         for (i, &f) in frequencies.iter().enumerate() {
-            let mf = wf.m_sec * f;
-            // The powers as LAL computes them: with these the phases of long
-            // inspirals (~1e6 rad) agree with LAL to the last bit.
-            let powers = UsefulPowers::new(mf);
-            let h22 = xas.as_ref().map(|xas| xas.evaluate(f, mf, &powers));
+            let mf = sum.wf.m_sec * f;
+            let powers = powers_at(i, mf);
+            let h22 = sum.xas.as_ref().map(|xas| xas.evaluate(f, mf, &powers));
             let mut hp = zero;
             let mut hc = zero;
             if let Some(h22) = h22 {
                 hp += factor_plus_22 * h22;
                 hc += factor_cross_22 * h22;
             }
-            for (mode, amp0, factor_plus, factor_cross) in &modes {
-                if mode.wfhm.amp_zero {
-                    continue;
-                }
+            for (mode, amp0, factor_plus, factor_cross) in &sum.modes {
                 let (amp, phi) = mode.amplitude_phase(&powers, h22);
                 let h = Complex::from_polar(amp0 * amp, phi);
                 hp += factor_plus * h;
@@ -282,7 +343,70 @@ impl IMRPhenomXHM {
             hplus[i] = hp;
             hcross[i] = hc;
         }
-        (hplus, hcross)
+    }
+
+    /// [`Self::fill_polarizations`] on a grid, one mode at a time so that
+    /// the conversion from amplitude and phase vectorises.
+    fn fill_polarizations_grid(
+        &self,
+        grid: &FrequencyGrid,
+        phi_ref: f64,
+        inclination: f64,
+        hplus: &mut [Complex<f64>],
+        hcross: &mut [Complex<f64>],
+    ) {
+        let frequencies = grid.frequencies();
+        let (Some(&f_min), Some(&f_max)) = (frequencies.first(), frequencies.last()) else {
+            return;
+        };
+        let sum = self.mode_sum(f_min, f_max, phi_ref, inclination);
+        let zero = Complex::new(0.0, 0.0);
+        hplus.fill(zero);
+        hcross.fill(zero);
+        let scale = ScalePowers::new(sum.wf.m_sec);
+        let accumulate = |h: &[Complex<f64>],
+                          factor_plus: Complex<f64>,
+                          factor_cross: Complex<f64>,
+                          hplus: &mut [Complex<f64>],
+                          hcross: &mut [Complex<f64>]| {
+            for ((hp, hc), h) in hplus.iter_mut().zip(hcross.iter_mut()).zip(h) {
+                *hp += factor_plus * h;
+                *hc += factor_cross * h;
+            }
+        };
+
+        // h22 = A exp(i phi), stored as (A, -phi) for the vectorised conversion
+        let h22 = sum.xas.as_ref().map(|xas| {
+            let scale22 = ScalePowers::new(xas.m_sec);
+            let mut h22: Vec<Complex<f64>> = (0..grid.len())
+                .map(|index| {
+                    let powers = grid.powers(&scale22, index);
+                    let mf = powers.itself;
+                    if mf > xas.mf_cut {
+                        return zero;
+                    }
+                    let (amp, phi) = xas.amplitude_phase(mf, &UsefulPowers::from_grid(&powers));
+                    Complex::new(amp, -phi)
+                })
+                .collect();
+            fastmath::polar_to_complex_conj(&mut h22);
+            h22
+        });
+        if let Some(h22) = &h22 {
+            let (factor_plus, factor_cross) = sum.factors22;
+            accumulate(h22, factor_plus, factor_cross, hplus, hcross);
+        }
+
+        let mut h = vec![zero; grid.len()];
+        for (mode, amp0, factor_plus, factor_cross) in &sum.modes {
+            for (index, value) in h.iter_mut().enumerate() {
+                let powers = UsefulPowers::from_grid(&grid.powers(&scale, index));
+                let (amp, phi) = mode.amplitude_phase(&powers, h22.as_ref().map(|h22| h22[index]));
+                *value = Complex::new(amp0 * amp, -phi);
+            }
+            fastmath::polar_to_complex_conj(&mut h);
+            accumulate(&h, *factor_plus, *factor_cross, hplus, hcross);
+        }
     }
 
     /// The mode `h_lm` at `frequencies` (Hz, increasing) for the orbital
@@ -334,6 +458,14 @@ fn minus_one_to(ell: u32) -> f64 {
     }
 }
 
+/// Everything the mode sum needs for one waveform.
+struct ModeSum {
+    wf: WaveformStruct,
+    xas: Option<Xas22>,
+    modes: Vec<(HMMode, f64, Complex<f64>, Complex<f64>)>,
+    factors22: (Complex<f64>, Complex<f64>),
+}
+
 /// The (2,2) mode of `XLALSimIMRPhenomXASFrequencySequence`.
 struct Xas22 {
     xas: IMRPhenomXAS,
@@ -351,6 +483,16 @@ impl Xas22 {
             mf_cut: wf.f_max_prime * wf.m_sec,
             xas,
         }
+    }
+
+    /// Amplitude and phase of the (2,2) mode, `h22 = A exp(i phi)`, below
+    /// the cutoff.
+    #[inline]
+    fn amplitude_phase(&self, mf: f64, powers: &UsefulPowers) -> (f64, f64) {
+        (
+            self.xas.amplitude_22_full(mf, powers),
+            self.xas.phase_22_full(mf, powers, self.phif_ref),
+        )
     }
 
     /// The (2,2) mode at `f`, reusing the powers of `mf` when the
