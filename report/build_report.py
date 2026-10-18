@@ -182,7 +182,7 @@ def build(args):
     commits = [
         (sha, subject)
         for sha, subject in git_log()
-        if not subject.startswith("DOC: add the technical report")
+        if not subject.startswith(("DOC: add the technical report", "DOC: update the technical report"))
     ]
     values["n_commits"] = str(len(commits))
 
