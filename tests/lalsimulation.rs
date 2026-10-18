@@ -40,8 +40,7 @@ fn imrphenomd_matches_lalsimulation() {
             case.luminosity_distance,
         )
         .with_reference_frequency(case.f_ref)
-        // IMRPhenomD's phi_c is the GW phase, twice the orbital phase.
-        .waveform_modes(&case.frequencies, 2.0 * case.phi_ref, case.inclination)
+        .waveform_modes(&case.frequencies, case.phi_ref, case.inclination)
     });
 }
 
@@ -56,8 +55,7 @@ fn imrphenomxas_matches_lalsimulation() {
             case.luminosity_distance,
         )
         .with_reference_frequency(case.f_ref)
-        // As for IMRPhenomD, phi_c is twice the orbital reference phase.
-        .waveform_modes(&case.frequencies, 2.0 * case.phi_ref, case.inclination)
+        .waveform_modes(&case.frequencies, case.phi_ref, case.inclination)
     });
 }
 

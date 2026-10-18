@@ -34,7 +34,8 @@ pub struct IMRPhenomD {
     t0: f64,
     /// Dimensionless frequency at which the linear time shift vanishes.
     reference_mf: f64,
-    /// Phase subtracted so that the phase at the reference frequency is `-phi_c`.
+    /// Phase subtracted so that the phase at the reference frequency is
+    /// `-2 phi_c`.
     reference_phase: f64,
 }
 
@@ -64,7 +65,7 @@ impl IMRPhenomD {
     }
 
     /// Define the phase relative to a reference frequency (in Hz) following
-    /// the LALSimulation convention: with `phi_c = 2 * phi_ref` the waveform
+    /// the LALSimulation convention: with `phi_c = phi_ref` the waveform
     /// matches `XLALSimIMRPhenomDGenerateFD` with reference frequency `f_ref`
     /// and orbital phase `phi_ref`.
     ///
@@ -127,9 +128,11 @@ impl IMRPhenomD {
 }
 
 impl Waveform for IMRPhenomD {
+    /// The phase at `Mf = v` for the orbital reference phase `phi_c`, which
+    /// shifts the (2,2) phase by `2 phi_c`.
     fn phase(&self, v: f64, phi_c: f64) -> f64 {
         imrphenomd_phase(v, &self.coeffs, &self.phase_prefactors)
-            - phi_c
+            - 2.0 * phi_c
             - self.reference_phase
             - self.t0 * (v - self.reference_mf)
     }
@@ -146,14 +149,14 @@ impl Waveform for IMRPhenomD {
         self.evaluate(
             self.orbital_speed(frequency),
             self.amplitude_scale(),
-            phi_c + self.reference_phase,
+            2.0 * phi_c + self.reference_phase,
         )
     }
 
     fn waveform(&self, frequencies: &[f64], phi_c: f64) -> Vec<Complex<f64>> {
         let mass_scale = self.total_mass * SOLAR_RADIUS_IN_S;
         let amplitude_scale = self.amplitude_scale();
-        let phase_shift = phi_c + self.reference_phase;
+        let phase_shift = 2.0 * phi_c + self.reference_phase;
         frequencies
             .iter()
             .map(|&f| self.evaluate(f * mass_scale, amplitude_scale, phase_shift))
@@ -164,7 +167,7 @@ impl Waveform for IMRPhenomD {
         assert_eq!(out.len(), grid.len(), "output length must match the grid");
         let scale = ScalePowers::new(self.total_mass * SOLAR_RADIUS_IN_S);
         let amplitude_scale = self.amplitude_scale();
-        let phase_shift = phi_c + self.reference_phase;
+        let phase_shift = 2.0 * phi_c + self.reference_phase;
         for (index, h) in out.iter_mut().enumerate() {
             let (amplitude, phase) =
                 self.amplitude_phase(&grid.powers(&scale, index), amplitude_scale, phase_shift);

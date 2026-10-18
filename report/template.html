@@ -254,7 +254,7 @@ let mut hc = vec![Complex64::default(); grid.len()];
 for p in &amp;samples {                                               // many times
     IMRPhenomXAS::new(p.total_mass, p.mass_ratio, p.chi_1, p.chi_2, p.distance)
         .with_reference_frequency(20.0)
-        .waveform_modes_on_grid(&amp;grid, 2.0 * p.phi_ref, p.inclination, &amp;mut hp, &amp;mut hc);
+        .waveform_modes_on_grid(&amp;grid, p.phi_ref, p.inclination, &amp;mut hp, &amp;mut hc);
     // ... likelihood ...
 }</code></pre>
   <p>Once the powers come from the grid, <code>sin_cos</code> of the phase is the largest remaining cost, so the grid paths work in two passes:</p>

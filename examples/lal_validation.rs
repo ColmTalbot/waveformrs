@@ -110,7 +110,7 @@ fn generate(case: &Case) -> Result<Polarizations, String> {
             case.luminosity_distance,
         )
         .with_reference_frequency(case.f_ref)
-        .waveform_modes(&case.frequencies, 2.0 * case.phi_ref, case.inclination),
+        .waveform_modes(&case.frequencies, case.phi_ref, case.inclination),
         "IMRPhenomXAS" => IMRPhenomXAS::new(
             total_mass,
             mass_ratio,
@@ -119,7 +119,7 @@ fn generate(case: &Case) -> Result<Polarizations, String> {
             case.luminosity_distance,
         )
         .with_reference_frequency(case.f_ref)
-        .waveform_modes(&case.frequencies, 2.0 * case.phi_ref, case.inclination),
+        .waveform_modes(&case.frequencies, case.phi_ref, case.inclination),
         "IMRPhenomXHM" => IMRPhenomXHM::from_components(
             case.mass_1,
             case.mass_2,

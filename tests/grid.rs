@@ -62,20 +62,20 @@ fn aligned_spin_models_on_grids() {
         check(
             "IMRPhenomD",
             IMRPhenomD::new(m, q, c1, c2, 400.0).with_reference_frequency(20.0),
-            0.6,
+            0.3,
             1e-10,
         );
         check(
             "IMRPhenomXAS",
             IMRPhenomXAS::new(m, q, c1, c2, 400.0).with_reference_frequency(20.0),
-            0.6,
+            0.3,
             1e-10,
         );
         // the default (reference at the first frequency) path
         check(
             "IMRPhenomXAS, f_ref = f_min",
             IMRPhenomXAS::new(m, q, c1, c2, 400.0),
-            0.6,
+            0.3,
             1e-10,
         );
     }

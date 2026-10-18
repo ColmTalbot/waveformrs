@@ -111,13 +111,13 @@ fn main() {
         "IMRPhenomD",
         |k| IMRPhenomD::new(m(k), 0.5, 0.3, -0.2, 400.0).with_reference_frequency(20.0),
         &grid,
-        0.2,
+        0.1,
     );
     ab_waveform(
         "IMRPhenomXAS",
         |k| IMRPhenomXAS::new(m(k), 0.5, 0.3, -0.2, 400.0).with_reference_frequency(20.0),
         &grid,
-        0.2,
+        0.1,
     );
     let xhm =
         |k: usize| IMRPhenomXHM::new(m(k), 0.5, 0.3, -0.2, 400.0).with_reference_frequency(20.0);

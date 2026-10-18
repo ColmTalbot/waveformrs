@@ -23,8 +23,8 @@ use crate::waveform::Waveform;
 ///
 /// # Conventions
 ///
-/// With `phi_c = 2 * phi_ref`, where `phi_ref` is the orbital reference
-/// phase passed to LALSimulation, [`Waveform::waveform_modes`] reproduces the
+/// With `phi_c = phi_ref`, the orbital reference phase passed to
+/// LALSimulation, [`Waveform::waveform_modes`] reproduces the
 /// `hplus`, `hcross` of `SimInspiralChooseFDWaveformSequence(phi_ref, m1, m2,
 /// 0, 0, chi_1, 0, 0, chi_2, f_ref, distance, inclination, ..., IMRPhenomXAS,
 /// frequencies)`. LALSimulation builds the polarisations from the (2,2) mode
@@ -164,8 +164,8 @@ impl IMRPhenomXAS {
     }
 
     /// Reference the phase to the frequency `reference_frequency` (Hz), LAL's
-    /// `f_ref`: with `phi_c = 2 phi_ref` the (2,2) phase at `f_ref` is
-    /// `2 phi_ref + pi / 4` before the spherical-harmonic factor. Zero
+    /// `f_ref`: for the orbital reference phase `phi_c` the (2,2) phase at
+    /// `f_ref` is `2 phi_c + pi / 4` before the spherical-harmonic factor. Zero
     /// selects the first frequency of the grid passed to
     /// [`Waveform::waveform`], as in LALSimulation.
     pub fn with_reference_frequency(mut self, reference_frequency: f64) -> Self {
@@ -198,11 +198,12 @@ impl IMRPhenomXAS {
         -(fma(self.linb, mf_ref, phi) + self.lina)
     }
 
-    /// `phifRef` for the orbital phase `phi0 = phi_c / 2`: the phase offset
-    /// added to the (2,2) phase in `IMRPhenomXASGenerateFD`.
+    /// `phifRef` for the gravitational-wave phase `2 phi0` (twice LAL's
+    /// orbital phase `phi0`): the phase offset added to the (2,2) phase in
+    /// `IMRPhenomXASGenerateFD`.
     #[inline]
-    pub(crate) fn phif_ref(&self, phi_c: f64) -> f64 {
-        self.reference_phase_shift + phi_c + FRAC_PI_4
+    pub(crate) fn phif_ref(&self, two_phi0: f64) -> f64 {
+        self.reference_phase_shift + two_phi0 + FRAC_PI_4
     }
 
     /// The (2,2) phase `phi_22` at dimensionless frequency `mf` for a
@@ -248,15 +249,16 @@ impl IMRPhenomXAS {
 
 impl IMRPhenomXAS {
     /// `phifRef` and the cutoff `Mf` for a grid from `f_min` to `f_max`, as
-    /// in [`Waveform::waveform`].
+    /// in [`Waveform::waveform`], for the orbital reference phase `phi_c`.
     fn grid_phase_and_cutoff(&self, f_min: f64, f_max: f64, phi_c: f64) -> (f64, f64) {
+        let two_phi0 = 2.0 * phi_c;
         let phif_ref = if self.has_reference_frequency {
-            self.phif_ref(phi_c)
+            self.phif_ref(two_phi0)
         } else {
             let mut wf = self.wf;
             wf.f_min = f_min;
             wf.set_reference_frequency(0.0);
-            self.reference_phase_shift(wf.mf_ref) + phi_c + FRAC_PI_4
+            self.reference_phase_shift(wf.mf_ref) + two_phi0 + FRAC_PI_4
         };
         (phif_ref, self.wf.f_max_prime(f_max) * self.wf.m_sec)
     }
@@ -268,10 +270,11 @@ impl Waveform for IMRPhenomXAS {
         self.wf.m_sec * frequency
     }
 
-    /// `pi - phi_22(Mf)` so that `amplitude * exp(-i phase)` is `Y h22`.
+    /// `pi - phi_22(Mf)` so that `amplitude * exp(-i phase)` is `Y h22`,
+    /// for the orbital reference phase `phi_c`.
     fn phase(&self, v: f64, phi_c: f64) -> f64 {
         let powers = UsefulPowers::fast(v);
-        PI - self.phase_22_full(v, &powers, self.phif_ref(phi_c))
+        PI - self.phase_22_full(v, &powers, self.phif_ref(2.0 * phi_c))
     }
 
     /// `|Y| |h22(Mf)|`, zero above the cutoff frequency.
@@ -286,7 +289,7 @@ impl Waveform for IMRPhenomXAS {
 
     fn waveform_single_frequency(&self, frequency: f64, phi_c: f64) -> Complex<f64> {
         let mf = self.orbital_speed(frequency);
-        self.h22(mf, self.phif_ref(phi_c), self.mf_cut) * ylm_factor()
+        self.h22(mf, self.phif_ref(2.0 * phi_c), self.mf_cut) * ylm_factor()
     }
 
     /// `Y h22` on the frequency grid, reproducing

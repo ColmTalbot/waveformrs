@@ -88,14 +88,14 @@ fn generate(name: &str, draw: &Draw, freqs: &[f64]) -> Option<Polarizations> {
         "IMRPhenomD" => Some(
             IMRPhenomD::new(m, q, c1, c2, d)
                 .with_reference_frequency(draw.f_ref)
-                .waveform_modes(freqs, 2.0 * draw.phi_ref, draw.inclination),
+                .waveform_modes(freqs, draw.phi_ref, draw.inclination),
         ),
         "IMRPhenomXAS" => IMRPhenomXAS::from_components(draw.mass_1, draw.mass_2, c1, c2, d)
             .ok()
             .map(|wf| {
                 wf.with_reference_frequency(draw.f_ref).waveform_modes(
                     freqs,
-                    2.0 * draw.phi_ref,
+                    draw.phi_ref,
                     draw.inclination,
                 )
             }),
@@ -142,14 +142,14 @@ fn generate_on_grid(
         "IMRPhenomD" => {
             IMRPhenomD::new(m, q, c1, c2, d)
                 .with_reference_frequency(draw.f_ref)
-                .waveform_modes_on_grid(grid, 2.0 * draw.phi_ref, draw.inclination, hp, hc);
+                .waveform_modes_on_grid(grid, draw.phi_ref, draw.inclination, hp, hc);
             Some(true)
         }
         "IMRPhenomXAS" => Some(
             IMRPhenomXAS::from_components(draw.mass_1, draw.mass_2, c1, c2, d)
                 .map(|wf| {
                     wf.with_reference_frequency(draw.f_ref)
-                        .waveform_modes_on_grid(grid, 2.0 * draw.phi_ref, draw.inclination, hp, hc)
+                        .waveform_modes_on_grid(grid, draw.phi_ref, draw.inclination, hp, hc)
                 })
                 .is_ok(),
         ),

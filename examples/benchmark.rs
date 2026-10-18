@@ -89,12 +89,12 @@ fn main() {
     run("IMRPhenomD", &mut || {
         let wf = IMRPhenomD::new(total_mass, mass_ratio, chi_1, chi_2, distance)
             .with_reference_frequency(f_ref);
-        black_box(wf.waveform_modes(black_box(&freqs), 2.0 * phi_ref, inclination));
+        black_box(wf.waveform_modes(black_box(&freqs), phi_ref, inclination));
     });
     run("IMRPhenomXAS", &mut || {
         let wf = IMRPhenomXAS::new(total_mass, mass_ratio, chi_1, chi_2, distance)
             .with_reference_frequency(f_ref);
-        black_box(wf.waveform_modes(black_box(&freqs), 2.0 * phi_ref, inclination));
+        black_box(wf.waveform_modes(black_box(&freqs), phi_ref, inclination));
     });
     run("IMRPhenomXHM", &mut || {
         let wf = IMRPhenomXHM::new(total_mass, mass_ratio, chi_1, chi_2, distance)
