@@ -1165,4 +1165,56 @@ mod tests {
             msa.polarizations_uniform(0.25, 15.5, 200.0).unwrap()
         );
     }
+
+    /// The vectorised merger-ringdown SpinTaylor angles of the grid path
+    /// agree with those of the per-frequency path: gamma (integrated over
+    /// ~20000 knots) and cos(beta).
+    #[test]
+    fn fast_spintaylor_angles_match() {
+        let modes = IMRPHENOMXHM_MODES.to_vec();
+        for b in [
+            binary(),
+            PrecessingBinary {
+                mass_1: 40.0,
+                mass_2: 20.0,
+                spin_1: [0.4, -0.3, 0.2],
+                spin_2: [0.1, 0.5, -0.3],
+                f_ref: 20.0,
+                ..binary()
+            },
+        ] {
+            let setup = |fast| {
+                let mut setup =
+                    Setup::new(&b, PrecessionVersion::SpinTaylor, &modes, 0.0, 20.0, 1024.0)
+                        .unwrap();
+                let angles = setup.initialize_euler_angles(fast).unwrap();
+                (setup, angles)
+            };
+            let (_, exact) = setup(false);
+            let (_, fast) = setup(true);
+            let (exact_gamma, fast_gamma) = (
+                exact.gamma_spline.as_ref().unwrap(),
+                fast.gamma_spline.as_ref().unwrap(),
+            );
+            assert_eq!(exact_gamma.x(), fast_gamma.x());
+            let scale = exact_gamma
+                .x()
+                .iter()
+                .map(|&mf| exact_gamma.eval(mf).abs())
+                .fold(1.0, f64::max);
+            for &mf in exact_gamma.x() {
+                let difference = (exact_gamma.eval(mf) - fast_gamma.eval(mf)).abs();
+                assert!(difference < 1e-13 * scale, "{mf}: {difference:e}");
+            }
+            assert!((exact.gamma_ref - fast.gamma_ref).abs() < 1e-13 * scale);
+            let mf: Vec<f64> = (0..1000)
+                .map(|i| exact.ftrans_mrd * (1.0 + 0.002 * i as f64))
+                .collect();
+            let mut cos_beta = vec![0.0; mf.len()];
+            fast.mrd_cos_beta_fast(&mf, &mut cos_beta);
+            for (&mf, &cos_beta) in mf.iter().zip(&cos_beta) {
+                assert!((exact.beta_mrd.beta(mf).cos() - cos_beta).abs() < 1e-14);
+            }
+        }
+    }
 }

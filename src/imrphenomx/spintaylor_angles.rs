@@ -425,17 +425,39 @@ impl BetaMrd {
     /// `cos(betaMRD)` at each of `mf`, written to `out`, with the inlined
     /// `exp` and `cos` in vectorisable loops and one division (for the grid
     /// paths; agrees with `self.beta(mf).cos()` to rounding).
-    fn cos_beta_fast(&self, mf: &[f64], out: &mut [f64]) {
+    ///
+    /// With `uniform` the points are equally spaced up to rounding, and
+    /// `exp(-kappa Mf)` is the exponential at the first of every
+    /// `EXP_RESTART` points times powers of `exp(-kappa dMf)` (the
+    /// rounding of the powers stays below `EXP_RESTART` ulp).
+    fn cos_beta_fast(&self, mf: &[f64], out: &mut [f64], uniform: bool) {
+        /// Points between exact exponentials with `uniform`.
+        const EXP_RESTART: usize = 64;
         let out = &mut out[..mf.len()];
         if self.flat {
             out.fill(self.cosbeta_sign.acos().cos());
             return;
         }
         let kappa = 2. * PI * self.dfdamp;
-        for (out, &mf) in out.iter_mut().zip(mf) {
-            *out = -mf * kappa;
+        if uniform && mf.len() > EXP_RESTART {
+            let spacing = (mf[mf.len() - 1] - mf[0]) / (mf.len() - 1) as f64;
+            let ratio = (-kappa * spacing).exp();
+            let mut powers = [1.0; EXP_RESTART];
+            for k in 1..EXP_RESTART {
+                powers[k] = powers[k - 1] * ratio;
+            }
+            for (out, mf) in out.chunks_mut(EXP_RESTART).zip(mf.chunks(EXP_RESTART)) {
+                let start = (-kappa * mf[0]).exp();
+                for (out, power) in out.iter_mut().zip(&powers) {
+                    *out = start * power;
+                }
+            }
+        } else {
+            for (out, &mf) in out.iter_mut().zip(mf) {
+                *out = -mf * kappa;
+            }
+            fastmath::exp_in_place(out);
         }
-        fastmath::exp_in_place(out);
         for (out, &mf) in out.iter_mut().zip(mf) {
             // exp(-kappa Mf) / Mf (a / Mf + b / Mf^2 + c / Mf^3) + d
             let inv = 1.0 / mf;
@@ -664,13 +686,14 @@ impl SpinTaylorAngles {
     /// For the grid paths: `cos(beta)` of the merger-ringdown continuation
     /// at each of `mf`, written to `out` (see [`BetaMrd::cos_beta_fast`]).
     pub(crate) fn mrd_cos_beta_fast(&self, mf: &[f64], out: &mut [f64]) {
-        self.beta_mrd.cos_beta_fast(mf, out);
+        self.beta_mrd.cos_beta_fast(mf, out, false);
     }
 
     /// For the grid paths: the merger-ringdown integrand `cos(beta)
-    /// dalpha/df` of [`Self::gamma_step`] at each of `mf`, written to `out`.
-    fn mrd_integrand_fast(&self, mf: &[f64], out: &mut [f64]) {
-        self.beta_mrd.cos_beta_fast(mf, out);
+    /// dalpha/df` of [`Self::gamma_step`] at each of `mf` (equally spaced
+    /// with `uniform`), written to `out`.
+    fn mrd_integrand_fast(&self, mf: &[f64], out: &mut [f64], uniform: bool) {
+        self.beta_mrd.cos_beta_fast(mf, out, uniform);
         self.alpha_mrd.mul_dalpha_fast(mf, out);
     }
 
@@ -708,7 +731,8 @@ impl SpinTaylorAngles {
                 }
             }
             let values = &mut values[..points.len()];
-            self.mrd_integrand_fast(&points, values);
+            // with shared ends the points are equally spaced
+            self.mrd_integrand_fast(&points, values, shared_ends);
             let mut next = usize::from(first_point);
             if first_point {
                 previous_end = Some(values[0]);
@@ -930,7 +954,7 @@ impl SpinTaylorAngles {
                 let start = angles.cos_beta.len();
                 angles.cos_beta.resize(start + mfs.len(), 0.0);
                 self.beta_mrd
-                    .cos_beta_fast(&mfs, &mut angles.cos_beta[start..]);
+                    .cos_beta_fast(&mfs, &mut angles.cos_beta[start..], false);
                 let delta_mf =
                     |k: usize| hz_to_mf(frequencies[i + k] - frequencies[i + k - 1], wf.m_tot);
                 let gamma_start = angles.gamma[i - 1];
