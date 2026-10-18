@@ -15,37 +15,52 @@
 #[derive(Clone, Debug)]
 pub struct FrequencyGrid {
     frequencies: Vec<f64>,
-    /// f^(1/3)
-    pub(crate) cbrt: Vec<f64>,
-    /// f^(1/6)
-    pub(crate) sixth: Vec<f64>,
-    /// 1 / f
-    pub(crate) inv: Vec<f64>,
-    /// ln(f)
-    pub(crate) ln: Vec<f64>,
-    /// f^(-7/6)
-    pub(crate) m_seven_sixths: Vec<f64>,
+    /// `f^(1/3)`, `f^(1/6)`, `1 / f`, `ln(f)` and `f^(-7/6)` one after the
+    /// other, each starting `stride` values after the previous one.
+    powers: Vec<f64>,
+    stride: usize,
 }
+
+/// Index of each power of the frequency in [`FrequencyGrid`].
+const CBRT: usize = 0;
+const SIXTH: usize = 1;
+const INV: usize = 2;
+const LN: usize = 3;
+const M_SEVEN_SIXTHS: usize = 4;
 
 impl FrequencyGrid {
     /// Prepare `frequencies` (in Hz, all positive) for repeated evaluation.
     pub fn new(frequencies: &[f64]) -> Self {
-        let cbrt: Vec<f64> = frequencies.iter().map(|f| f.cbrt()).collect();
-        let sixth: Vec<f64> = cbrt.iter().map(|c| c.sqrt()).collect();
-        let inv: Vec<f64> = frequencies.iter().map(|f| 1.0 / f).collect();
-        let m_seven_sixths = inv
-            .iter()
-            .zip(&sixth)
-            .map(|(inv, sixth)| inv / sixth)
-            .collect();
+        let n = frequencies.len();
+        // The powers are read together at each frequency. Stored a whole
+        // number of pages apart (as separately allocated arrays often are)
+        // they map to the same cache sets and the same 4 KiB offsets as each
+        // other, which can make the loops over the grid twice as slow; the
+        // stride staggers them by 640 bytes.
+        let stride = n.div_ceil(512) * 512 + 80;
+        let mut powers = vec![0.0; 5 * stride];
+        for (i, &f) in frequencies.iter().enumerate() {
+            let cbrt = f.cbrt();
+            let sixth = cbrt.sqrt();
+            let inv = 1.0 / f;
+            powers[CBRT * stride + i] = cbrt;
+            powers[SIXTH * stride + i] = sixth;
+            powers[INV * stride + i] = inv;
+            powers[LN * stride + i] = f.ln();
+            powers[M_SEVEN_SIXTHS * stride + i] = inv / sixth;
+        }
         Self {
             frequencies: frequencies.to_vec(),
-            cbrt,
-            sixth,
-            inv,
-            ln: frequencies.iter().map(|f| f.ln()).collect(),
-            m_seven_sixths,
+            powers,
+            stride,
         }
+    }
+
+    /// The power `which` of each frequency.
+    #[inline(always)]
+    fn column(&self, which: usize) -> &[f64] {
+        let start = which * self.stride;
+        &self.powers[start..start + self.frequencies.len()]
     }
 
     /// The uniform grid `f_min, f_min + delta_f, ...` up to and including
@@ -123,11 +138,11 @@ impl FrequencyGrid {
     pub(crate) fn powers(&self, scale: &ScalePowers, index: usize) -> GridPowers {
         GridPowers {
             itself: scale.value * self.frequencies[index],
-            cbrt: scale.cbrt * self.cbrt[index],
-            sixth: scale.sixth * self.sixth[index],
-            inv: scale.inv * self.inv[index],
-            ln: scale.ln + self.ln[index],
-            m_seven_sixths: scale.m_seven_sixths * self.m_seven_sixths[index],
+            cbrt: scale.cbrt * self.column(CBRT)[index],
+            sixth: scale.sixth * self.column(SIXTH)[index],
+            inv: scale.inv * self.column(INV)[index],
+            ln: scale.ln + self.column(LN)[index],
+            m_seven_sixths: scale.m_seven_sixths * self.column(M_SEVEN_SIXTHS)[index],
         }
     }
 }

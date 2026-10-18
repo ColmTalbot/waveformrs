@@ -39,8 +39,8 @@ fn ab(
         vec![Complex::new(0.0, 0.0); n],
     );
     let (mut t_old, mut t_new) = (f64::INFINITY, f64::INFINITY);
-    // alternate the order: running one right after the other can slow it
-    // down (seen for IMRPhenomD on the grid after the per-frequency path)
+    // alternate the order, so that neither path always runs in the state
+    // (allocations, caches) left by the other
     for repeat in 0..repeats {
         for path in [repeat % 2, 1 - repeat % 2] {
             let start = Instant::now();
