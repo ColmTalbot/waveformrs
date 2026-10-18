@@ -1,0 +1,301 @@
+{
+ "description": "Single-thread timings in microseconds. single: examples/benchmark.rs (construction + polarizations, 5921 frequencies, best of 10 batches) against SimInspiralChooseFDWaveformSequence (report/lal_benchmark.py); serial: random binaries one after another on a fixed grid (report/serial_benchmark.py); grid: examples/grid_benchmark.rs; batch: examples/batch_benchmark.rs, waveforms per second on 1 to all threads of the machine. Emulated (linux/amd64 on Apple silicon) timings are not meaningful as absolute numbers.",
+ "linux-arm64": {
+  "environment": {
+   "platform": "linux-arm64",
+   "kernel": "6.12.54-linuxkit",
+   "glibc": "glibc 2.36",
+   "cpu": {
+    "machine": "aarch64",
+    "features": [
+     "asimd",
+     "fphp"
+    ],
+    "n_cpu": 24
+   },
+   "rustc": "rustc 1.90.0 (1159e78c4 2025-09-14)",
+   "rustflags": "",
+   "packages": {
+    "gsl": "2.8-h575f6a0_2",
+    "libblas": "3.11.0-11_haddc8a3_openblas",
+    "liblal": "7.7.0-fftw_h676d998_105",
+    "liblalsimulation": "6.2.0-py312h9c6f4fe_4",
+    "libopenblas": "0.3.34-pthreads_h4148b7d_2",
+    "numpy": "2.5.4-py312hfb93532_0",
+    "python": "3.12.15-h94ad73b_2_cpython",
+    "python-lalsimulation": "6.2.0-py312h0f83b7d_4"
+   },
+   "omp_num_threads": "1"
+  },
+  "single": {
+   "TaylorF2": {
+    "rust_us": 163.8930438016529,
+    "lal_us": 214.68685727539935,
+    "speedup": 1.3099204962915831
+   },
+   "IMRPhenomD": {
+    "rust_us": 177.31262933333332,
+    "lal_us": 294.6595162990127,
+    "speedup": 1.6618078329044275
+   },
+   "IMRPhenomXAS": {
+    "rust_us": 176.57529305680794,
+    "lal_us": 197.29092375993136,
+    "speedup": 1.117318965436794
+   },
+   "IMRPhenomXHM": {
+    "rust_us": 1160.6159883040937,
+    "lal_us": 1705.0409504886843,
+    "speedup": 1.4690827695559419
+   },
+   "IMRPhenomXP (102)": {
+    "rust_us": 404.0704230769231,
+    "lal_us": 588.1635961191492,
+    "speedup": 1.455596753754927
+   },
+   "IMRPhenomXP (223)": {
+    "rust_us": 1231.1608343949044,
+    "lal_us": 1540.0536177867605,
+    "speedup": 1.2508955570729081
+   },
+   "IMRPhenomXP (320)": {
+    "rust_us": 863.944204347826,
+    "lal_us": 2587.1683059162215,
+    "speedup": 2.9946011477317827
+   },
+   "IMRPhenomXPHM (102)": {
+    "rust_us": 2027.6777244897962,
+    "lal_us": 4034.8265320062637,
+    "speedup": 1.989875650984678
+   },
+   "IMRPhenomXPHM (223)": {
+    "rust_us": 5274.120513513513,
+    "lal_us": 8804.77653647011,
+    "speedup": 1.6694302896398066
+   },
+   "IMRPhenomXPHM (320)": {
+    "rust_us": 3524.514875,
+    "lal_us": 7590.2000069618225,
+    "speedup": 2.153544608592927
+   },
+   "IMRPhenomXHM (uniform)": {
+    "rust_us": 788.9985059760957
+   },
+   "IMRPhenomXPHM (320) (uniform)": {
+    "rust_us": 4308.734266666666
+   },
+   "NRSur7dq4": {
+    "rust_us": 1104.9366779661016,
+    "lal_us": 5592.853602554117,
+    "speedup": 5.061696035694183
+   },
+   "NRSur7dq4 (workspace)": {
+    "rust_us": 78.62479149999999,
+    "lal_us": 5592.853602554117,
+    "speedup": 71.13346179816727
+   }
+  },
+  "lal_uniform_us": {
+   "IMRPhenomXHM (uniform)": 1259.8946063590595,
+   "IMRPhenomXHM (uniform, default multibanding)": 794.2012997934357,
+   "IMRPhenomXPHM (320) (uniform)": 7565.949636045843,
+   "IMRPhenomXPHM (320) (uniform, default multibanding)": 4385.256487876177
+  },
+  "serial": {
+   "n_draws": 300,
+   "n_frequencies": 8033,
+   "lal_python_call_overhead_us": 2.2863876074552536,
+   "models": {
+    "TaylorF2": {
+     "rust_us": 220.47819666666666,
+     "rust_grid_us": 42.442499999999995,
+     "lal_us": 310.40402750174206,
+     "speedup": 1.4078672276652875
+    },
+    "IMRPhenomD": {
+     "rust_us": 237.12041666666664,
+     "rust_grid_us": 116.37916666666666,
+     "lal_us": 406.4865270629525,
+     "speedup": 1.7142620309847603
+    },
+    "IMRPhenomXAS": {
+     "rust_us": 319.6305533333333,
+     "rust_grid_us": 99.71291666666667,
+     "lal_us": 336.1404174938798,
+     "speedup": 1.0516529599200388
+    },
+    "IMRPhenomXHM": {
+     "rust_us": 1773.49403,
+     "rust_grid_us": 1191.32778,
+     "lal_us": 2259.9244428177676,
+     "speedup": 1.2742780097307502
+    },
+    "IMRPhenomXP (102)": {
+     "rust_us": 696.4329166666666,
+     "rust_grid_us": 244.73291666666668,
+     "lal_us": 1006.4156958833337,
+     "speedup": 1.4451007007255432
+    },
+    "IMRPhenomXP (223)": {
+     "rust_us": 2089.055973333333,
+     "rust_grid_us": 1134.1298633333333,
+     "lal_us": 2572.0702779168882,
+     "speedup": 1.2312117582052382
+    },
+    "IMRPhenomXP (320)": {
+     "rust_us": 1319.71,
+     "rust_grid_us": 957.0319466666666,
+     "lal_us": 2846.4726405218244,
+     "speedup": 2.1568925298147508
+    },
+    "IMRPhenomXPHM (102)": {
+     "rust_us": 3397.7577766666664,
+     "rust_grid_us": 1121.0229199999999,
+     "lal_us": 6510.929862658183,
+     "speedup": 1.916243090478822
+    },
+    "IMRPhenomXPHM (223)": {
+     "rust_us": 8699.88667,
+     "rust_grid_us": 3935.1251399999996,
+     "lal_us": 14448.31237041702,
+     "speedup": 1.6607471934363738
+    },
+    "IMRPhenomXPHM (320)": {
+     "rust_us": 4961.24278,
+     "rust_grid_us": 2824.6765266666666,
+     "lal_us": 9541.898892881969,
+     "speedup": 1.923288038099593
+    },
+    "NRSur7dq4": {
+     "rust_us": 1106.1629166666667,
+     "rust_grid_us": 1091.17403,
+     "lal_us": 5563.901810285945,
+     "speedup": 5.029911712329246
+    }
+   }
+  },
+  "grid": {
+   "TaylorF2": {
+    "per_frequency_us": 224.1,
+    "grid_us": 41.8,
+    "max_rel_diff": 1.9e-13
+   },
+   "IMRPhenomD": {
+    "per_frequency_us": 240.3,
+    "grid_us": 119.2,
+    "max_rel_diff": 2.1e-13
+   },
+   "IMRPhenomXAS": {
+    "per_frequency_us": 316.6,
+    "grid_us": 117.8,
+    "max_rel_diff": 3.7e-13
+   },
+   "IMRPhenomXHM": {
+    "per_frequency_us": 1801.0,
+    "grid_us": 1200.5,
+    "max_rel_diff": 1.8e-13
+   },
+   "IMRPhenomXP (102)": {
+    "per_frequency_us": 786.7,
+    "grid_us": 318.1,
+    "max_rel_diff": 7.7e-14
+   },
+   "IMRPhenomXP (223)": {
+    "per_frequency_us": 2425.0,
+    "grid_us": 1396.0,
+    "max_rel_diff": 8.5e-14
+   },
+   "IMRPhenomXP (320)": {
+    "per_frequency_us": 1352.6,
+    "grid_us": 949.8,
+    "max_rel_diff": 8.6e-14
+   },
+   "IMRPhenomXPHM (102)": {
+    "per_frequency_us": 4240.5,
+    "grid_us": 1319.8,
+    "max_rel_diff": 8e-14
+   },
+   "IMRPhenomXPHM (223)": {
+    "per_frequency_us": 10749.3,
+    "grid_us": 4407.4,
+    "max_rel_diff": 8.5e-14
+   },
+   "IMRPhenomXPHM (320)": {
+    "per_frequency_us": 5580.5,
+    "grid_us": 2797.1,
+    "max_rel_diff": 8.5e-14
+   }
+  },
+  "batch": {
+   "threads": [
+    1,
+    2,
+    4,
+    8,
+    24
+   ],
+   "models": {
+    "IMRPhenomXAS": {
+     "n": 2000,
+     "waveforms_per_second": {
+      "1": 10271.0,
+      "2": 20466.0,
+      "4": 38929.0,
+      "8": 75271.0,
+      "24": 150154.0
+     }
+    },
+    "IMRPhenomXHM": {
+     "n": 400,
+     "waveforms_per_second": {
+      "1": 1055.0,
+      "2": 1975.0,
+      "4": 3732.0,
+      "8": 7162.0,
+      "24": 14709.0
+     }
+    },
+    "IMRPhenomXP (SpinTaylor)": {
+     "n": 400,
+     "waveforms_per_second": {
+      "1": 1051.0,
+      "2": 2073.0,
+      "4": 3998.0,
+      "8": 7279.0,
+      "24": 16089.0
+     }
+    },
+    "IMRPhenomXPHM (SpinTaylor)": {
+     "n": 200,
+     "waveforms_per_second": {
+      "1": 375.0,
+      "2": 691.0,
+      "4": 1336.0,
+      "8": 2437.0,
+      "24": 4982.0
+     }
+    },
+    "IMRPhenomXPHM (MSA)": {
+     "n": 200,
+     "waveforms_per_second": {
+      "1": 282.0,
+      "2": 553.0,
+      "4": 1046.0,
+      "8": 1930.0,
+      "24": 4206.0
+     }
+    },
+    "NRSur7dq4 (time domain)": {
+     "n": 200,
+     "waveforms_per_second": {
+      "1": 910.0,
+      "2": 1749.0,
+      "4": 3203.0,
+      "8": 5879.0,
+      "24": 12778.0
+     }
+    }
+   }
+  }
+ }
+}
