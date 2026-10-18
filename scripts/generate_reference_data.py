@@ -12,6 +12,13 @@ instead stores the Euler angles of ``SimIMRPhenomXPSpinTaylorAngles`` and the
 ``imrphenomxhm_modes`` suite the individual modes of
 ``SimIMRPhenomXHMFrequencySequenceOneMode``.
 
+The time-domain ``nrsur7dq4`` suites store the polarizations of
+``SimInspiralChooseTDWaveform`` (with the epoch, or the error message for
+the cases where lalsimulation fails), the modes of
+``SimInspiralChooseTDModes`` (``nrsur7dq4_modes``) and the output of
+``PrecessingNRSurDynamics`` (``nrsur7dq4_dynamics``). They need the data
+file ``NRSur7dq4_v1.0.h5`` in ``LAL_DATA_PATH``.
+
 Usage
 -----
     OMP_NUM_THREADS=1 python scripts/generate_reference_data.py [--n-frequencies 256]
@@ -146,7 +153,142 @@ def generate_modes(case, n_frequencies):
     return case
 
 
+def nrsur_start_frequency(case):
+    """The lowest f_min of NRSur7dq4 for a binary
+    (PrecessingNRSur_StartFrequency), by bisection on f_ref with f_min = 0:
+    lalsimulation fails for reference frequencies below it."""
+
+    def valid(f_ref):
+        try:
+            lalsim.PrecessingNRSurDynamics(*nrsur_dynamics_args(case, f_ref))
+            return True
+        except RuntimeError:
+            return False
+
+    lo, hi = 1.0, 200.0
+    for _ in range(60):
+        mid = 0.5 * (lo + hi)
+        lo, hi = (lo, mid) if valid(mid) else (mid, hi)
+    return hi
+
+
+def nrsur_dynamics_args(case, f_ref):
+    """Arguments of PrecessingNRSurDynamics for a waveform case (heavier body
+    first) with LAL's waveform conventions at f_ref."""
+    m1 = case["mass_1"] * lal.MSUN_SI
+    m2 = case["mass_2"] * lal.MSUN_SI
+    s1, s2 = case["spin_1"], case["spin_2"]
+    if m1 < m2:
+        m1, m2 = m2, m1
+        s1, s2 = [-s2[0], -s2[1], s2[2]], [-s1[0], -s1[1], s1[2]]
+    mass_a, mass_b = m1 / lal.MSUN_SI, m2 / lal.MSUN_SI
+    m_tot_sec = (mass_a + mass_b) * lal.MTSUN_SI
+    omega_ref = (m_tot_sec * f_ref) * np.pi
+    return (mass_a / mass_b, *s1, *s2, omega_ref, 1.0, 0.0, 0.0, 0.0, 0.0, None,
+            lalsim.NRSur7dq4)
+
+
+def nrsur_case_arguments(case):
+    if case.get("f_ref") == "start":
+        # just above the surrogate's first node: the RK4 steps start from a
+        # node other than 0 without the half nodes
+        case["f_ref"] = nrsur_start_frequency(case) * case.pop("f_ref_factor")
+    return (
+        case["mass_1"] * lal.MSUN_SI,
+        case["mass_2"] * lal.MSUN_SI,
+        *case["spin_1"],
+        *case["spin_2"],
+    )
+
+
+def generate_td(case):
+    """Polarizations of SimInspiralChooseTDWaveform (or the error)."""
+    case = dict(case)
+    masses_spins = nrsur_case_arguments(case)
+    try:
+        hplus, hcross = lalsim.SimInspiralChooseTDWaveform(
+            *masses_spins,
+            case["luminosity_distance"] * 1e6 * lal.PC_SI,
+            case["inclination"],
+            case["phi_ref"],
+            0.0,
+            0.0,
+            0.0,
+            case["delta_t"],
+            case["f_min"],
+            case["f_ref"],
+            lal_dict(case.get("lal_flags"), case.get("mode_array")),
+            lalsim.GetApproximantFromString(case["approximant"]),
+        )
+    except RuntimeError as error:
+        case["lal_error"] = str(error)
+        return case
+    case["epoch"] = float(hplus.epoch)
+    case["hplus"] = hplus.data.data.tolist()
+    case["hcross"] = hcross.data.data.tolist()
+    return case
+
+
+def generate_td_modes(case):
+    """Modes of SimInspiralChooseTDModes, every stride-th sample."""
+    case = dict(case)
+    masses_spins = nrsur_case_arguments(case)
+    hlms = lalsim.SimInspiralChooseTDModes(
+        0.0,
+        case["delta_t"],
+        *masses_spins,
+        case["f_min"],
+        case["f_ref"],
+        case["luminosity_distance"] * 1e6 * lal.PC_SI,
+        lal_dict(case.get("lal_flags"), case.get("mode_array")),
+        4,
+        lalsim.GetApproximantFromString(case["approximant"]),
+    )
+    stride = case["sample_stride"]
+    case["modes"] = list()
+    for ell in range(2, 5):
+        for emm in range(-ell, ell + 1):
+            hlm = lalsim.SphHarmTimeSeriesGetMode(hlms, ell, emm)
+            case["epoch"] = float(hlm.epoch)
+            case["length"] = hlm.data.length
+            case["modes"].append(
+                dict(
+                    ell=ell,
+                    emm=emm,
+                    real=hlm.data.data.real[::stride].tolist(),
+                    imag=hlm.data.data.imag[::stride].tolist(),
+                )
+            )
+    return case
+
+
+def generate_dynamics(case):
+    """XLALPrecessingNRSurDynamics on the dynamics nodes."""
+    case = dict(case)
+    out = lalsim.PrecessingNRSurDynamics(
+        case["q"],
+        *case["chi_a"],
+        *case["chi_b"],
+        case["omega_ref"],
+        *case["init_quat"],
+        case["init_orbphase"],
+        None,
+        lalsim.GetApproximantFromString(case["approximant"]),
+    )
+    names = ["t", "q0", "qx", "qy", "qz", "orbphase", "chiAx", "chiAy", "chiAz",
+             "chiBx", "chiBy", "chiBz"]
+    for name, values in zip(names, out):
+        case[name] = values.data.tolist()
+    return case
+
+
 def generate(case, n_frequencies):
+    if "sample_stride" in case:
+        return generate_td_modes(case)
+    if "delta_t" in case:
+        return generate_td(case)
+    if "omega_ref" in case:
+        return generate_dynamics(case)
     if "stride" in case:
         return generate_spintaylor_angles(case)
     if "mode_list" in case:
@@ -512,6 +654,133 @@ def xhm_mode_cases():
     return cases
 
 
+def unit(vector, magnitude):
+    vector = np.asarray(vector, dtype=float)
+    return (magnitude * vector / np.linalg.norm(vector)).tolist()
+
+
+def nrsur7dq4_cases():
+    """NRSur7dq4 polarizations from SimInspiralChooseTDWaveform: mass ratios
+    1 to 6, spins up to 0.99, f_ref != f_min, f_min = 0 (the whole
+    surrogate), m1 < m2 (label switch), and LAL's error cases."""
+    generic_99 = unit([0.6, -0.6, 0.53], 0.99)
+    configs = [
+        # mass_1, mass_2, spin_1, spin_2, distance, inclination, phi_ref,
+        # f_min, f_ref, delta_t
+        (40.0, 20.0, [0.4, -0.3, 0.2], [0.1, 0.5, -0.3], 100.0, 0.7, 0.1, 20.0, 20.0, 1 / 4096),
+        (30.0, 30.0, [0.0, 0.0, 0.5], [0.0, 0.0, 0.5], 400.0, 0.4, 1.3, 20.0, 20.0, 1 / 2048),
+        (30.0, 30.0, [0.0, 0.0, 0.0], [0.0, 0.0, 0.0], 400.0, 1.0, 0.0, 20.0, 0.0, 1 / 2048),
+        (75.0, 25.0, [0.6, 0.3, -0.5], [-0.2, 0.7, 0.1], 800.0, 2.1, 4.0, 15.0, 25.0, 1 / 2048),
+        (96.0, 24.0, [0.7, -0.5, 0.4], [0.3, 0.3, -0.8], 1500.0, 1.2, 2.5, 12.0, 20.0, 1 / 1024),
+        (120.0, 20.0, generic_99, unit([-0.7, 0.3, 0.6], 0.99), 2000.0, 0.9, 5.2, 10.0, 12.0, 1 / 1024),
+        (150.0, 50.0, [0.0, 0.0, 0.99], [0.0, 0.0, -0.99], 1000.0, 0.3, 0.8, 10.0, 10.0, 1 / 1024),
+        (20.0, 45.0, [0.3, 0.4, -0.2], [-0.5, 0.1, 0.6], 500.0, 1.4, 3.3, 20.0, 30.0, 1 / 4096),
+        (50.0, 30.0, [0.2, -0.6, 0.3], [0.5, 0.2, 0.1], 600.0, 0.0, 0.0, 0.0, 0.0, 1 / 2048),
+        (50.0, 30.0, [0.2, -0.6, 0.3], [0.5, 0.2, 0.1], 600.0, 2.0, 1.0, 0.0, 30.0, 1 / 2048),
+        (200.0, 100.0, [-0.5, 0.5, 0.1], [0.0, -0.8, 0.3], 2500.0, 2.5, 1.0, 0.0, 0.0, 1 / 512),
+        (14.0, 6.0, [0.1, 0.8, 0.3], [0.4, -0.4, -0.4], 300.0, 3.1, 0.5, 60.0, 60.0, 1 / 8192),
+        (36.0, 29.0, [0.4, 0.2, 0.3], [-0.2, 0.3, -0.1], 500.0, 0.7, 1.2, 0.0, "start", 1 / 2048),
+        (27.0, 30.0, [0.0, 0.0, 0.0], generic_99, 700.0, 1.9, 2.2, 0.0, "start", 1 / 2048),
+        (45.0, 15.0, [0.0, 0.0, 0.0], [0.0, 0.0, 0.0], 300.0, np.pi, 0.3, 25.0, 25.0, 1 / 2048),
+    ]
+    start_factors = iter([1.002, 1.004])
+    cases = list()
+    for m1, m2, s1, s2, dl, iota, phi, fmin, fref, dt in configs:
+        case = dict(
+            approximant="NRSur7dq4",
+            mass_1=m1,
+            mass_2=m2,
+            spin_1=s1,
+            spin_2=s2,
+            luminosity_distance=dl,
+            inclination=iota,
+            phi_ref=phi,
+            f_min=fmin,
+            f_ref=fref,
+            delta_t=dt,
+        )
+        if fref == "start":
+            case["f_ref_factor"] = next(start_factors)
+        cases.append(case)
+    errors = [
+        # f_min below the surrogate start, q > 6.01, f_ref < f_min,
+        # omega_ref > 0.201, f_ref below the surrogate start, |chi| > 1
+        (40.0, 20.0, [0.4, -0.3, 0.2], [0.1, 0.5, -0.3], 5.0, 20.0),
+        (70.0, 10.0, [0.1, 0.0, 0.0], [0.0, 0.0, 0.1], 20.0, 20.0),
+        (40.0, 20.0, [0.4, -0.3, 0.2], [0.1, 0.5, -0.3], 30.0, 20.0),
+        (40.0, 20.0, [0.4, -0.3, 0.2], [0.1, 0.5, -0.3], 20.0, 400.0),
+        (40.0, 20.0, [0.4, -0.3, 0.2], [0.1, 0.5, -0.3], 0.0, 5.0),
+        (40.0, 20.0, [0.6, -0.6, 0.6], [0.1, 0.5, -0.3], 20.0, 20.0),
+    ]
+    for m1, m2, s1, s2, fmin, fref in errors:
+        cases.append(
+            dict(
+                approximant="NRSur7dq4",
+                mass_1=m1,
+                mass_2=m2,
+                spin_1=s1,
+                spin_2=s2,
+                luminosity_distance=100.0,
+                inclination=0.5,
+                phi_ref=0.0,
+                f_min=fmin,
+                f_ref=fref,
+                delta_t=1 / 1024,
+            )
+        )
+    return cases
+
+
+def nrsur7dq4_mode_cases():
+    """NRSur7dq4 modes from SimInspiralChooseTDModes (every other sample)."""
+    configs = [
+        # mass_1, mass_2, spin_1, spin_2, f_min, f_ref, delta_t
+        (40.0, 20.0, [0.4, -0.3, 0.2], [0.1, 0.5, -0.3], 20.0, 20.0, 1 / 1024),
+        (20.0, 45.0, [0.3, 0.4, -0.2], [-0.5, 0.1, 0.6], 20.0, 30.0, 1 / 1024),
+        (50.0, 30.0, [0.2, -0.6, 0.3], [0.5, 0.2, 0.1], 0.0, 0.0, 1 / 1024),
+        (100.0, 25.0, [0.5, 0.1, 0.8], [-0.3, -0.3, 0.2], 12.0, 15.0, 1 / 512),
+    ]
+    return [
+        dict(
+            approximant="NRSur7dq4",
+            mass_1=m1,
+            mass_2=m2,
+            spin_1=s1,
+            spin_2=s2,
+            luminosity_distance=400.0,
+            f_min=fmin,
+            f_ref=fref,
+            delta_t=dt,
+            sample_stride=2,
+        )
+        for m1, m2, s1, s2, fmin, fref, dt in configs
+    ]
+
+
+def nrsur7dq4_dynamics_cases():
+    """XLALPrecessingNRSurDynamics with general quaternions and phases."""
+    norm = np.linalg.norm([0.9, 0.1, -0.3, 0.2])
+    configs = [
+        # q, chi_a, chi_b, omega_ref, init_quat, init_orbphase
+        (2.0, [0.4, -0.3, 0.2], [0.1, 0.5, -0.3], 0.02, [1.0, 0.0, 0.0, 0.0], 0.0),
+        (4.5, [0.7, 0.1, -0.6], [-0.2, 0.2, 0.9], 0.0, [x / norm for x in [0.9, 0.1, -0.3, 0.2]], 1.2),
+        (1.0, [0.0, 0.0, 0.0], [0.3, 0.3, 0.3], 0.05, [1.0, 0.0, 0.0, 0.0], 2.5),
+        (5.9, unit([0.2, 0.9, -0.1], 0.99), [0.0, 0.0, -0.5], 0.03, [1.0, 0.0, 0.0, 0.0], 0.4),
+    ]
+    return [
+        dict(
+            approximant="NRSur7dq4",
+            q=q,
+            chi_a=chi_a,
+            chi_b=chi_b,
+            omega_ref=omega,
+            init_quat=quat,
+            init_orbphase=phase,
+        )
+        for q, chi_a, chi_b, omega, quat, phase in configs
+    ]
+
+
 SUITES = dict(
     taylorf2=lambda: aligned_cases("TaylorF2", f_max_isco)
     + [
@@ -553,6 +822,9 @@ SUITES = dict(
     imrphenomxphm_modes=xphm_mode_array_cases,
     imrphenomxphm_msa=xphm_msa_cases,
     imrphenomxphm_spintaylor_fallback=xphm_spintaylor_fallback_cases,
+    nrsur7dq4=nrsur7dq4_cases,
+    nrsur7dq4_modes=nrsur7dq4_mode_cases,
+    nrsur7dq4_dynamics=nrsur7dq4_dynamics_cases,
 )
 
 
