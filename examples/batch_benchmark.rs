@@ -13,7 +13,7 @@
 //! The numbers depend on the load of the machine; on a laptop the
 //! efficiency cores and thermal limits make the scaling sub-linear.
 //!
-//!     cargo run --release --example batch_benchmark [-- scale]
+//!     cargo run --release --example batch_benchmark [-- scale] [--json out.json]
 //!
 //! `scale` (default 1) multiplies the number of waveforms per model.
 //! NRSur7dq4 needs its data file (`NRSUR7DQ4_DATA` or `LAL_DATA_PATH`).
@@ -94,7 +94,15 @@ fn throughput(n: usize, repeats: usize, mut run: impl FnMut() -> usize) -> (f64,
     (n as f64 / best, failures)
 }
 
+/// Rows of the JSON output (`--json <path>`).
+static ROWS: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+
 fn report(name: &str, n: usize, rates: &[(f64, usize)]) {
+    let values: Vec<String> = rates.iter().map(|(rate, _)| format!("{rate:e}")).collect();
+    ROWS.lock().unwrap().push(format!(
+        "{{\"model\": {name:?}, \"n\": {n}, \"waveforms_per_second\": [{}]}}",
+        values.join(", ")
+    ));
     let base = rates[0].0;
     let cells: Vec<String> = rates
         .iter()
@@ -117,8 +125,15 @@ fn count_failures(results: &[Result<()>]) -> usize {
 }
 
 fn main() {
-    let scale: usize = std::env::args()
-        .nth(1)
+    // arguments: [scale] [--json output.json]
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let json_output = args
+        .iter()
+        .position(|a| a == "--json")
+        .and_then(|i| args.get(i + 1).cloned());
+    let scale: usize = args
+        .first()
+        .filter(|a| *a != "--json")
         .map(|s| s.parse().expect("scale must be an integer"))
         .unwrap_or(1);
     let grid = FrequencyGrid::uniform(20.0, 1024.0, 0.125);
@@ -236,5 +251,18 @@ fn main() {
             report("NRSur7dq4 (time domain)", n, &rates);
         }
         Err(err) => println!("NRSur7dq4 skipped: {err}"),
+    }
+    if let Some(path) = json_output {
+        let threads: Vec<String> = threads.iter().map(|t| t.to_string()).collect();
+        let rows = ROWS.lock().unwrap().join(",\n  ");
+        std::fs::write(
+            &path,
+            format!(
+                "{{\"frequencies\": {}, \"threads\": [{}], \"rows\": [\n  {rows}\n]}}\n",
+                grid.len(),
+                threads.join(", ")
+            ),
+        )
+        .unwrap_or_else(|e| panic!("{path}: {e}"));
     }
 }

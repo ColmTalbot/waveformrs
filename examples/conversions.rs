@@ -8,7 +8,7 @@
 //! OMP_NUM_THREADS=1 LAL_DATA_PATH=/path/to/lal_data \
 //!     python scripts/time_conversions_lal.py --output lal_timings.json
 //! LAL_DATA_PATH=/path/to/lal_data \
-//!     cargo run --release --example conversions -- lal_timings.json
+//!     cargo run --release --example conversions -- lal_timings.json [--json out.json]
 //! ```
 //!
 //! Without the LAL timings only the Rust times are printed; without the
@@ -52,11 +52,21 @@ fn binary(m1: f64, m2: f64, spins: ([f64; 3], [f64; 3])) -> Binary {
 
 struct Table {
     lal: HashMap<String, f64>,
+    rows: std::cell::RefCell<Vec<String>>,
 }
 
 impl Table {
     fn row(&self, label: &str, what: &str, rust: Duration, samples: usize) {
         let rust_ms = rust.as_secs_f64() * 1e3;
+        let lal_seconds = self
+            .lal
+            .get(label)
+            .map_or("null".to_string(), |t| format!("{t:e}"));
+        self.rows.borrow_mut().push(format!(
+            "{{\"label\": {label:?}, \"what\": {what:?}, \"rust\": {:e}, \"lal\": {lal_seconds}, \
+             \"samples\": {samples}}}",
+            rust.as_secs_f64()
+        ));
         match self.lal.get(label) {
             Some(&lal) => println!(
                 "{label:<42} {what:<14} {rust_ms:9.3} ms  LAL {:9.3} ms  x{:6.2}  ({samples} samples)",
@@ -69,8 +79,17 @@ impl Table {
 }
 
 fn main() {
-    let lal = std::env::args()
-        .nth(1)
+    // arguments: [lal_timings.json] [--json output.json]
+    let args: Vec<String> = std::env::args().skip(1).collect();
+    let json_output = args
+        .iter()
+        .position(|a| a == "--json")
+        .and_then(|i| args.get(i + 1).cloned());
+    let lal = args
+        .iter()
+        .take_while(|a| *a != "--json")
+        .next()
+        .cloned()
         .map(|path| {
             let contents = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{path}: {e}"));
             let value: serde_json::Value = serde_json::from_str(&contents).unwrap();
@@ -82,7 +101,10 @@ fn main() {
                 .collect()
         })
         .unwrap_or_default();
-    let table = Table { lal };
+    let table = Table {
+        lal,
+        rows: Default::default(),
+    };
     let minimum = Duration::from_secs(1);
 
     let td_configurations = [
@@ -211,5 +233,10 @@ fn main() {
             cached,
             n,
         );
+    }
+    if let Some(path) = json_output {
+        let rows = table.rows.borrow().join(",\n  ");
+        std::fs::write(&path, format!("{{\"rows\": [\n  {rows}\n]}}\n"))
+            .unwrap_or_else(|e| panic!("{path}: {e}"));
     }
 }
