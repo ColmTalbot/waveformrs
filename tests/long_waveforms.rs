@@ -479,11 +479,9 @@ fn imrphenomxphm_long() {
 #[test]
 #[cfg_attr(debug_assertions, ignore = "long grids: run with --release")]
 fn spintaylor_angles_long() {
-    let tolerance = if cfg!(all(target_arch = "aarch64", target_os = "macos")) {
-        0.0
-    } else {
-        1e-6
-    };
+    // tests/common: 0 on Apple silicon, else 1e-5 (gamma, the integral of
+    // alpha, differs by 1e-6 after ~900 s on Linux x86-64)
+    let tolerance = common::tolerances("spintaylor_angles_long", (0.0, 0.0)).0;
     for case in &reference().angles {
         let binary = PrecessingBinary {
             mass_1: case.mass_1,
