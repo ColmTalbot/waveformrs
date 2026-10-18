@@ -10,6 +10,8 @@ Usage
     OMP_NUM_THREADS=1 LAL_DATA_PATH=/path/to/lal_data \
         python scripts/time_nrsur7dq4_lal.py
 """
+import argparse
+import json
 import time
 
 import lal
@@ -65,9 +67,14 @@ def spin(rng):
 
 
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--json", help="also write the timings to this file")
+    args_cli = parser.parse_args()
+    results = dict(configurations=list())
     start = time.perf_counter()
     polarizations(40.0, 20.0, SPIN_1, SPIN_2, 1 / 4096, 20.0, 0.0)
-    print(f"first call (loads the data): {1e3 * (time.perf_counter() - start):.1f} ms")
+    results["first_call"] = time.perf_counter() - start
+    print(f"first call (loads the data): {1e3 * results['first_call']:.1f} ms")
     print(f"{'M/Msun':>6} {'1/dt':>6} {'f_min':>6} {'samples':>7} | {'pols':>9} {'modes':>9}")
     for total_mass, rate, f_min in CONFIGURATIONS:
         args = (total_mass * 2 / 3, total_mass / 3, SPIN_1, SPIN_2, 1 / rate, f_min, 0.0)
@@ -75,6 +82,9 @@ def main():
         t_pol = per_call(lambda: polarizations(*args))
         t_modes = per_call(lambda: modes(*args))
         print(f"{total_mass:>6} {rate:>6} {f_min:>6} {n:>7} | {1e3 * t_pol:7.2f}ms {1e3 * t_modes:7.2f}ms")
+        results["configurations"].append(dict(
+            total_mass=total_mass, sampling_rate=rate, f_min=f_min, samples=n,
+            polarizations=t_pol, modes=t_modes))
 
     rng = np.random.default_rng(1)
     n, rejected, samples = 500, 0, 0
@@ -97,6 +107,10 @@ def main():
         f"{1e3 * elapsed / n:.2f} ms per waveform ({samples // (n - rejected)} samples on "
         f"average, {rejected} rejected)"
     )
+    results["sampler"] = elapsed / n
+    if args_cli.json:
+        with open(args_cli.json, "w") as ff:
+            json.dump(results, ff, indent=1)
 
 
 if __name__ == "__main__":

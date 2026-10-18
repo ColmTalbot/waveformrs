@@ -78,13 +78,15 @@ impl Rng {
 fn main() {
     let path = waveformrs::nrsur::find_data_file()
         .expect("set NRSUR7DQ4_DATA or LAL_DATA_PATH to find NRSur7dq4_v1.0.h5");
+    let json = std::env::args().any(|arg| arg == "--json");
+    let mut rows = Vec::new();
     let start = Instant::now();
     let data = NRSur7dq4Data::load(&path).unwrap();
     let first = start.elapsed();
     let reload = time(20, || {
         std::hint::black_box(NRSur7dq4Data::load(&path).unwrap());
     });
-    println!(
+    eprintln!(
         "load {} ({} fit coefficients): {first:.1?} (first), {reload:.1?} (cached file)",
         path.display(),
         data.n_coefficients(),
@@ -93,7 +95,7 @@ fn main() {
     let mut workspace = NRSurWorkspace::new();
     let mut polarizations = TimeSeriesPolarizations::default();
     let mut modes = TimeSeriesModes::default();
-    println!(
+    eprintln!(
         "{:>6} {:>6} {:>6} {:>7} | {:>10} {:>10} {:>10} {:>10}",
         "M/Msun", "1/dt", "f_min", "samples", "pols", "pols (ws)", "extrinsic", "modes (ws)"
     );
@@ -152,7 +154,7 @@ fn main() {
                 .unwrap();
             std::hint::black_box(&modes);
         });
-        println!(
+        eprintln!(
             "{total_mass:>6} {sampling_rate:>6} {f_min:>6} {:>7} | {:>10.1?} {:>10.1?} {:>10.1?} {:>10.1?}",
             polarizations.hplus.len(),
             fresh,
@@ -160,6 +162,16 @@ fn main() {
             extrinsic,
             modes_time
         );
+        rows.push(format!(
+            "{{\"total_mass\": {total_mass}, \"sampling_rate\": {sampling_rate}, \
+             \"f_min\": {f_min}, \"samples\": {}, \"fresh\": {:e}, \"reused\": {:e}, \
+             \"extrinsic\": {:e}, \"modes\": {:e}}}",
+            polarizations.hplus.len(),
+            fresh.as_secs_f64(),
+            reused.as_secs_f64(),
+            extrinsic.as_secs_f64(),
+            modes_time.as_secs_f64()
+        ));
     }
 
     // A sampler-like sequence: new intrinsic and extrinsic parameters for
@@ -194,10 +206,20 @@ fn main() {
             Err(_) => rejected += 1,
         }
     }
-    println!(
+    let per_waveform = start.elapsed() / n as u32;
+    eprintln!(
         "sampler-like sequence of {n} binaries (M = 40-120 Msun from 20 Hz, 4096 Hz): \
-         {:.1?} per waveform ({} samples on average, {rejected} rejected)",
-        start.elapsed() / n as u32,
+         {per_waveform:.1?} per waveform ({} samples on average, {rejected} rejected)",
         samples / (n - rejected).max(1)
     );
+    if json {
+        println!(
+            "{{\"load_first\": {:e}, \"load_cached_file\": {:e}, \"sampler\": {:e}, \
+             \"configurations\": [{}]}}",
+            first.as_secs_f64(),
+            reload.as_secs_f64(),
+            per_waveform.as_secs_f64(),
+            rows.join(", ")
+        );
+    }
 }
