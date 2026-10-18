@@ -14,6 +14,10 @@ default = ["fft"]
 # Fourier transforms between the time and frequency domains (`fft`,
 # `conversions::td_from_fd`, `conversions::fd_from_td`).
 fft = ["dep:rustfft"]
+[[example]]
+name = "conversions"
+required-features = ["fft"]
+
 [dev-dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["float_roundtrip"] }
