@@ -1,6 +1,7 @@
 pub mod batch;
 pub mod conditioning;
 pub(crate) mod constants;
+pub mod conversions;
 pub mod error;
 pub(crate) mod fastmath;
 #[cfg(feature = "fft")]
