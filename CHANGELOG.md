@@ -77,3 +77,17 @@ All notable changes to `waveformrs` are recorded here.
   a serial loop and the results do not depend on the number of threads
   (`tests/batch.rs`). `examples/batch_benchmark.rs` reports the throughput
   for 1, 2, 4, 8 and all threads.
+- **IMRPhenomXPNR** (`imrphenomx::IMRPhenomXPNR`, `Approximant::IMRPhenomXPNR`):
+  IMRPhenomXPHM with LAL's PNR flags (NR-tuned precession angles with the
+  frequency map of the higher modes, the tuned co-precessing (2,2) mode,
+  its antisymmetric part, SpinTaylor angles 330, final spin 7 and the
+  122019 release of the higher modes), including LAL's own switches
+  (plain XPHM for in-plane spins below 1e-7, NNLO angles below 1e-6, MSA
+  angles when the SpinTaylor integration fails, ...). Polarizations on
+  frequency sequences and uniform grids, the J-frame modes of
+  `SimInspiralChooseFDModes` (`choose_fd_modes`) and of the single-mode
+  functions (`FrequencyDomainModel::modes`), `simulate_td`, and
+  `with_version_fallback(false)`. Tested against LALSimulation 6.2.0
+  (`tests/xpnr.rs`, worst relative difference ~1e-15).
+- **IMRPhenomXHM release 122019** (`with_release_version(122019)`), the
+  original higher-mode amplitudes used by IMRPhenomXPNR.

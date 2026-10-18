@@ -317,6 +317,11 @@ fn imrphenomxphm_td_matches_lalsimulation() {
 }
 
 #[test]
+fn imrphenomxpnr_td_matches_lalsimulation() {
+    check_td_suite("conversions_td_imrphenomxpnr");
+}
+
+#[test]
 fn taylorf2_td_matches_lalsimulation() {
     check_td_suite("conversions_td_taylorf2");
 }

@@ -17,6 +17,14 @@ suite stores the modes of ``SimInspiralChooseFDModes`` (IMRPhenomXHM and
 IMRPhenomXPHM, on uniform grids), every ``fd_modes_stride``-th sample of the
 positive- and negative-frequency halves of each mode.
 
+The ``imrphenomxpnr*`` suites cover IMRPhenomXPNR: polarizations on
+frequency sequences (``imrphenomxpnr``, including the binaries for which
+LAL switches parts of the PNR machinery off or changes the Euler angles)
+and uniform grids (``imrphenomxpnr_uniform``), the J-frame modes of
+``SimInspiralChooseFDModes`` (``imrphenomxpnr_modes``) and of
+``SimIMRPhenomXPHMFrequencySequenceOneMode`` with the flags of
+IMRPhenomXPNR (``imrphenomxpnr_sequence_modes``).
+
 The time-domain ``nrsur7dq4`` suites store the polarizations of
 ``SimInspiralChooseTDWaveform`` (with the epoch, or the error message for
 the cases where lalsimulation fails), the modes of
@@ -389,6 +397,46 @@ def generate_fd_modes(case):
     return case
 
 
+def generate_sequence_modes(case, n_frequencies):
+    """J-frame modes of SimIMRPhenomXPHMFrequencySequenceOneMode (with the
+    flags of the case) for every l of the co-precessing modes, |m| <= l."""
+    frequencies = np.geomspace(case["f_min"], case["f_max"], n_frequencies)
+    freq_vector = lal.CreateREAL8Vector(len(frequencies))
+    freq_vector.data = frequencies
+    case = dict(case)
+    case.pop("jframe_sequence")
+    case["frequencies"] = frequencies.tolist()
+    case["modes"] = list()
+    ells = sorted({ell for ell, _ in case.get("mode_array") or [(2, 2), (3, 3), (4, 4)]})
+    for ell in ells:
+        for emm in range(-ell, ell + 1):
+            positive, negative = lalsim.SimIMRPhenomXPHMFrequencySequenceOneMode(
+                freq_vector,
+                ell,
+                emm,
+                case["mass_1"] * lal.MSUN_SI,
+                case["mass_2"] * lal.MSUN_SI,
+                *case["spin_1"],
+                *case["spin_2"],
+                case["luminosity_distance"] * 1e6 * lal.PC_SI,
+                case["inclination"],
+                case["phi_ref"],
+                case["f_ref"],
+                lal_dict(case.get("lal_flags"), case.get("mode_array")),
+            )
+            case["modes"].append(
+                dict(
+                    ell=ell,
+                    emm=emm,
+                    positive_real=positive.data.data.real.tolist(),
+                    positive_imag=positive.data.data.imag.tolist(),
+                    negative_real=negative.data.data.real.tolist(),
+                    negative_imag=negative.data.data.imag.tolist(),
+                )
+            )
+    return case
+
+
 def generate_harmonics(case):
     case = dict(case)
     case.pop("harmonics")
@@ -406,6 +454,8 @@ def generate(case, n_frequencies):
         return generate_harmonics(case)
     if "fd_modes_stride" in case:
         return generate_fd_modes(case)
+    if "jframe_sequence" in case:
+        return generate_sequence_modes(case, n_frequencies // 2)
     if "sample_stride" in case:
         return generate_td_modes(case)
     if "delta_t" in case:
@@ -932,6 +982,216 @@ def choose_fd_modes_cases():
     return cases
 
 
+# The flags SimInspiralChooseFDWaveform(Sequence) sets for IMRPhenomXPNR,
+# for the IMRPhenomXPHM functions called directly.
+XPNR_FLAGS = dict(
+    PhenomXHMReleaseVersion=122019,
+    PhenomXPNRUseTunedAngles=1,
+    PhenomXPNRUseTunedCoprec=1,
+    PhenomXPNRUseTunedCoprec33=0,
+    PhenomXPNRForceXHMAlignment=0,
+    PhenomXAntisymmetricWaveform=1,
+    PhenomXPrecVersion=330,
+    PhenomXPFinalSpinMod=7,
+    PhenomXPHMMBandVersion=2,
+)
+
+# mass_1, mass_2, spin_1, spin_2, f_min, f_ref: binaries for which LAL's
+# PNR machinery takes its less common branches
+XPNR_EDGE_BINARIES = [
+    # in-plane spins below 1e-7: plain IMRPhenomXPHM (NNLO angles, 122019
+    # release, FinalSpinMod 7), with a negative final spin
+    (30.0, 20.0, [0.0, 0.0, -0.8], [0.0, 0.0, -0.7], 20.0, 20.0),
+    (30.0, 20.0, [5e-8, 0.0, 0.5], [0.0, 0.0, -0.3], 20.0, 25.0),
+    # in-plane spins between 1e-7 and 1e-6: NNLO angles inside PNR
+    (30.0, 20.0, [5e-7, 0.0, 0.5], [0.0, 0.0, -0.3], 20.0, 20.0),
+    # just above 1e-6: SpinTaylor angles with a tiny in-plane spin
+    (30.0, 20.0, [2e-6, 0.0, 0.5], [0.0, 0.0, -0.3], 20.0, 20.0),
+    # transition region in q and in chi
+    (90.0, 10.0, [0.5, 0.2, 0.1], [0.1, 0.0, 0.2], 15.0, 15.0),
+    (110.0, 10.0, [0.5, 0.2, 0.1], [0.1, 0.0, 0.2], 15.0, 20.0),
+    (30.0, 10.0, [0.9, 0.1, 0.3], [0.1, 0.0, 0.2], 20.0, 20.0),
+    # outside the calibration region (PN angles, inspiral scaling of the
+    # frequency map, co-precessing deviations tapered for 10 < q <= 20)
+    (130.0, 10.0, [0.5, 0.2, 0.1], [0.1, 0.0, 0.2], 10.0, 10.0),
+    (190.0, 10.0, [0.7, 0.2, -0.1], [0.1, 0.4, 0.2], 10.0, 12.0),
+    (30.0, 5.0, [0.98, 0.1, 0.1], [0.5, 0.0, 0.2], 20.0, 20.0),
+    # equal masses and spins: the odd co-precessing modes vanish
+    (30.0, 30.0, [0.3, 0.2, 0.1], [0.3, 0.2, 0.1], 20.0, 20.0),
+    # the SpinTaylor integration fails: MSA angles (223) inside PNR
+    (250.0, 30.0, [0.7, 0.3, -0.4], [0.0, -0.5, 0.5], 10.0, 25.0),
+    (180.0, 65.0, [0.2, 0.1, -0.1], [-0.1, -0.2, 0.1], 15.5, 15.5),
+    # the MSA system fails as well: NNLO angles (102) inside PNR
+    (324.97464539595285, 156.1317450178247, [0.033473504803287535, 0.3586421803050725, -0.8463397636474128],
+     [-0.0181461364021327, -0.7837686724310844, 0.22548210669736396], 20.0, 20.0),
+    # the SpinTaylor angles are integrated again from a lower frequency
+    (65.39462569822626, 5.48546881140544, [0.015777294748968645, -0.01129185185344695, 0.0015599118587599989],
+     [0.26347849219372566, 0.5361809956686221, -0.26720621117427656], 30.0, 52.60747784129517),
+    # no merger-ringdown beta attached
+    (238.87854968975887, 13.840439770449478, [-0.006661588927623341, 0.012223592277567882, -0.02867622012464532],
+     [0.21532597836655717, -0.9596190530452179, 0.06428272454610019], 30.0, 36.54489151780514),
+    # the lower connection frequency of beta is not found (Mf = 100)
+    (141.98456902640373, 34.571276664666726, [0.5558143552228454, -0.08580576236737993, -0.781422167551453],
+     [-0.4951057605866491, 0.15954331438844666, -0.5788066659662768], 10.0, 34.6828483981249),
+    # a single precessing spin
+    (44.776077533636894, 14.83112049039989, [-0.05546660880373749, -0.06115453893757115, 0.36144221300916063],
+     [0.0, 0.0, 0.0], 30.0, 30.0),
+    # light binary, long inspiral
+    (5.0, 3.0, [0.4, -0.3, 0.2], [0.2, 0.3, -0.5], 20.0, 20.0),
+    # high anti-aligned spins
+    (40.0, 10.0, [0.1, 0.1, -0.98], [0.0, 0.2, -0.9], 20.0, 30.0),
+    # f_ref far above f_min, and the lighter body first
+    (36.0, 29.0, [0.4, 0.2, 0.3], [-0.2, 0.3, -0.1], 20.0, 200.0),
+    (20.0, 45.0, [0.3, 0.4, -0.2], [-0.5, 0.1, 0.6], 15.0, 22.0),
+]
+
+
+def xpnr_cases():
+    """IMRPhenomXPNR polarizations from SimInspiralChooseFDWaveformSequence:
+    generic precessing binaries and the edge cases of the PNR machinery,
+    and two restricted mode arrays."""
+    cases = precessing_cases("IMRPhenomXPNR", f_max_imr(0.3))
+    for i, (m1, m2, s1, s2, fmin, fref) in enumerate(XPNR_EDGE_BINARIES):
+        cases.append(
+            dict(
+                approximant="IMRPhenomXPNR",
+                mass_1=m1,
+                mass_2=m2,
+                spin_1=s1,
+                spin_2=s2,
+                luminosity_distance=400.0 + 50.0 * i,
+                inclination=0.2 + 0.13 * i,
+                phi_ref=0.1 + 0.27 * i,
+                f_min=fmin,
+                f_ref=fref,
+                f_max=f_max_imr(0.3)(m1 + m2),
+                lal_flags=dict(),
+            )
+        )
+    for m1, m2, modes in [
+        (36.0, 29.0, [[2, 1], [2, -1], [3, 3], [3, -3]]),
+        (60.0, 12.0, [[3, 2], [3, -2], [4, 4], [4, -4]]),
+    ]:
+        cases.append(
+            dict(
+                approximant="IMRPhenomXPNR",
+                mass_1=m1,
+                mass_2=m2,
+                spin_1=[0.4, 0.2, 0.3],
+                spin_2=[-0.2, 0.3, -0.1],
+                luminosity_distance=500.0,
+                inclination=1.1,
+                phi_ref=0.4,
+                f_min=20.0,
+                f_ref=25.0,
+                f_max=f_max_imr(0.3)(m1 + m2),
+                lal_flags=dict(),
+                mode_array=modes,
+            )
+        )
+    return cases
+
+
+def xpnr_uniform_cases():
+    """IMRPhenomXPNR on uniform grids (SimInspiralChooseFDWaveform, which
+    keeps the input order of the bodies in the waveform struct)."""
+    configs = [
+        # mass_1, mass_2, spin_1, spin_2, f_min, f_ref, delta_f, f_max
+        (36.0, 29.0, [0.4, 0.2, 0.3], [-0.2, 0.3, -0.1], 20.0, 20.0, 1.0, 0.0),
+        (60.0, 15.0, [0.6, -0.3, 0.5], [0.1, 0.1, 0.0], 15.0, 20.0, 0.5, 512.0),
+        (12.0, 6.0, [0.2, 0.7, -0.1], [0.3, -0.3, 0.6], 20.0, 0.0, 1.0, 1024.0),
+        (20.0, 45.0, [0.3, 0.4, -0.2], [-0.5, 0.1, 0.6], 20.0, 25.0, 0.5, 0.0),
+        (30.0, 20.0, [0.0, 0.0, 0.5], [0.0, 0.0, -0.3], 20.0, 20.0, 1.0, 0.0),
+        (250.0, 30.0, [0.7, 0.3, -0.4], [0.0, -0.5, 0.5], 10.0, 25.0, 0.25, 0.0),
+        (130.0, 10.0, [0.5, 0.2, 0.1], [0.1, 0.0, 0.2], 10.0, 12.0, 0.25, 0.0),
+    ]
+    return [
+        dict(
+            approximant="IMRPhenomXPNR",
+            mass_1=m1,
+            mass_2=m2,
+            spin_1=s1,
+            spin_2=s2,
+            luminosity_distance=600.0,
+            inclination=0.9,
+            phi_ref=1.7,
+            f_min=fmin,
+            f_ref=fref,
+            delta_f=df,
+            f_max=fmax,
+            lal_flags=dict(NO_MULTIBANDING),
+        )
+        for m1, m2, s1, s2, fmin, fref, df, fmax in configs
+    ]
+
+
+def xpnr_mode_cases():
+    """The J-frame modes of IMRPhenomXPNR from SimInspiralChooseFDModes
+    (one set-up per J-frame mode, or a co-precessing mode array with the
+    matching J-frame mode array), with multibanding off."""
+    l23 = [[ell, emm] for ell in (2, 3) for emm in range(-ell, ell + 1)]
+    configs = [
+        # mass_1, mass_2, spin_1, spin_2, f_min, f_ref, delta_f, f_max, extra
+        (36.0, 29.0, [0.4, 0.2, 0.3], [-0.2, 0.3, -0.1], 20.0, 25.0, 1.0, 512.0, {}),
+        (60.0, 15.0, [0.6, -0.3, 0.5], [0.1, 0.1, 0.0], 15.0, 20.0, 0.5, 0.0, {}),
+        (40.0, 12.0, [0.5, -0.2, 0.3], [0.1, 0.6, -0.2], 15.0, 25.0, 1.0, 0.0,
+         dict(mode_array=[[2, 2], [2, -2], [2, 1], [2, -1], [3, 3], [3, -3]], mode_array_jframe=l23)),
+        (30.0, 30.0, [0.5, 0.5, 0.5], [0.5, -0.5, -0.5], 20.0, 30.0, 1.0, 512.0, {}),
+        (30.0, 20.0, [0.0, 0.0, 0.5], [0.0, 0.0, -0.3], 20.0, 20.0, 1.0, 0.0, {}),
+        (180.0, 65.0, [0.2, 0.1, -0.1], [-0.1, -0.2, 0.1], 15.5, 15.5, 0.5, 0.0, {}),
+    ]
+    return [
+        dict(
+            approximant="IMRPhenomXPNR",
+            mass_1=m1,
+            mass_2=m2,
+            spin_1=s1,
+            spin_2=s2,
+            luminosity_distance=800.0,
+            inclination=0.7,
+            phi_ref=0.9,
+            f_min=fmin,
+            f_ref=fref,
+            delta_f=df,
+            f_max=fmax,
+            lal_flags=dict(NO_MULTIBANDING),
+            fd_modes_stride=8,
+            **extra,
+        )
+        for m1, m2, s1, s2, fmin, fref, df, fmax, extra in configs
+    ]
+
+
+def xpnr_sequence_mode_cases():
+    """The J-frame modes of SimIMRPhenomXPHMFrequencySequenceOneMode with
+    the flags of IMRPhenomXPNR (FrequencyDomainModel::modes)."""
+    configs = [
+        # mass_1, mass_2, spin_1, spin_2, f_min, f_ref, mode_array
+        (36.0, 29.0, [0.4, 0.2, 0.3], [-0.2, 0.3, -0.1], 20.0, 25.0, None),
+        (30.0, 20.0, [5e-8, 0.0, 0.5], [0.0, 0.0, -0.3], 20.0, 20.0, None),
+        (60.0, 12.0, [0.6, -0.3, 0.5], [0.1, 0.1, 0.0], 15.0, 20.0, [[2, 1], [2, -1], [3, 3], [3, -3]]),
+    ]
+    return [
+        dict(
+            approximant="IMRPhenomXPNR",
+            mass_1=m1,
+            mass_2=m2,
+            spin_1=s1,
+            spin_2=s2,
+            luminosity_distance=700.0,
+            inclination=1.3,
+            phi_ref=0.5,
+            f_min=fmin,
+            f_ref=fref,
+            f_max=f_max_imr(0.3)(m1 + m2),
+            lal_flags=dict(XPNR_FLAGS, **NO_MULTIBANDING),
+            jframe_sequence=True,
+            **(dict(mode_array=modes) if modes else dict()),
+        )
+        for m1, m2, s1, s2, fmin, fref, modes in configs
+    ]
+
+
 def nrsur7dq4_cases():
     """NRSur7dq4 polarizations from SimInspiralChooseTDWaveform: mass ratios
     1 to 6, spins up to 0.99, f_ref != f_min, f_min = 0 (the whole
@@ -1151,6 +1411,10 @@ SUITES = dict(
     imrphenomxphm_msa=xphm_msa_cases,
     imrphenomxphm_spintaylor_fallback=xphm_spintaylor_fallback_cases,
     choose_fd_modes=choose_fd_modes_cases,
+    imrphenomxpnr=xpnr_cases,
+    imrphenomxpnr_uniform=xpnr_uniform_cases,
+    imrphenomxpnr_modes=xpnr_mode_cases,
+    imrphenomxpnr_sequence_modes=xpnr_sequence_mode_cases,
     nrsur7dq4=nrsur7dq4_cases,
     nrsur7dq4_modes=nrsur7dq4_mode_cases,
     nrsur7dq4_dynamics=nrsur7dq4_dynamics_cases,
