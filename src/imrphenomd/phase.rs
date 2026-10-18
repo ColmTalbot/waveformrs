@@ -4,7 +4,7 @@ use crate::imrphenomd::coefficients::{ALPHA_COEFFS, BETA_COEFFS, SIGMA_COEFFS};
 use crate::imrphenomd::constants::PHI_FJOIN_INS;
 use crate::imrphenomd::constants::POWERS_OF_PI;
 use crate::imrphenomd::utils::{
-    fdamp, final_spin_0815, fring, phenomenological_function, MfPowers,
+    fdamp, final_spin_0815, fring, phenomenological_function, MfPowers, PowersOfMf,
 };
 use crate::pn::{chi_pn, taylor_3pn_ss, PNPhasing, Params};
 
@@ -106,15 +106,15 @@ fn phase_connection_coefficients(
 }
 
 fn inspiral_phase(frequency: f64, prefactors: &PNPhasing) -> f64 {
-    inspiral_phase_from_speed(frequency.cbrt() * POWERS_OF_PI.third, prefactors)
+    let v = frequency.cbrt() * POWERS_OF_PI.third;
+    inspiral_phase_from_speed(v, v.ln(), prefactors)
 }
 
 /// sum_i (a_i + b_i log v) v^(i - 5) for i < 13. Only the 2.5PN and 3PN
 /// logarithmic terms are non-zero for IMRPhenomD.
 #[inline(always)]
-fn inspiral_phase_from_speed(orbital_speed: f64, prefactors: &PNPhasing) -> f64 {
+fn inspiral_phase_from_speed(orbital_speed: f64, logv: f64, prefactors: &PNPhasing) -> f64 {
     let v = orbital_speed;
-    let logv = v.ln();
     let a = &prefactors.v;
     // Estrin's scheme for the degree-12 polynomial
     let v2 = v * v;
@@ -146,9 +146,18 @@ fn inspiral_phase_derivative(frequency: f64, prefactors: &PNPhasing) -> f64 {
 }
 
 fn intermediate_phase(frequency: f64, prefactors: &PhaseCoefficients) -> f64 {
-    (prefactors.beta[0] * frequency
-        - prefactors.beta[2] / (3.0 * frequency * frequency * frequency)
-        + prefactors.beta[1] * frequency.ln())
+    intermediate_phase_from(frequency, 1.0 / frequency, frequency.ln(), prefactors)
+}
+
+#[inline(always)]
+fn intermediate_phase_from(
+    frequency: f64,
+    inv: f64,
+    ln_f: f64,
+    prefactors: &PhaseCoefficients,
+) -> f64 {
+    (prefactors.beta[0] * frequency - prefactors.beta[2] / 3.0 * (inv * inv * inv)
+        + prefactors.beta[1] * ln_f)
         * prefactors.eta_inv
 }
 
@@ -158,12 +167,16 @@ fn intermediate_phase_derivative(frequency: f64, prefactors: &PhaseCoefficients)
 }
 
 fn mrd_phase(frequency: f64, prefactors: &PhaseCoefficients) -> f64 {
+    mrd_phase_from(frequency, 1.0 / frequency, frequency.sqrt(), prefactors)
+}
+
+#[inline(always)]
+fn mrd_phase_from(frequency: f64, inv: f64, sqrt_f: f64, prefactors: &PhaseCoefficients) -> f64 {
     let rho_lm = 1.0;
     let tau_lm = 1.0;
     // f^(3/4) = sqrt(f) * f^(1/4)
-    let sqrt_f = frequency.sqrt();
     let f_three_quarters = sqrt_f * sqrt_f.sqrt();
-    (prefactors.alpha[0] * frequency - prefactors.alpha[1] / frequency
+    (prefactors.alpha[0] * frequency - prefactors.alpha[1] * inv
         + 4.0 / 3.0 * prefactors.alpha[2] * f_three_quarters
         + prefactors.alpha[3]
             * rho_lm
@@ -193,22 +206,28 @@ pub fn imrphenomd_phase(frequency: f64, coeffs: &PhaseCoefficients, prefactors: 
 }
 
 #[inline(always)]
-pub(crate) fn imrphenomd_phase_from_powers(
-    powers: &MfPowers,
+pub(crate) fn imrphenomd_phase_from_powers<P: PowersOfMf>(
+    powers: &P,
     coeffs: &PhaseCoefficients,
     prefactors: &PNPhasing,
 ) -> f64 {
     let f1 = PHI_FJOIN_INS;
     let f2 = coeffs.f_ringdown / 2.0;
-    let f = powers.mf;
+    let f = powers.mf();
     if f < f1 {
-        inspiral_phase_from_speed(powers.orbital_speed, prefactors)
+        inspiral_phase_from_speed(
+            powers.orbital_speed(),
+            powers.log_orbital_speed(),
+            prefactors,
+        )
     } else if f < f2 {
-        intermediate_phase(f, coeffs)
+        intermediate_phase_from(f, powers.inv(), powers.ln_mf(), coeffs)
             + coeffs.intermediate_connection[0]
             + coeffs.intermediate_connection[1] * f
     } else if f2 <= f {
-        mrd_phase(f, coeffs) + coeffs.mrd_connection[0] + coeffs.mrd_connection[1] * f
+        mrd_phase_from(f, powers.inv(), powers.sqrt(), coeffs)
+            + coeffs.mrd_connection[0]
+            + coeffs.mrd_connection[1] * f
     } else {
         0.0
     }

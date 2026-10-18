@@ -192,8 +192,32 @@ impl UsefulPowers {
     #[inline]
     pub(crate) fn fast(number: f64) -> Self {
         let one_third = number.cbrt();
-        let sixth = one_third.sqrt();
-        let m_one = 1.0 / number;
+        Self::from_roots(
+            number,
+            one_third,
+            one_third.sqrt(),
+            1.0 / number,
+            number.ln(),
+        )
+    }
+
+    /// The powers from a point of a [`crate::grid::FrequencyGrid`], where
+    /// the roots, inverse and logarithm are products of precomputed factors.
+    #[inline(always)]
+    pub(crate) fn from_grid(powers: &crate::grid::GridPowers) -> Self {
+        Self::from_roots(
+            powers.itself,
+            powers.cbrt,
+            powers.sixth,
+            powers.inv,
+            powers.ln,
+        )
+    }
+
+    /// All powers from `x`, `x^(1/3)`, `x^(1/6)`, `1 / x` and `ln(x)`
+    /// using multiplications only.
+    #[inline(always)]
+    fn from_roots(number: f64, one_third: f64, sixth: f64, m_one: f64, log: f64) -> Self {
         let two_thirds = one_third * one_third;
         let m_one_third = two_thirds * m_one;
         let m_one_sixth = sixth * m_one_third;
@@ -238,7 +262,7 @@ impl UsefulPowers {
             m_five: m_three * m_two,
             seven_sixths: sixth * number,
             m_seven_sixths: m_one_sixth * m_one,
-            log: number.ln(),
+            log,
             sqrt: sixth * one_third,
         }
     }

@@ -4,6 +4,7 @@ use crate::imrphenomd::coefficients::{COLLOCATION_COEFFS, GAMMA_COEFFS, RHO_COEF
 use crate::imrphenomd::constants::{AMP_FJOIN_INS, POWERS_OF_PI};
 use crate::imrphenomd::utils::{
     fdamp, final_spin_0815, fring, phenomenological_function, solve_linear_system, MfPowers,
+    PowersOfMf,
 };
 use crate::pn::{chi_pn, PNAmplitude, Params};
 
@@ -205,19 +206,18 @@ pub fn imrphenomd_amplitude(frequency: f64, prefactors: &AmplitudePrefactors) ->
 
 /// The IMRPhenomD amplitude, including the leading `amp0 * Mf^(-7/6)` scaling.
 #[inline(always)]
-pub(crate) fn imrphenomd_amplitude_from_powers(
-    powers: &MfPowers,
+pub(crate) fn imrphenomd_amplitude_from_powers<P: PowersOfMf>(
+    powers: &P,
     prefactors: &AmplitudePrefactors,
 ) -> f64 {
     let f1 = AMP_FJOIN_INS;
     let f3 = prefactors.f_peak;
-    let frequency = powers.mf;
+    let frequency = powers.mf();
 
-    // Mf^(-7/6) = 1 / (Mf * Mf^(1/6))
-    let prefactor = prefactors.amp0 / (frequency * powers.third.sqrt());
+    let prefactor = prefactors.amp0 * powers.m_seven_sixths();
 
     let amplitude = if frequency < f1 {
-        inspiral_amplitude_from_speed(powers.orbital_speed, prefactors)
+        inspiral_amplitude_from_speed(powers.orbital_speed(), prefactors)
     } else if frequency < f3 {
         intermediate_amplitude(frequency, prefactors)
     } else if f3 <= frequency {

@@ -4,6 +4,8 @@ use num_complex::Complex;
 
 use crate::{
     constants::{MPC_SI, SOLAR_RADIUS_IN_M, SOLAR_RADIUS_IN_S},
+    fastmath,
+    grid::{FrequencyGrid, ScalePowers},
     pn::{PNPhasing, Params},
     waveform::Waveform,
 };
@@ -20,7 +22,7 @@ use phase::{
     imrphenomd_phase, imrphenomd_phase_from_powers, inspiral_prefactors, mrd_phase_derivative,
     PhaseCoefficients,
 };
-use utils::MfPowers;
+use utils::{MfPowers, PowersOfMf};
 
 #[derive(Clone, Copy, Debug)]
 pub struct IMRPhenomD {
@@ -89,14 +91,38 @@ impl IMRPhenomD {
     /// shared powers of `mf` once for both amplitude and phase.
     #[inline(always)]
     fn evaluate(&self, mf: f64, amplitude_scale: f64, phase_shift: f64) -> Complex<f64> {
-        let powers = MfPowers::new(mf);
-        let amplitude =
-            amplitude_scale * imrphenomd_amplitude_from_powers(&powers, &self.amplitude_prefactors);
-        let phase = imrphenomd_phase_from_powers(&powers, &self.coeffs, &self.phase_prefactors)
-            - phase_shift
-            - self.t0 * (mf - self.reference_mf);
+        self.evaluate_powers(&MfPowers::new(mf), amplitude_scale, phase_shift)
+    }
+
+    /// As [`Self::evaluate`] for powers of `Mf` computed on demand or read
+    /// from a [`FrequencyGrid`].
+    #[inline(always)]
+    fn evaluate_powers<P: PowersOfMf>(
+        &self,
+        powers: &P,
+        amplitude_scale: f64,
+        phase_shift: f64,
+    ) -> Complex<f64> {
+        let (amplitude, phase) = self.amplitude_phase(powers, amplitude_scale, phase_shift);
         let (sin, cos) = phase.sin_cos();
         Complex::new(amplitude * cos, -amplitude * sin)
+    }
+
+    /// Amplitude and phase, `h = A exp(-i phase)`.
+    #[inline(always)]
+    fn amplitude_phase<P: PowersOfMf>(
+        &self,
+        powers: &P,
+        amplitude_scale: f64,
+        phase_shift: f64,
+    ) -> (f64, f64) {
+        let mf = powers.mf();
+        let amplitude =
+            amplitude_scale * imrphenomd_amplitude_from_powers(powers, &self.amplitude_prefactors);
+        let phase = imrphenomd_phase_from_powers(powers, &self.coeffs, &self.phase_prefactors)
+            - phase_shift
+            - self.t0 * (mf - self.reference_mf);
+        (amplitude, phase)
     }
 }
 
@@ -132,5 +158,18 @@ impl Waveform for IMRPhenomD {
             .iter()
             .map(|&f| self.evaluate(f * mass_scale, amplitude_scale, phase_shift))
             .collect()
+    }
+
+    fn waveform_on_grid(&self, grid: &FrequencyGrid, phi_c: f64, out: &mut [Complex<f64>]) {
+        assert_eq!(out.len(), grid.len(), "output length must match the grid");
+        let scale = ScalePowers::new(self.total_mass * SOLAR_RADIUS_IN_S);
+        let amplitude_scale = self.amplitude_scale();
+        let phase_shift = phi_c + self.reference_phase;
+        for (index, h) in out.iter_mut().enumerate() {
+            let (amplitude, phase) =
+                self.amplitude_phase(&grid.powers(&scale, index), amplitude_scale, phase_shift);
+            *h = Complex::new(amplitude, phase);
+        }
+        fastmath::polar_to_complex_conj(out);
     }
 }

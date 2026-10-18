@@ -1,5 +1,6 @@
 use once_cell::sync::Lazy;
 
+use crate::grid::GridPowers;
 use crate::imrphenomd::coefficients::FINAL_SPIN_COEFFS;
 use crate::imrphenomd::constants::POWERS_OF_PI;
 use crate::imrphenomd::qnm_data::{QNM_FDAMP, QNM_FRING, QNM_SPIN};
@@ -57,6 +58,88 @@ impl MfPowers {
             third,
             orbital_speed: third * POWERS_OF_PI.third,
         }
+    }
+}
+
+/// The powers of `Mf` used at each frequency: computed on demand for a single
+/// frequency ([`MfPowers`]) or read from a [`crate::grid::FrequencyGrid`]
+/// ([`GridPowers`]).
+pub(crate) trait PowersOfMf {
+    fn mf(&self) -> f64;
+    /// v = (pi Mf)^(1/3)
+    fn orbital_speed(&self) -> f64;
+    /// ln(v)
+    fn log_orbital_speed(&self) -> f64;
+    /// ln(Mf)
+    fn ln_mf(&self) -> f64;
+    /// 1 / Mf
+    fn inv(&self) -> f64;
+    /// Mf^(1/2)
+    fn sqrt(&self) -> f64;
+    /// Mf^(-7/6)
+    fn m_seven_sixths(&self) -> f64;
+}
+
+impl PowersOfMf for MfPowers {
+    #[inline(always)]
+    fn mf(&self) -> f64 {
+        self.mf
+    }
+    #[inline(always)]
+    fn orbital_speed(&self) -> f64 {
+        self.orbital_speed
+    }
+    #[inline(always)]
+    fn log_orbital_speed(&self) -> f64 {
+        self.orbital_speed.ln()
+    }
+    #[inline(always)]
+    fn ln_mf(&self) -> f64 {
+        self.mf.ln()
+    }
+    #[inline(always)]
+    fn inv(&self) -> f64 {
+        1.0 / self.mf
+    }
+    #[inline(always)]
+    fn sqrt(&self) -> f64 {
+        self.mf.sqrt()
+    }
+    #[inline(always)]
+    fn m_seven_sixths(&self) -> f64 {
+        // Mf^(-7/6) = 1 / (Mf * Mf^(1/6))
+        1.0 / (self.mf * self.third.sqrt())
+    }
+}
+
+impl PowersOfMf for GridPowers {
+    #[inline(always)]
+    fn mf(&self) -> f64 {
+        self.itself
+    }
+    #[inline(always)]
+    fn orbital_speed(&self) -> f64 {
+        self.cbrt * POWERS_OF_PI.third
+    }
+    #[inline(always)]
+    fn log_orbital_speed(&self) -> f64 {
+        (self.ln + std::f64::consts::PI.ln()) * (1.0 / 3.0)
+    }
+    #[inline(always)]
+    fn ln_mf(&self) -> f64 {
+        self.ln
+    }
+    #[inline(always)]
+    fn inv(&self) -> f64 {
+        self.inv
+    }
+    #[inline(always)]
+    fn sqrt(&self) -> f64 {
+        self.cbrt * self.sixth
+    }
+    #[inline(always)]
+    fn m_seven_sixths(&self) -> f64 {
+        self.m_seven_sixths
     }
 }
 

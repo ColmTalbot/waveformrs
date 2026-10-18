@@ -7,6 +7,8 @@ use std::f64::consts::{FRAC_PI_4, PI};
 
 use num_complex::Complex;
 
+use crate::fastmath;
+use crate::grid::{FrequencyGrid, ScalePowers};
 use crate::imrphenomx::amplitude::AmpCoefficients;
 use crate::imrphenomx::internals::{fma, IMRPhenomXError, UsefulPowers, WaveformStruct};
 use crate::imrphenomx::phase::{
@@ -244,6 +246,22 @@ impl IMRPhenomXAS {
     }
 }
 
+impl IMRPhenomXAS {
+    /// `phifRef` and the cutoff `Mf` for a grid from `f_min` to `f_max`, as
+    /// in [`Waveform::waveform`].
+    fn grid_phase_and_cutoff(&self, f_min: f64, f_max: f64, phi_c: f64) -> (f64, f64) {
+        let phif_ref = if self.has_reference_frequency {
+            self.phif_ref(phi_c)
+        } else {
+            let mut wf = self.wf;
+            wf.f_min = f_min;
+            wf.set_reference_frequency(0.0);
+            self.reference_phase_shift(wf.mf_ref) + phi_c + FRAC_PI_4
+        };
+        (phif_ref, self.wf.f_max_prime(f_max) * self.wf.m_sec)
+    }
+}
+
 impl Waveform for IMRPhenomXAS {
     /// The dimensionless frequency `Mf`.
     fn orbital_speed(&self, frequency: f64) -> f64 {
@@ -279,20 +297,39 @@ impl Waveform for IMRPhenomXAS {
         let (Some(&f_min), Some(&f_max)) = (frequencies.first(), frequencies.last()) else {
             return Vec::new();
         };
-        let phif_ref = if self.has_reference_frequency {
-            self.phif_ref(phi_c)
-        } else {
-            let mut wf = self.wf;
-            wf.f_min = f_min;
-            wf.set_reference_frequency(0.0);
-            self.reference_phase_shift(wf.mf_ref) + phi_c + FRAC_PI_4
-        };
-        let mf_cut = self.wf.f_max_prime(f_max) * self.wf.m_sec;
+        let (phif_ref, mf_cut) = self.grid_phase_and_cutoff(f_min, f_max, phi_c);
         let ylm = ylm_factor();
         frequencies
             .iter()
             .map(|&f| self.h22(self.wf.m_sec * f, phif_ref, mf_cut) * ylm)
             .collect()
+    }
+
+    fn waveform_on_grid(&self, grid: &FrequencyGrid, phi_c: f64, out: &mut [Complex<f64>]) {
+        assert_eq!(out.len(), grid.len(), "output length must match the grid");
+        let frequencies = grid.frequencies();
+        let (Some(&f_min), Some(&f_max)) = (frequencies.first(), frequencies.last()) else {
+            return;
+        };
+        let (phif_ref, mf_cut) = self.grid_phase_and_cutoff(f_min, f_max, phi_c);
+        // Y h22 = |Y| A exp(i (phi + arg Y)), stored as (amplitude, -phase)
+        // for the vectorised conversion.
+        let ylm = ylm_factor();
+        let (ylm_abs, ylm_arg) = (ylm.norm(), ylm.arg());
+        let scale = ScalePowers::new(self.wf.m_sec);
+        for (index, h) in out.iter_mut().enumerate() {
+            let powers = grid.powers(&scale, index);
+            let mf = powers.itself;
+            *h = if mf <= mf_cut {
+                let powers = UsefulPowers::from_grid(&powers);
+                let phi = self.phase_22_full(mf, &powers, phif_ref);
+                let amp = self.amplitude_22_full(mf, &powers);
+                Complex::new(amp * ylm_abs, -(phi + ylm_arg))
+            } else {
+                Complex::new(0.0, 0.0)
+            };
+        }
+        fastmath::polar_to_complex_conj(out);
     }
 }
 
