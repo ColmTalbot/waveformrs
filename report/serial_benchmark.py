@@ -141,10 +141,15 @@ def main():
     Path(args.output).write_text(json.dumps(out, indent=1))
     print(f"{len(cases)} draws, {len(frequencies)} frequencies; LAL call overhead "
           f"{overhead * 1e6:.1f} us")
-    print(f"{'model':<22}{'rust [us]':>12}{'LAL [us]':>12}{'speed-up':>10}")
+    print(f"{'model':<22}{'rust [us]':>12}{'grid [us]':>12}{'LAL [us]':>12}"
+          f"{'speed-up':>10}{'grid':>8}")
     for name in MODELS:
         t_rust, t_lal = rust[name]["seconds"], lal_results[name]["seconds"]
-        print(f"{name:<22}{t_rust * 1e6:12.1f}{t_lal * 1e6:12.1f}{t_lal / t_rust:10.2f}"
+        t_grid = rust[name].get("grid_seconds")
+        grid_text = f"{t_grid * 1e6:12.1f}" if t_grid else f"{'-':>12}"
+        grid_speed = f"{t_lal / t_grid:8.2f}" if t_grid else f"{'-':>8}"
+        print(f"{name:<22}{t_rust * 1e6:12.1f}{grid_text}{t_lal * 1e6:12.1f}"
+              f"{t_lal / t_rust:10.2f}{grid_speed}"
               f"   errors rust/lal {rust[name]['failures']}/{lal_results[name]['failures']}")
 
 

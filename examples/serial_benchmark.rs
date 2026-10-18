@@ -7,6 +7,10 @@
 //! `report/serial_benchmark.py`) and prints the mean time per waveform for
 //! each model as JSON.
 //!
+//! Models with a grid path are also timed on a prepared
+//! [`waveformrs::grid::FrequencyGrid`] with output buffers reused across
+//! draws (`grid_seconds`).
+//!
 //!     cargo run --release --example serial_benchmark -- draws.json
 use std::hint::black_box;
 use std::time::Instant;
@@ -15,6 +19,7 @@ use num_complex::Complex;
 use serde::Deserialize;
 
 use waveformrs::{
+    grid::FrequencyGrid,
     imrphenomd::IMRPhenomD,
     imrphenomx::{
         IMRPhenomXAS, IMRPhenomXHM, IMRPhenomXP, IMRPhenomXPHM, PrecessingBinary, PrecessionVersion,
@@ -114,6 +119,51 @@ fn generate(name: &str, draw: &Draw, freqs: &[f64]) -> Option<Polarizations> {
     }
 }
 
+/// The grid path (`*_on_grid`) with buffers reused across draws; `None` if
+/// the model has no grid path.
+fn generate_on_grid(
+    name: &str,
+    draw: &Draw,
+    grid: &FrequencyGrid,
+    hp: &mut [Complex<f64>],
+    hc: &mut [Complex<f64>],
+) -> Option<bool> {
+    let (m, q) = (draw.total_mass(), draw.mass_ratio());
+    let (c1, c2) = (draw.spin_1[2], draw.spin_2[2]);
+    let d = draw.luminosity_distance;
+    match name {
+        "TaylorF2" => {
+            TaylorF2::new(m, q, c1, c2, d)
+                .with_reference_frequency(draw.f_ref)
+                .waveform_modes_on_grid(grid, draw.phi_ref, draw.inclination, hp, hc);
+            Some(true)
+        }
+        "IMRPhenomD" => {
+            IMRPhenomD::new(m, q, c1, c2, d)
+                .with_reference_frequency(draw.f_ref)
+                .waveform_modes_on_grid(grid, 2.0 * draw.phi_ref, draw.inclination, hp, hc);
+            Some(true)
+        }
+        "IMRPhenomXAS" => Some(
+            IMRPhenomXAS::from_components(draw.mass_1, draw.mass_2, c1, c2, d)
+                .map(|wf| {
+                    wf.with_reference_frequency(draw.f_ref)
+                        .waveform_modes_on_grid(grid, 2.0 * draw.phi_ref, draw.inclination, hp, hc)
+                })
+                .is_ok(),
+        ),
+        "IMRPhenomXHM" => Some(
+            IMRPhenomXHM::from_components(draw.mass_1, draw.mass_2, c1, c2, d)
+                .map(|wf| {
+                    wf.with_reference_frequency(draw.f_ref)
+                        .polarizations_on_grid(grid, draw.phi_ref, draw.inclination, hp, hc)
+                })
+                .is_ok(),
+        ),
+        _ => None,
+    }
+}
+
 const MODELS: [&str; 10] = [
     "TaylorF2",
     "IMRPhenomD",
@@ -147,12 +197,43 @@ fn main() {
             }
         }
         let per_waveform = start.elapsed().as_secs_f64() / input.draws.len() as f64;
+
+        // grid path, buffers reused across draws
+        let grid = FrequencyGrid::new(freqs);
+        let zero = Complex::new(0.0, 0.0);
+        let (mut hp, mut hc) = (vec![zero; grid.len()], vec![zero; grid.len()]);
+        let grid_per_waveform = generate_on_grid(name, &input.draws[0], &grid, &mut hp, &mut hc)
+            .map(|_| {
+                for draw in input.draws.iter().take(5) {
+                    generate_on_grid(name, draw, &grid, &mut hp, &mut hc);
+                }
+                let start = Instant::now();
+                for draw in &input.draws {
+                    black_box(generate_on_grid(
+                        name,
+                        draw,
+                        black_box(&grid),
+                        &mut hp,
+                        &mut hc,
+                    ));
+                }
+                start.elapsed().as_secs_f64() / input.draws.len() as f64
+            });
         eprintln!(
             "{name:<22} {:>9.1} us per waveform ({failures} errors)",
             per_waveform * 1e6
         );
+        if let Some(t) = grid_per_waveform {
+            eprintln!(
+                "{:<22} {:>9.1} us per waveform on a FrequencyGrid",
+                "",
+                t * 1e6
+            );
+        }
+        let grid_entry = grid_per_waveform.map_or("null".to_string(), |t| format!("{t:e}"));
         entries.push(format!(
-            "\"{name}\": {{\"seconds\": {per_waveform:e}, \"failures\": {failures}}}"
+            "\"{name}\": {{\"seconds\": {per_waveform:e}, \"failures\": {failures}, \
+             \"grid_seconds\": {grid_entry}}}"
         ));
     }
     println!("{{{}}}", entries.join(", "));
