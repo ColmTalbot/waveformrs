@@ -25,9 +25,11 @@ use std::f64::consts::PI;
 use num_complex::Complex;
 
 use crate::fastmath;
-use crate::grid::FrequencyGrid;
+use crate::grid::{FrequencyGrid, ScalePowers};
+use crate::imrphenomx::internals::UsefulPowers;
 use crate::imrphenomx::precession::PrecessionStruct;
 use crate::imrphenomx::wigner::half_angles;
+use crate::imrphenomx::xhm::ModeGenerator;
 use crate::imrphenomx::xphm::wigner_d;
 
 /// The Euler angles `alpha`, `cos(beta)` and `epsilon` (including the
@@ -178,41 +180,106 @@ impl TwistArrays {
     }
 }
 
-/// Add the co-precessing mode `(l, -m')` to the polarisations: `scratch`
-/// is filled with `exp(-i m' epsilon) h_{l,-m'} / 2` from the amplitude and
-/// phase `amplitude_phase(i)` of `h_{l,-m'} = A exp(i phi)` at grid point
-/// `i`, which is then twisted up with the Wigner-d matrices and the
-/// spherical harmonics `ylm` as in `IMRPhenomXPHMTwistUp` and added to
-/// `hplus`, `hcross` (all slices of the same length).
-#[allow(clippy::too_many_arguments)]
+/// Fill `scratch` for [`fastmath::polar_to_complex_conj`] with the
+/// co-precessing mode `exp(-i m' epsilon) h / 2` at the grid points
+/// `offset + i`, where `h = A exp(i phi)` with `(A, phi) =
+/// amplitude_phase(offset + i)`, stored as `(A / 2, m' epsilon - phi)`.
+fn fill_polar(
+    scratch: &mut [Complex<f64>],
+    offset: usize,
+    mprime: u32,
+    epsilon: &[f64],
+    amplitude_phase: impl Fn(usize) -> (f64, f64),
+) {
+    let m = mprime as f64;
+    let epsilon = &epsilon[offset..offset + scratch.len()];
+    for (i, (value, &epsilon)) in scratch.iter_mut().zip(epsilon).enumerate() {
+        let (amplitude, phase) = amplitude_phase(offset + i);
+        *value = Complex::new(0.5 * amplitude, m * epsilon - phase);
+    }
+}
+
+/// `exp(-i m' epsilon) h / 2` at the first `scratch.len()` grid points,
+/// written to `scratch`, for the mode `h = A exp(i phi)` with `(A, phi) =
+/// amplitude_phase(i)` at grid point `i`.
+pub(crate) fn coprecessing_mode(
+    scratch: &mut [Complex<f64>],
+    mprime: u32,
+    epsilon: &[f64],
+    amplitude_phase: impl Fn(usize) -> (f64, f64),
+) {
+    fill_polar(scratch, 0, mprime, epsilon, amplitude_phase);
+    fastmath::polar_to_complex_conj(scratch);
+}
+
+/// [`coprecessing_mode`] for the IMRPhenomXHM mode `generator` with the
+/// powers of `Mf = scale f` from `grid`. In the ringdown of the (3,2) mode
+/// with mode mixing the two terms of the spheroidal-to-spherical rotation
+/// are converted separately (`extra` holds the second) and added, rather
+/// than going through the amplitude and phase of their sum.
+pub(crate) fn coprecessing_mode_generator(
+    scratch: &mut [Complex<f64>],
+    extra: &mut Vec<Complex<f64>>,
+    mprime: u32,
+    epsilon: &[f64],
+    generator: &ModeGenerator,
+    grid: &FrequencyGrid,
+    scale: &ScalePowers,
+) {
+    let n = scratch.len();
+    let amplitude_phase = |i: usize| {
+        let powers = grid.powers(scale, i);
+        generator.amplitude_phase(powers.itself, &UsefulPowers::from_grid(&powers))
+    };
+    let Some((mode, amp0, start)) = generator.mixing_ringdown() else {
+        return coprecessing_mode(scratch, mprime, epsilon, amplitude_phase);
+    };
+    let start = grid.frequencies()[..n].partition_point(|&f| scale.value * f < start);
+    let (inspiral, ringdown) = scratch.split_at_mut(start);
+    fill_polar(inspiral, 0, mprime, epsilon, amplitude_phase);
+    extra.clear();
+    extra.resize(ringdown.len(), Complex::new(0.0, 0.0));
+    let m = mprime as f64;
+    for (k, (first, second)) in ringdown.iter_mut().zip(extra.iter_mut()).enumerate() {
+        let i = start + k;
+        let powers = grid.powers(scale, i);
+        let (lin, [(a1, phi1), (a2, phi2)]) =
+            mode.mixing_ringdown_terms(&UsefulPowers::from_grid(&powers));
+        let shift = m * epsilon[i] - lin;
+        *first = Complex::new(0.5 * amp0 * a1, shift - phi1);
+        *second = Complex::new(0.5 * amp0 * a2, shift - phi2);
+    }
+    fastmath::polar_to_complex_conj(scratch);
+    fastmath::polar_to_complex_conj(extra);
+    let [c1, c2] = mode.mixing_factors();
+    for (h, second) in scratch[start..].iter_mut().zip(extra.iter()) {
+        *h = c1 * *h + c2 * second;
+    }
+}
+
+/// Add the co-precessing mode `(l, -m')`, `h = exp(-i m' epsilon) h_{l,-m'}
+/// / 2` from [`coprecessing_mode`], to the polarisations: twisted up with
+/// the Wigner-d matrices and the spherical harmonics `ylm` as in
+/// `IMRPhenomXPHMTwistUp` (`hplus`, `hcross` at least as long as `h`).
 pub(crate) fn add_twisted_mode(
     ell: u32,
     mprime: u32,
     ylm: &[f64],
-    angles: &AngleArrays,
     twist: &TwistArrays,
-    scratch: &mut [Complex<f64>],
-    amplitude_phase: impl Fn(usize) -> (f64, f64),
+    h: &[Complex<f64>],
     hplus: &mut [Complex<f64>],
     hcross: &mut [Complex<f64>],
 ) {
-    let n = scratch.len();
-    let m = mprime as f64;
-    // stored as (A / 2, m' epsilon - phi) for the vectorised conversion
-    for (i, (value, &epsilon)) in scratch.iter_mut().zip(&angles.epsilon[..n]).enumerate() {
-        let (amplitude, phase) = amplitude_phase(i);
-        *value = Complex::new(0.5 * amplitude, m * epsilon - phase);
-    }
-    fastmath::polar_to_complex_conj(scratch);
+    let n = h.len();
     let rotation = &twist.rotation[..n];
     let half = &twist.half_angles[..n];
     let (hplus, hcross) = (&mut hplus[..n], &mut hcross[..n]);
     match (ell, mprime) {
-        (2, 2) => twist_up::<2, 2>(ylm, scratch, rotation, half, hplus, hcross),
-        (2, 1) => twist_up::<2, 1>(ylm, scratch, rotation, half, hplus, hcross),
-        (3, 3) => twist_up::<3, 3>(ylm, scratch, rotation, half, hplus, hcross),
-        (3, 2) => twist_up::<3, 2>(ylm, scratch, rotation, half, hplus, hcross),
-        (4, 4) => twist_up::<4, 4>(ylm, scratch, rotation, half, hplus, hcross),
+        (2, 2) => twist_up::<2, 2>(ylm, h, rotation, half, hplus, hcross),
+        (2, 1) => twist_up::<2, 1>(ylm, h, rotation, half, hplus, hcross),
+        (3, 3) => twist_up::<3, 3>(ylm, h, rotation, half, hplus, hcross),
+        (3, 2) => twist_up::<3, 2>(ylm, h, rotation, half, hplus, hcross),
+        (4, 4) => twist_up::<4, 4>(ylm, h, rotation, half, hplus, hcross),
         _ => unreachable!("mode ({ell},{mprime}) is not twisted up"),
     }
 }

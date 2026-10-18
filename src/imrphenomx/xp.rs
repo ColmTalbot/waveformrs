@@ -11,7 +11,8 @@ use crate::grid::{FrequencyGrid, ScalePowers};
 use crate::imrphenomx::internals::{hz_to_mf, IMRPhenomXError, UsefulPowers, WaveformStruct};
 use crate::imrphenomx::phase::phase_22;
 use crate::imrphenomx::precessing_grid::{
-    add_twisted_mode, angles_with_reuse, rotate_polarizations, AngleArrays, TwistArrays,
+    add_twisted_mode, angles_with_reuse, coprecessing_mode, rotate_polarizations, AngleArrays,
+    TwistArrays,
 };
 use crate::imrphenomx::precession::{PrecessingBinary, PrecessionStruct, PrecessionVersion};
 use crate::imrphenomx::spintaylor_angles::{
@@ -298,27 +299,18 @@ impl Setup {
         let zero = Complex::new(0.0, 0.0);
         hplus.fill(zero);
         hcross.fill(zero);
-        let mut scratch = vec![zero; n];
+        let mut h22 = vec![zero; n];
         let scale = ScalePowers::new(wf.m_sec);
-        add_twisted_mode(
-            2,
-            2,
-            &prec.ylm.y2,
-            &angles,
-            &twist,
-            &mut scratch,
-            |i| {
-                let powers = grid.powers(&scale, i);
-                let mf = powers.itself;
-                let powers = UsefulPowers::from_grid(&powers);
-                (
-                    xas.amplitude_22_full(mf, &powers),
-                    xas.phase_22_full(mf, &powers, phif_ref),
-                )
-            },
-            hplus,
-            hcross,
-        );
+        coprecessing_mode(&mut h22, 2, &angles.epsilon, |i| {
+            let powers = grid.powers(&scale, i);
+            let mf = powers.itself;
+            let powers = UsefulPowers::from_grid(&powers);
+            (
+                xas.amplitude_22_full(mf, &powers),
+                xas.phase_22_full(mf, &powers, phif_ref),
+            )
+        });
+        add_twisted_mode(2, 2, &prec.ylm.y2, &twist, &h22, hplus, hcross);
         rotate_polarizations(prec.zeta_polarization, &mut hplus[..n], &mut hcross[..n]);
         Ok(())
     }

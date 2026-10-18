@@ -13,7 +13,8 @@ use crate::grid::{FrequencyGrid, ScalePowers};
 use crate::imrphenomx::internals::{hz_to_mf, IMRPhenomXError, UsefulPowers, WaveformStruct};
 use crate::imrphenomx::phase::PhaseCoefficients;
 use crate::imrphenomx::precessing_grid::{
-    add_twisted_mode, angles_with_reuse, rotate_polarizations, AngleArrays, TwistArrays,
+    add_twisted_mode, angles_with_reuse, coprecessing_mode_generator, rotate_polarizations,
+    AngleArrays, TwistArrays,
 };
 use crate::imrphenomx::precession::{
     mf_to_hz, PrecessingBinary, PrecessionStruct, PrecessionVersion,
@@ -559,29 +560,26 @@ impl Setup {
         let zero = Complex::new(0.0, 0.0);
         hplus.fill(zero);
         hcross.fill(zero);
-        let mut scratch = vec![zero; n];
+        let mut h = vec![zero; n];
+        let mut extra = Vec::new();
         let scale = ScalePowers::new(wf.m_sec);
         for mode in &modes {
             if mode.generator.vanishes() {
                 continue;
             }
             let emm = mode.emm as usize;
-            add_twisted_mode(
-                mode.ell,
+            coprecessing_mode_generator(
+                &mut h,
+                &mut extra,
                 mode.emm,
-                harmonics(prec, mode.ell),
-                angles[emm].as_ref().expect("angles of m'"),
-                twists[emm].as_ref().expect("twist of m'"),
-                &mut scratch,
-                |i| {
-                    let powers = grid.powers(&scale, i);
-                    let mf = powers.itself;
-                    mode.generator
-                        .amplitude_phase(mf, &UsefulPowers::from_grid(&powers))
-                },
-                hplus,
-                hcross,
+                &angles[emm].as_ref().expect("angles of m'").epsilon,
+                &mode.generator,
+                grid,
+                &scale,
             );
+            let twist = twists[emm].as_ref().expect("twist of m'");
+            let ylm = harmonics(prec, mode.ell);
+            add_twisted_mode(mode.ell, mode.emm, ylm, twist, &h, hplus, hcross);
         }
         rotate_polarizations(prec.zeta_polarization, &mut hplus[..n], &mut hcross[..n]);
         Ok(())

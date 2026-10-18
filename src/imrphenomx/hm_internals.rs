@@ -443,6 +443,56 @@ impl HMMode {
         self.rotate(powers, wf22r)
     }
 
+    /// For the grid paths: the frequency from which both the amplitude and
+    /// the phase of the (3,2) mode come from the spheroidal-to-spherical
+    /// rotation (`None` without mode mixing).
+    pub(crate) fn mixing_ringdown_start(&self) -> Option<f64> {
+        self.wfhm.mixing_on.then(|| {
+            let (amp, phase) = (&self.amp, &self.phase);
+            amp.f_amp_match_in
+                .max(amp.f_amp_match_im)
+                .max(phase.f_phase_match_in)
+                .max(phase.f_phase_match_im)
+        })
+    }
+
+    /// For the grid paths, from [`Self::mixing_ringdown_start`] on: the
+    /// mode of [`Self::amplitude_phase`] (without `amp0`, with no 22 mode to
+    /// recycle) is `exp(i lin) (c_1 A_1 exp(i phi_1) + c_2 A_2 exp(i phi_2))`
+    /// with the coefficients `c_k` of [`Self::mixing_factors`]: returns
+    /// `lin` and the terms `(A_k, phi_k)` of
+    /// [`Self::spheroidal_to_spherical`] (the rescaled 22 ringdown and the
+    /// spheroidal (3,2)), which avoids the `atan2`, `hypot` and complex
+    /// exponentials.
+    #[inline]
+    pub(crate) fn mixing_ringdown_terms(&self, powers: &UsefulPowers) -> (f64, [(f64, f64); 2]) {
+        let mix = self
+            .mixing
+            .as_ref()
+            .expect("IMRPhenomXHM: spheroidal rotation without mixing data");
+        let mf = powers.itself;
+        let amp22 = ringdown::amp_22_ansatz_exact(mf, mix.f_ring22, mix.f_damp22, &mix.amp22);
+        let phi22 = fma(
+            mix.inveta,
+            phase_22(mf, powers, &mix.phase22),
+            self.wfhm.timeshift * mf,
+        ) + self.wfhm.phaseshift
+            + self.wfhm.phiref22;
+        let rescale = self.wfhm.amp_norm * powers.m_seven_sixths;
+        let amplm = hm_ringdown::amp_ansatz(powers, &self.wfhm, &self.amp);
+        let philm = hm_ringdown::phase_ansatz_int(mf, powers, &self.wfhm, &self.phase);
+        let p = &self.phase;
+        let lin = fma(p.c1_rd, mf, p.c_rd) + p.deltaphi_lm;
+        (lin, [(amp22 * rescale, phi22), (amplm, philm)])
+    }
+
+    /// The coefficients `conj(a322)`, `conj(a323)` of the 22 ringdown and
+    /// the spheroidal (3,2) in the spherical (3,2) mode.
+    pub(crate) fn mixing_factors(&self) -> [Complex<f64>; 2] {
+        let [_, _, mix2, mix3] = self.wfhm.mixing_coeffs;
+        [mix2.conj(), mix3.conj()]
+    }
+
     /// `conj(a322) h22 + conj(a323) h32_spheroidal`, with the complex
     /// products expanded as clang does (no contraction).
     #[inline]

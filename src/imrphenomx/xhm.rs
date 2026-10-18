@@ -569,6 +569,17 @@ impl ModeGenerator {
         }
     }
 
+    /// For the (3,2) mode with mode mixing: the mode, `(-1)^l amp0` and the
+    /// frequency from which [`HMMode::mixing_ringdown_terms`] applies.
+    pub(crate) fn mixing_ringdown(&self) -> Option<(&HMMode, f64, f64)> {
+        match self {
+            Self::HigherMode { mode, amp0 } => mode
+                .mixing_ringdown_start()
+                .map(|start| (&**mode, *amp0, start)),
+            Self::Xas22 { .. } => None,
+        }
+    }
+
     /// Whether the mode vanishes identically (odd modes of equal-mass,
     /// equal-spin binaries).
     pub(crate) fn vanishes(&self) -> bool {
