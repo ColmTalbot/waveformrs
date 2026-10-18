@@ -525,8 +525,11 @@ impl<'a> NRSur7dq4<'a> {
     fn coorbital_modes(&self, ws: &mut NRSurWorkspace, q: f64) {
         let n = ws.n_coorb;
         let params = MassRatioParameters::nrsur7dq4(q);
-        ws.h_coorb_re.fill(0.0);
-        ws.h_coorb_im.fill(0.0);
+        // modes that are not evaluated stay zero
+        if self.active.iter().any(|&a| !a) {
+            ws.h_coorb_re.fill(0.0);
+            ws.h_coorb_im.fill(0.0);
+        }
         let NRSurWorkspace {
             series,
             nodes,
@@ -840,8 +843,17 @@ fn eval_data_piece(
         nodes.push(fit.eval(&params.table(&x)));
     }
     let out = &mut out[..n];
-    out.fill(0.0);
-    for (&a, row) in nodes.iter().zip(data.basis.chunks_exact(n)) {
+    let mut rows = nodes.iter().zip(data.basis.chunks_exact(n));
+    // y = 0 (beta = 0), then y += x_j A_j column by column
+    match rows.next() {
+        Some((&a, row)) => {
+            for (o, &b) in out.iter_mut().zip(row) {
+                *o = fma(a, b, 0.0);
+            }
+        }
+        None => out.fill(0.0),
+    }
+    for (&a, row) in rows {
         for (o, &b) in out.iter_mut().zip(row) {
             *o = fma(a, b, *o);
         }

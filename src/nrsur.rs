@@ -47,6 +47,7 @@ mod dynamics;
 mod fit;
 mod frames;
 mod model;
+mod simd;
 mod spline;
 mod trig;
 

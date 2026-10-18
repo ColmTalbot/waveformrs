@@ -193,28 +193,16 @@ impl<'d> Dynamics<'d> {
 
     /// `PrecessingNRSur_get_omega`: the orbital frequency fit at a node.
     pub(crate) fn omega(&self, node: usize, y: &State) -> f64 {
-        self.data.ds_nodes[node].omega.eval(&self.table(y).0)
+        self.data.ds_nodes[node].omega().eval(&self.table(y).0)
     }
 
     /// `PrecessingNRSur_get_time_deriv_from_index` (with
     /// `PrecessingNRSur_assemble_dydt`) for the fits of `node`.
     fn deriv_at(&self, node: &DynamicsNode, y: &State) -> State {
         let (table, sp, cp) = self.table(y);
-        let omega = node.omega.eval(&table);
-        let oc = [
-            node.omega_copr[0].eval(&table),
-            node.omega_copr[1].eval(&table),
-        ];
-        let ca = [
-            node.chi_a_dot[0].eval(&table),
-            node.chi_a_dot[1].eval(&table),
-            node.chi_a_dot[2].eval(&table),
-        ];
-        let cb = [
-            node.chi_b_dot[0].eval(&table),
-            node.chi_b_dot[1].eval(&table),
-            node.chi_b_dot[2].eval(&table),
-        ];
+        let v: [f64; 9] = std::array::from_fn(|i| node.fits[i].eval(&table));
+        let omega = v[0];
+        let (oc, ca, cb) = ([v[1], v[2]], [v[3], v[4], v[5]], [v[6], v[7], v[8]]);
         let oqx = fms(oc[0], cp, oc[1] * sp);
         let oqy = fma(oc[0], sp, oc[1] * cp);
         [

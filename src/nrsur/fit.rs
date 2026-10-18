@@ -16,12 +16,24 @@ use crate::spintaylor::fp::{fma, fnms};
 /// parameter, 3 of each of the 6 spin parameters.
 pub(crate) const N_POWERS: usize = 22;
 
+/// Number of factors per term kept by the compact representation.
+const COMPACT: usize = 4;
+/// Index of an entry of the power table that is exactly one (`x_1^0`).
+const ONE: u8 = 1;
+
 /// A scalar fit with its basis functions as indices into a [`PowerTable`].
+///
+/// Order-zero factors are exactly one (`ipow(x, 0) = 1.0`) and multiplying
+/// by them is exact, so each term keeps only its other factors, in LAL's
+/// order, padded with ones. Terms have at most four such factors except for
+/// two terms of the NRSur7dq4 data; fits with longer terms keep all seven.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct Fit {
     coefs: Vec<f64>,
-    /// `7 * order + j` for the 7 parameters `j` of each term.
-    powers: Vec<[u8; 7]>,
+    /// The non-trivial factors of each term (`7 * order + j`).
+    compact: Vec<[u8; COMPACT]>,
+    /// All factors, if some term has more than [`COMPACT`] non-trivial ones.
+    full: Vec<[u8; 7]>,
 }
 
 impl Fit {
@@ -32,50 +44,93 @@ impl Fit {
         if orders.len() != 7 * coefs.len() {
             return None;
         }
-        let powers = orders
-            .chunks_exact(7)
-            .map(|row| {
-                let mut out = [0u8; 7];
-                for (j, (&order, out)) in row.iter().zip(&mut out).enumerate() {
-                    let index = 7 * order + j as i64;
-                    if order < 0 || index >= N_POWERS as i64 {
-                        return None;
-                    }
-                    *out = index as u8;
+        let mut full = Vec::with_capacity(coefs.len());
+        let mut compact = Vec::with_capacity(coefs.len());
+        let mut fits_compact = true;
+        for row in orders.chunks_exact(7) {
+            let mut all = [0u8; 7];
+            let mut short = [ONE; COMPACT];
+            let mut n = 0;
+            for (j, (&order, out)) in row.iter().zip(&mut all).enumerate() {
+                let index = 7 * order + j as i64;
+                if order < 0 || index >= N_POWERS as i64 {
+                    return None;
                 }
-                Some(out)
-            })
-            .collect::<Option<Vec<_>>>()?;
-        Some(Self { coefs, powers })
+                *out = index as u8;
+                if order > 0 {
+                    if n < COMPACT {
+                        short[n] = index as u8;
+                    }
+                    n += 1;
+                }
+            }
+            fits_compact &= n <= COMPACT;
+            full.push(all);
+            compact.push(short);
+        }
+        if fits_compact {
+            full = Vec::new();
+        } else {
+            compact = Vec::new();
+        }
+        Some(Self {
+            coefs,
+            compact,
+            full,
+        })
     }
 
     pub(crate) fn len(&self) -> usize {
         self.coefs.len()
     }
 
+    /// Continue the sum of a compact fit from term `start` with `res`.
+    #[inline(always)]
+    fn eval_compact_from(&self, start: usize, mut res: f64, x: &[f64; TABLE_SIZE]) -> f64 {
+        for (&c, p) in self.coefs[start..].iter().zip(&self.compact[start..]) {
+            res = fma(c, compact_product(x, p), res);
+        }
+        res
+    }
+
     /// `NRSur7dq4_eval_fit` with the powers of the parameters tabulated.
     #[inline]
     pub(crate) fn eval(&self, table: &PowerTable) -> f64 {
         let x = &table.0;
+        if self.full.is_empty() {
+            return self.eval_compact_from(0, 0.0, x);
+        }
         let mut res = 0.0;
-        for (&c, p) in self.coefs.iter().zip(&self.powers) {
-            let mut prod = x[p[0] as usize];
-            prod *= x[p[1] as usize];
-            prod *= x[p[2] as usize];
-            prod *= x[p[3] as usize];
-            prod *= x[p[4] as usize];
-            prod *= x[p[5] as usize];
-            prod *= x[p[6] as usize];
+        for (&c, p) in self.coefs.iter().zip(&self.full) {
+            let mut prod = x[p[0] as usize & INDEX_MASK];
+            for &i in &p[1..] {
+                prod *= x[i as usize & INDEX_MASK];
+            }
             res = fma(c, prod, res);
         }
         res
     }
 }
 
+/// The product of the factors of a compact term, in order.
+#[inline(always)]
+fn compact_product(x: &[f64; TABLE_SIZE], p: &[u8; COMPACT]) -> f64 {
+    let mut prod = x[p[0] as usize & INDEX_MASK];
+    prod *= x[p[1] as usize & INDEX_MASK];
+    prod *= x[p[2] as usize & INDEX_MASK];
+    prod *= x[p[3] as usize & INDEX_MASK];
+    prod
+}
+
+/// Size of the power table in memory: [`N_POWERS`] rounded up to a power
+/// of two, so that masked indices need no bounds checks.
+const TABLE_SIZE: usize = 32;
+const INDEX_MASK: usize = TABLE_SIZE - 1;
+
 /// The powers `x_powers[i] = ipow(p[i % 7], i / 7)` of the 7 fit parameters
 /// (`x_powers` in `NRSur7dq4_eval_fit`).
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct PowerTable(pub(crate) [f64; N_POWERS]);
+pub(crate) struct PowerTable(pub(crate) [f64; TABLE_SIZE]);
 
 /// The parts of the NRSur7dq4 fit parameters that depend only on the mass
 /// ratio: `q_fit` and its powers, and the effective-spin coefficients.
@@ -121,7 +176,7 @@ impl MassRatioParameters {
             fnms(self.chi_hat_slope, chi1z + chi2z, chi_wt_avg) / self.chi_hat_denominator;
         let chi_a = (chi1z - chi2z) / 2.0;
         let p = [x[1], x[2], chi_hat, x[4], x[5], chi_a];
-        let mut t = [0.0; N_POWERS];
+        let mut t = [0.0; TABLE_SIZE];
         t[0] = self.q_fit[0];
         t[7] = self.q_fit[1];
         t[14] = self.q_fit[2];
@@ -184,7 +239,18 @@ mod tests {
             2, 1, 0, 0, 1, 2, 0, //
             1, 1, 1, 1, 1, 1, 1,
         ];
+        // with all seven factors (long terms) and with the compact factors
         let fit = Fit::new(coefs.clone(), &orders).unwrap();
+        assert!(fit.compact.is_empty());
+        let short_coefs = vec![0.3, -1.2, 0.7, 1.1];
+        let short_orders = vec![
+            0, 0, 0, 0, 0, 0, 0, //
+            1, 0, 2, 1, 0, 0, 1, //
+            2, 1, 0, 0, 1, 2, 0, //
+            0, 0, 0, 2, 0, 0, 0,
+        ];
+        let short = Fit::new(short_coefs.clone(), &short_orders).unwrap();
+        assert!(short.full.is_empty());
         for x in [
             [1.0, 0.1, -0.2, 0.3, 0.4, -0.5, 0.6],
             [3.7, -0.8, 0.05, -0.33, 0.0, 0.71, -0.2],
@@ -194,6 +260,10 @@ mod tests {
             assert_eq!(
                 fit.eval(&table).to_bits(),
                 lal_eval_fit(&coefs, &orders, &x).to_bits()
+            );
+            assert_eq!(
+                short.eval(&table).to_bits(),
+                lal_eval_fit(&short_coefs, &short_orders, &x).to_bits()
             );
         }
     }

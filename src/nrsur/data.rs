@@ -23,15 +23,16 @@ pub(crate) const fn mode_index(ell: usize, m: i32) -> usize {
 /// The fits at one dynamics node (`DynamicsNodeFitData`).
 #[derive(Clone, Debug)]
 pub(crate) struct DynamicsNode {
-    /// Orbital angular frequency.
-    pub(crate) omega: Fit,
-    /// x, y components of `Omega^coorb`.
-    pub(crate) omega_copr: [Fit; 2],
-    /// Coorbital components of the time derivative of chiA in the
-    /// coprecessing frame.
-    pub(crate) chi_a_dot: [Fit; 3],
-    /// The same for chiB.
-    pub(crate) chi_b_dot: [Fit; 3],
+    /// The orbital angular frequency, the x and y components of
+    /// `Omega^coorb`, and the coorbital components of the time derivatives
+    /// of chiA and chiB in the coprecessing frame.
+    pub(crate) fits: [Fit; 9],
+}
+
+impl DynamicsNode {
+    pub(crate) fn omega(&self) -> &Fit {
+        &self.fits[0]
+    }
 }
 
 /// One real component of the coorbital waveform (`WaveformDataPiece`).
@@ -159,23 +160,22 @@ fn load_fit(group: &hdf5::Group, name: &str) -> Result<Fit, NRSurError> {
 }
 
 fn load_dynamics_node(group: &hdf5::Group) -> Result<DynamicsNode, NRSurError> {
-    Ok(DynamicsNode {
-        omega: load_fit(group, "omega")?,
-        omega_copr: [
-            load_fit(group, "omega_orb_0")?,
-            load_fit(group, "omega_orb_1")?,
-        ],
-        chi_a_dot: [
-            load_fit(group, "chiA_0")?,
-            load_fit(group, "chiA_1")?,
-            load_fit(group, "chiA_2")?,
-        ],
-        chi_b_dot: [
-            load_fit(group, "chiB_0")?,
-            load_fit(group, "chiB_1")?,
-            load_fit(group, "chiB_2")?,
-        ],
-    })
+    let names = [
+        "omega",
+        "omega_orb_0",
+        "omega_orb_1",
+        "chiA_0",
+        "chiA_1",
+        "chiA_2",
+        "chiB_0",
+        "chiB_1",
+        "chiB_2",
+    ];
+    let mut fits: [Fit; 9] = Default::default();
+    for (fit, name) in fits.iter_mut().zip(names) {
+        *fit = load_fit(group, name)?;
+    }
+    Ok(DynamicsNode { fits })
 }
 
 fn load_data_piece(
@@ -339,12 +339,7 @@ impl NRSur7dq4Data {
     /// The total number of fit coefficients (a measure of the cost of an
     /// evaluation).
     pub fn n_coefficients(&self) -> usize {
-        let node = |n: &DynamicsNode| {
-            n.omega.len()
-                + n.omega_copr.iter().map(Fit::len).sum::<usize>()
-                + n.chi_a_dot.iter().map(Fit::len).sum::<usize>()
-                + n.chi_b_dot.iter().map(Fit::len).sum::<usize>()
-        };
+        let node = |n: &DynamicsNode| n.fits.iter().map(Fit::len).sum::<usize>();
         let piece = |p: &DataPiece| p.fits.iter().map(Fit::len).sum::<usize>();
         self.ds_nodes
             .iter()
