@@ -1255,6 +1255,92 @@ pub(crate) fn unwrap_in_place(values: &mut [f64]) {
 mod tests {
     use super::*;
     use crate::constants::MSUN_SI;
+    use crate::imrphenomx::precession::PrecessionVersion;
+    use crate::spintaylor::SpinTaylorOrbit;
+
+    /// `IMRPhenomX_InspiralAngles_SpinTaylor` as LAL writes it: every series
+    /// of each run, joined with `appendTS` and stitched to the fine run.
+    fn reference_pn_arrays(wf: &WaveformStruct, prec: &PrecessionStruct, f_min: f64) -> PnArrays {
+        let series = |o: &SpinTaylorOrbit| -> [Vec<f64>; 13] {
+            [
+                &o.v, &o.s1_x, &o.s1_y, &o.s1_z, &o.s2_x, &o.s2_y, &o.s2_z, &o.lnhat_x, &o.lnhat_y,
+                &o.lnhat_z, &o.e1_x, &o.e1_y, &o.e1_z,
+            ]
+            .map(|s| s.clone())
+        };
+        let append_ts = |start: &[f64], end: &[f64]| {
+            let mut out = start[..start.len() - 2].to_vec();
+            out.extend_from_slice(end);
+            out.push(0.0);
+            out
+        };
+        let pi_gm = PI * (wf.m1_si + wf.m2_si) * (G_SI / C_SI) / (C_SI * C_SI);
+        let binary = SpinTaylorT4::new(wf.m1_si, wf.m2_si, prec.chi1, prec.chi2);
+        let f_cut = mf_to_hz(prec.f_ring_aligned + 8. * prec.f_damp_aligned, wf.m_tot);
+        let dt = 0.5 * (10.0f32 as f64) / f_cut;
+        let coarse = if (wf.f_ref - f_min).abs() < REAL4_EPS {
+            series(&binary.evolve_orbit(dt, f_min, f_cut).unwrap())
+        } else {
+            let backward = series(&binary.evolve_orbit(dt, wf.f_ref, f_min - 0.5).unwrap());
+            let forward = series(&binary.evolve_orbit(dt, wf.f_ref, f_cut).unwrap());
+            std::array::from_fn(|k| append_ts(&backward[k], &forward[k]))
+        };
+        let len_low = coarse[0].len();
+        let copy_length = len_low - 1 - 9.min(len_low - 1);
+        let at = |k: usize| coarse[k][copy_length];
+        let fine = SpinTaylorT4::new(
+            wf.m1_si,
+            wf.m2_si,
+            [at(1), at(2), at(3)],
+            [at(4), at(5), at(6)],
+        )
+        .with_orientation([at(7), at(8), at(9)], [at(10), at(11), at(12)]);
+        let fine = series(
+            &fine
+                .evolve_orbit(0.5 / f_cut, at(0).powf(3.) / pi_gm, f_cut)
+                .unwrap(),
+        );
+        let stitch = |k: usize| [&coarse[k][..copy_length], &fine[k][..]].concat();
+        let last = |k: usize| *fine[k].last().unwrap();
+        PnArrays {
+            v: stitch(0),
+            lnhat: [stitch(7), stitch(8), stitch(9)],
+            s1_end: [last(1), last(2), last(3)],
+            s2_end: [last(4), last(5), last(6)],
+        }
+    }
+
+    /// The PN arrays built from the compact runs are LAL's, for a backward
+    /// and a forward coarse run and for a single forward one.
+    #[test]
+    fn pn_arrays_match_the_full_series() {
+        let (m1, m2) = (1.8, 1.3);
+        let (chi1, chi2) = ([0.3, 0.1, 0.05], [-0.1, 0.2, 0.02]);
+        let mut wf = WaveformStruct::new(
+            m1, m2, chi1[2], chi2[2], 0.125, 30.0, 0.4, 25.0, 1024.0, 1.0, 0.0,
+        )
+        .unwrap();
+        let prec = PrecessionStruct::new(
+            &mut wf,
+            m1 * MSUN_SI,
+            m2 * MSUN_SI,
+            chi1,
+            chi2,
+            PrecessionVersion::SpinTaylor,
+            2,
+            2,
+        )
+        .unwrap();
+        for f_min in [25.0, wf.f_ref] {
+            let arrays = inspiral_angles_spintaylor(&wf, &prec, f_min).unwrap();
+            let reference = reference_pn_arrays(&wf, &prec, f_min);
+            assert!(arrays.len() > 1000);
+            assert_eq!(arrays.v, reference.v);
+            assert_eq!(arrays.lnhat, reference.lnhat);
+            assert_eq!(arrays.s1_end, reference.s1_end);
+            assert_eq!(arrays.s2_end, reference.s2_end);
+        }
+    }
 
     /// A backward and a forward run recorded in [`CompactSamples`] give the
     /// same `v`, `LNhat` and full states as `SpinTaylorT4::evolve_orbit`,
