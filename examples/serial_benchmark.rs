@@ -161,7 +161,25 @@ fn generate_on_grid(
                 })
                 .is_ok(),
         ),
+        n if n.starts_with("IMRPhenomXPHM") => Some(
+            IMRPhenomXPHM::with_version(&draw.binary(), precession_version(n))
+                .and_then(|wf| wf.polarizations_on_grid(grid, hp, hc))
+                .is_ok(),
+        ),
+        n if n.starts_with("IMRPhenomXP") => Some(
+            IMRPhenomXP::with_version(&draw.binary(), precession_version(n))
+                .and_then(|wf| wf.polarizations_on_grid(grid, hp, hc))
+                .is_ok(),
+        ),
         _ => None,
+    }
+}
+
+fn precession_version(name: &str) -> PrecessionVersion {
+    match name {
+        n if n.ends_with("(102)") => PrecessionVersion::Nnlo,
+        n if n.ends_with("(223)") => PrecessionVersion::Msa,
+        _ => PrecessionVersion::SpinTaylor,
     }
 }
 
