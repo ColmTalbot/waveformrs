@@ -48,6 +48,21 @@ MODELS = [
     ("IMRPhenomXPHM_NNLO", "IMRPhenomXPHM (102)", "IMRPhenomXPHM, NNLO (102)", "new"),
     ("IMRPhenomXPHM_MSA", "IMRPhenomXPHM (223)", "IMRPhenomXPHM, MSA (223)", "new"),
     ("IMRPhenomXPHM", "IMRPhenomXPHM (320)", "IMRPhenomXPHM, SpinTaylor (320)", "new"),
+    ("NRSur7dq4", "NRSur7dq4", "NRSur7dq4 (time domain)", "new"),
+]
+# Rows of the serial-evaluation table: (serial benchmark name, label)
+SERIAL = [
+    ("TaylorF2", "TaylorF2"),
+    ("IMRPhenomD", "IMRPhenomD"),
+    ("IMRPhenomXAS", "IMRPhenomXAS"),
+    ("IMRPhenomXHM", "IMRPhenomXHM"),
+    ("IMRPhenomXP (102)", "IMRPhenomXP, NNLO (102)"),
+    ("IMRPhenomXP (223)", "IMRPhenomXP, MSA (223)"),
+    ("IMRPhenomXP (320)", "IMRPhenomXP, SpinTaylor (320)"),
+    ("IMRPhenomXPHM (102)", "IMRPhenomXPHM, NNLO (102)"),
+    ("IMRPhenomXPHM (223)", "IMRPhenomXPHM, MSA (223)"),
+    ("IMRPhenomXPHM (320)", "IMRPhenomXPHM, SpinTaylor (320)"),
+    ("NRSur7dq4", "NRSur7dq4 (time domain)"),
 ]
 STATUS = {
     "fixed": '<span class="chip warn">fixed</span>',
@@ -73,6 +88,10 @@ TEST_LABELS = {
     "imrphenomxphm_uniform_matches_lalsimulation": "IMRPhenomXPHM, uniform grids",
     "imrphenomxphm_mode_arrays_match_lalsimulation": "IMRPhenomXPHM, restricted mode arrays",
     "spintaylor_t4_matches_lalsimulation": "SpinTaylorT4 orbit evolutions",
+    "nrsur7dq4_polarizations_match_lalsimulation": "NRSur7dq4 polarizations (ChooseTDWaveform)",
+    "nrsur7dq4_modes_match_lalsimulation": "NRSur7dq4 modes (ChooseTDModes)",
+    "nrsur7dq4_dynamics_match_lalsimulation": "NRSur7dq4 dynamics",
+    "hdf5_reader_matches_h5py": "HDF5 reader against h5py (datasets)",
 }
 
 
@@ -99,7 +118,7 @@ def factor(value):
 def run_tests():
     """Parse the per-case output of the LALSimulation comparison tests."""
     suites = dict()
-    for test in ["lalsimulation", "spintaylor"]:
+    for test in ["lalsimulation", "spintaylor", "nrsur"]:
         output = subprocess.run(
             ["cargo", "test", "--release", "--test", test, "--", "--nocapture", "--test-threads=1"],
             cwd=ROOT, capture_output=True, text=True, check=True,
@@ -113,8 +132,12 @@ def run_tests():
                 line = match.group(2)
             if current is None:
                 continue
-            err = re.search(r"max rel(?:ative)? err(?:or)? ([0-9.eE+-]+)", line)
+            err = re.search(r"max (?:rel(?:ative)?|abs) err(?:or)? ([0-9.eE+-]+)", line)
             angle = re.search(r"max \|angle difference\| ([0-9.eE+-]+)", line)
+            datasets = re.search(r"([0-9]+) datasets match h5py", line)
+            if datasets:
+                suites[current]["n"] += int(datasets.group(1))
+                continue
             mismatch = re.search(r"mismatch ([0-9.eE+-]+)", line)
             if err or angle:
                 value = float((err or angle).group(1))
@@ -268,7 +291,66 @@ def build(args):
         rows.append(f"<tr><td class=\"mono\">{sha}</td><td>{chip}</td><td>{text}</td></tr>")
     values["commit_rows"] = "\n".join(rows)
 
+    # NRSur7dq4
+    values["nrsur_speedup"] = factor(lal_seq["NRSur7dq4"] / rust["NRSur7dq4"])
+    values["hdf5_lines"] = f"{len((ROOT / 'src' / 'hdf5.rs').read_text().splitlines()):,}"
+    nrsur = json.loads((DATA / "nrsur_timings.json").read_text())
+    extrinsic = [c["extrinsic"] for c in nrsur["rust"]["configurations"]]
+    values["nrsur_extrinsic"] = f"{min(extrinsic) * 1e3:.2f}–{max(extrinsic) * 1e3:.2f} ms"
+    values["nrsur_extrinsic_range"] = values["nrsur_extrinsic"]
+    values["nrsur_load"] = duration(nrsur["rust"]["load_cached_file"])
+    rows = []
+    for r, l in zip(nrsur["rust"]["configurations"], nrsur["lal"]["configurations"]):
+        rows.append(
+            f"<tr><td class=\"num\">{r['total_mass']:g}</td><td class=\"num\">{r['sampling_rate']:g}</td>"
+            f"<td class=\"num\">{r['f_min']:g}</td><td class=\"num\">{r['samples']:,}</td>"
+            f"<td class=\"num\">{duration(l['polarizations'])}</td><td class=\"num\">{duration(r['fresh'])}</td>"
+            f"<td class=\"num\">{duration(r['reused'])}</td><td class=\"num\">{duration(r['extrinsic'])}</td>"
+            f"<td class=\"num\">{duration(l['modes'])}</td><td class=\"num\">{duration(r['modes'])}</td></tr>"
+        )
+    values["nrsur_rows"] = "\n".join(rows)
+
+    # many waveforms in sequence
+    serial = json.loads((DATA / "serial_timings.json").read_text())
+    values["serial_n"] = str(serial["n_draws"])
+    values["serial_nf"] = f"{serial['n_frequencies']:,}"
+    values["serial_overhead"] = duration(serial["lal_python_call_overhead"])
+    rows, grid_speedups = [], []
+    for name, label in SERIAL:
+        if name not in serial["rust"]:
+            continue
+        r, l = serial["rust"][name], serial["lal"][name]["seconds"]
+        grid = r.get("grid_seconds")
+        if grid:
+            grid_speedups.append(l / grid)
+        rows.append(
+            f"<tr><td>{label}</td><td class=\"num\">{duration(r['seconds'])}</td>"
+            f"<td class=\"num\">{duration(grid) if grid else '–'}</td><td class=\"num\">{duration(l)}</td>"
+            f"<td class=\"num\">{factor(l / r['seconds'])}</td>"
+            f"<td class=\"num\">{factor(l / grid) if grid else '–'}</td></tr>"
+        )
+    values["serial_rows"] = "\n".join(rows)
+    values["serial_best_range"] = f"{factor(min(grid_speedups))}–{factor(max(grid_speedups))}"
+    xp = [serial["rust"].get(n, {}).get("grid_seconds") for n, _ in SERIAL if n.startswith("IMRPhenomXP")]
+    if all(xp):
+        speeds = [serial["rust"][n]["seconds"] / serial["rust"][n]["grid_seconds"]
+                  for n, _ in SERIAL if n.startswith("IMRPhenomXP")]
+        values["xp_grid_text"] = (
+            f"Their grid paths are {factor(min(speeds))}–{factor(max(speeds))} faster than the "
+            "per-call paths. The Euler angles are evaluated once per frequency and m′; the SpinTaylor "
+            "versions also pay for the PN integration and the γ grid, which depend on the binary "
+            "and not on the frequencies."
+        )
+    else:
+        values["xp_grid_text"] = (
+            "They have no grid path yet: nearly all their time is spent per frequency, in the "
+            "Euler angles (most of all the MSA angles) and in the co-precessing modes."
+        )
+
     page = (HERE / "template.html").read_text()
+    sections = re.findall(r'<section id="([a-z]+)">', page)
+    for number, section in enumerate(sections, start=1):
+        page = page.replace("{{sec:" + section + "}}", str(number))
     for key, value in values.items():
         page = page.replace("{{" + key + "}}", value)
     missing = re.findall(r"\{\{(\w+)\}\}", page)
