@@ -6,17 +6,20 @@
 //!
 //! The denominators of these rational fits suffer from strong cancellation
 //! for large spins, which amplifies rounding differences by up to ~1e4. The
-//! sums are therefore accumulated with fused multiply-adds, matching the
-//! FMA-contracted LALSimulation builds (clang on arm64) to the last bit.
+//! sums are therefore accumulated with `fp::fma`, fused where the target
+//! LALSimulation build contracts them (arm64), which matches LAL to the last
+//! bit.
 
 /// Accumulate `terms[0] + sum_i coefficients[i] * powers[i]` left to right
-/// with fused multiply-adds.
+/// with (where LAL fuses them) fused multiply-adds.
 #[inline]
 fn fma_sum<const N: usize>(constant: f64, coefficients: [f64; N], powers: [f64; N]) -> f64 {
     coefficients
         .iter()
         .zip(powers)
-        .fold(constant, |acc, (c, x)| c.mul_add(x, acc))
+        .fold(constant, |acc, (&c, x)| {
+            crate::spintaylor::fp::fma(c, x, acc)
+        })
 }
 
 /// `evaluate_QNMfit_fring22`: ringdown frequency of the (2,2) mode for

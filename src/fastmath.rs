@@ -7,11 +7,20 @@
 //! can inline it and vectorise loops over frequencies.
 //!
 //! Accuracy: the argument is reduced modulo pi/2 with a three-part
-//! Cody-Waite reduction using fused multiply-adds, exact for
-//! `|x| < 2^30 pi/2` (about 1.7e9); the kernels are the fdlibm
-//! `__kernel_sin`/`__kernel_cos` polynomials (errors below one ulp on
-//! `[-pi/4, pi/4]`). The results agree with the C library to a few ulp.
-//! Larger arguments fall back to the standard library.
+//! Cody-Waite reduction whose first step is exact for `|x| < 2^30 pi/2`
+//! (about 1.7e9); the kernels are the fdlibm `__kernel_sin`/`__kernel_cos`
+//! polynomials (errors below one ulp on `[-pi/4, pi/4]`). The results agree
+//! with the C library to a few ulp. Larger arguments fall back to the
+//! standard library.
+//!
+//! Targets without a fused multiply-add instruction (baseline x86-64, i.e.
+//! without `-C target-feature=+fma`) would turn `f64::mul_add` into a call
+//! of the C library's software `fma`, which is slow and stops the loops
+//! from vectorising. There the reduction splits the quadrant number instead
+//! so that every product is exact (see [`reduce_pio2`]), and the polynomial
+//! steps use a separately rounded multiply and add. Rounding to an integer
+//! uses the `1.5 * 2^52` shift off aarch64, which (unlike `round_ties_even`
+//! without SSE4.1, and the conversion to `i64` without AVX-512) vectorises.
 
 // The constants are quoted with fdlibm's published digits.
 #![allow(clippy::excessive_precision)]
@@ -42,6 +51,72 @@ const C6: f64 = -1.135_964_755_778_819_482_94e-11;
 /// Largest argument handled by the inlined reduction.
 const REDUCTION_LIMIT: f64 = 1.0e9;
 
+/// Whether `f64::mul_add` is a single instruction on this target. The
+/// functions below take this as their `FUSED` parameter (the tests check
+/// both variants on every target).
+const HARDWARE_FMA: bool = cfg!(any(target_arch = "aarch64", target_feature = "fma"));
+
+/// `a * b + c`, fused or separately rounded (only used where both are
+/// accurate enough).
+#[inline(always)]
+fn mul_add<const FUSED: bool>(a: f64, b: f64, c: f64) -> f64 {
+    if FUSED {
+        a.mul_add(b, c)
+    } else {
+        a * b + c
+    }
+}
+
+/// `1.5 * 2^52`: for `|y| < 2^51`, `y + SHIFT` rounds `y` to the nearest
+/// integer (ties to even) and holds that integer in its low mantissa bits.
+const SHIFT: f64 = 6_755_399_441_055_744.0;
+
+/// `y` rounded to the nearest integer, ties to even, as an `f64` and as the
+/// low bits of an integer (two's complement; the bits above the 51st are not
+/// meaningful), for `|y| < 2^51`.
+#[inline(always)]
+fn round_to_integer(y: f64) -> (f64, u64) {
+    if cfg!(target_arch = "aarch64") {
+        // frintn and fcvtzs, both vectorised
+        let k = y.round_ties_even();
+        (k, k as i64 as u64)
+    } else {
+        round_to_integer_shift(y)
+    }
+}
+
+/// [`round_to_integer`] with the `1.5 * 2^52` shift.
+#[inline(always)]
+fn round_to_integer_shift(y: f64) -> (f64, u64) {
+    let shifted = y + SHIFT;
+    (shifted - SHIFT, shifted.to_bits())
+}
+
+/// `x - k pi/2` for the integer `k = round(x 2/pi)`, `|x| < 1e9`.
+///
+/// The first step, `x - k PIO2_1`, is exact. With fused multiply-adds each
+/// step rounds once. Without them, `k` is split as `k_hi + k_lo` with `k_hi`
+/// a multiple of 2^10 (at most 20 significant bits for `|k| < 2^30`) and
+/// `|k_lo| <= 2^9`, so that the products with the 33-bit `PIO2_1` and
+/// `PIO2_2` are exact. `x - k_hi PIO2_1` is a multiple of `ulp(x)` below
+/// 2^10 in magnitude and `x - k PIO2_1` one below 1, so both differences are
+/// exact as well, and only the second step rounds twice instead of once.
+#[inline(always)]
+fn reduce_pio2<const FUSED: bool>(x: f64, k: f64) -> f64 {
+    if FUSED {
+        let r = (-k).mul_add(PIO2_1, x);
+        let r = (-k).mul_add(PIO2_2, r);
+        (-k).mul_add(PIO2_3, r)
+    } else {
+        const TWO_10: f64 = 1024.0;
+        let k_hi = round_to_integer_shift(k * (1.0 / TWO_10)).0 * TWO_10;
+        let k_lo = k - k_hi;
+        let r = (x - k_hi * PIO2_1) - k_lo * PIO2_1;
+        let r = (r - k_hi * PIO2_2) - k_lo * PIO2_2;
+        r - k * PIO2_3
+    }
+}
+
 /// `(sin(x), cos(x))`, inlined; branch-free for `|x| < 1e9`.
 #[inline(always)]
 pub(crate) fn sin_cos(x: f64) -> (f64, f64) {
@@ -54,17 +129,19 @@ pub(crate) fn sin_cos(x: f64) -> (f64, f64) {
 /// [`sin_cos`] without the range check: requires `|x| < 1e9`.
 #[inline(always)]
 fn sin_cos_reduced(x: f64) -> (f64, f64) {
-    let k = (x * FRAC_2_PI).round_ties_even();
-    let r = (-k).mul_add(PIO2_1, x);
-    let r = (-k).mul_add(PIO2_2, r);
-    let r = (-k).mul_add(PIO2_3, r);
+    sin_cos_reduced_with::<HARDWARE_FMA>(x)
+}
+
+#[inline(always)]
+fn sin_cos_reduced_with<const FUSED: bool>(x: f64) -> (f64, f64) {
+    let (k, q) = round_to_integer(x * FRAC_2_PI);
+    let r = reduce_pio2::<FUSED>(x, k);
     let (s, c) = kernel_sin_cos(r);
     // quadrant k mod 4: (s, c) -> (s, c), (c, -s), (-s, -c), (-c, s),
     // written with selects so that loops vectorise
-    let q = k as i64;
     let odd = q & 1 != 0;
     // flip the sign bit of both results in quadrants 2 and 3
-    let sign = ((q as u64) & 2) << 62;
+    let sign = (q & 2) << 62;
     let sin = if odd { c } else { s };
     let cos = if odd { -s } else { c };
     (
@@ -145,6 +222,11 @@ pub(crate) fn exp_in_place(values: &mut [f64]) {
 /// `exp(x)` for `|x| < EXP_LIMIT`.
 #[inline(always)]
 fn exp_reduced(x: f64) -> f64 {
+    exp_reduced_with::<HARDWARE_FMA>(x)
+}
+
+#[inline(always)]
+fn exp_reduced_with<const FUSED: bool>(x: f64) -> f64 {
     // ln(2) in two parts (fdlibm's ln2_hi, ln2_lo)
     const LN2_HI: f64 = 6.931_471_803_691_238_164_90e-1;
     const LN2_LO: f64 = 1.908_214_929_270_587_700_02e-10;
@@ -163,21 +245,89 @@ fn exp_reduced(x: f64) -> f64 {
         1.666_666_666_666_666_6e-1,
         0.5,
     ];
-    let n = (x * std::f64::consts::LOG2_E).round_ties_even();
-    let r = (-n).mul_add(LN2_LO, (-n).mul_add(LN2_HI, x));
+    let (n, bits) = round_to_integer(x * std::f64::consts::LOG2_E);
+    // n LN2_HI is exact (|n| < 2^11, LN2_HI has 32 significant bits) and so
+    // is x - n LN2_HI: the reduction is accurate without fused operations
+    let r = mul_add::<FUSED>(-n, LN2_LO, mul_add::<FUSED>(-n, LN2_HI, x));
     let mut p = INV_FACTORIAL[0];
     for &c in &INV_FACTORIAL[1..] {
-        p = p.mul_add(r, c);
+        p = mul_add::<FUSED>(p, r, c);
     }
     // 1 + r + r^2 p
-    let p = (r * r).mul_add(p, r) + 1.0;
-    let scale = f64::from_bits(((n as i64 + 1023) as u64) << 52);
+    let p = mul_add::<FUSED>(r * r, p, r) + 1.0;
+    // 2^n, from the low bits of n
+    let scale = f64::from_bits(bits.wrapping_add(1023) << 52);
     p * scale
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The variants with and without fused multiply-adds (only one of
+    /// which is used on a given target) against the C library.
+    #[test]
+    fn fused_and_unfused_variants_agree_with_the_c_library() {
+        let mut worst_sin_cos = [0.0f64; 2];
+        let mut worst_exp = [0.0f64; 2];
+        let mut differ = 0usize;
+        let mut n = 0usize;
+        // up to the reduction limit, with denser sampling at small |x|
+        let mut x = 1e-3;
+        while x < REDUCTION_LIMIT {
+            for x in [x, -x, x * 1.000_000_7, x + 0.5] {
+                let reference = x.sin_cos();
+                let fused = sin_cos_reduced_with::<true>(x);
+                let unfused = sin_cos_reduced_with::<false>(x);
+                for (worst, (s, c)) in worst_sin_cos.iter_mut().zip([fused, unfused]) {
+                    *worst = worst
+                        .max((s - reference.0).abs())
+                        .max((c - reference.1).abs());
+                }
+                differ += usize::from(fused != unfused);
+                n += 1;
+            }
+            x *= 1.000_37;
+        }
+        let mut x = -EXP_LIMIT;
+        while x < EXP_LIMIT {
+            let reference = x.exp();
+            for (worst, e) in worst_exp
+                .iter_mut()
+                .zip([exp_reduced_with::<true>(x), exp_reduced_with::<false>(x)])
+            {
+                *worst = worst.max(((e - reference) / reference).abs());
+            }
+            x += 0.000_731;
+        }
+        println!(
+            "sin_cos: worst abs error {:.2e} (fused) {:.2e} (unfused), the variants differ in \
+             {differ} of {n}; exp: worst rel error {:.2e} (fused) {:.2e} (unfused)",
+            worst_sin_cos[0], worst_sin_cos[1], worst_exp[0], worst_exp[1]
+        );
+        for worst in worst_sin_cos {
+            assert!(worst < 4.0 * f64::EPSILON, "{worst:e}");
+        }
+        for worst in worst_exp {
+            assert!(worst < 3.0 * f64::EPSILON, "{worst:e}");
+        }
+        // rounding with the shift is the same as round_ties_even
+        for y in [
+            0.5,
+            1.5,
+            2.5,
+            -0.5,
+            -2.5,
+            3.49,
+            -7.51,
+            6.4e8 + 0.5,
+            -1e12 - 0.5,
+        ] {
+            let (k, bits) = round_to_integer_shift(y);
+            assert_eq!(k, y.round_ties_even(), "{y}");
+            assert_eq!(bits & 0xfff, (k as i64 as u64) & 0xfff, "{y}");
+        }
+    }
 
     #[test]
     fn exp_and_cos_agree_with_the_c_library() {

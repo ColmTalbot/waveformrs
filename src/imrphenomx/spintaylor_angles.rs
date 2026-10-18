@@ -415,7 +415,7 @@ fn fdamp21(af: f64) -> f64 {
     ]
     .iter()
     .fold(2.0696914454467294, |acc: f64, &(c, x): &(f64, f64)| {
-        c.mul_add(x, acc)
+        fma(c, x, acc)
     });
     let den = [
         (-219.81790388304876, af),
@@ -425,7 +425,7 @@ fn fdamp21(af: f64) -> f64 {
     ]
     .iter()
     .fold(146.1779212636481, |acc: f64, &(c, x): &(f64, f64)| {
-        c.mul_add(x, acc)
+        fma(c, x, acc)
     });
     num / den
 }
