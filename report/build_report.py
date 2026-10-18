@@ -19,6 +19,7 @@ import argparse
 import datetime
 import html
 import json
+import os
 import re
 import subprocess
 import sys
@@ -48,6 +49,7 @@ MODELS = [
     ("IMRPhenomXPHM_NNLO", "IMRPhenomXPHM (102)", "IMRPhenomXPHM, NNLO (102)", "new"),
     ("IMRPhenomXPHM_MSA", "IMRPhenomXPHM (223)", "IMRPhenomXPHM, MSA (223)", "new"),
     ("IMRPhenomXPHM", "IMRPhenomXPHM (320)", "IMRPhenomXPHM, SpinTaylor (320)", "new"),
+    ("IMRPhenomXPNR", "IMRPhenomXPNR", "IMRPhenomXPNR", "new"),
     ("NRSur7dq4", "NRSur7dq4", "NRSur7dq4 (time domain)", "new"),
 ]
 # Rows of the serial-evaluation table: (serial benchmark name, label)
@@ -92,6 +94,25 @@ TEST_LABELS = {
     "nrsur7dq4_modes_match_lalsimulation": "NRSur7dq4 modes (ChooseTDModes)",
     "nrsur7dq4_dynamics_match_lalsimulation": "NRSur7dq4 dynamics",
     "hdf5_reader_matches_h5py": "HDF5 reader against h5py (datasets)",
+    "imrphenomxhm_122019_matches_lalsimulation": "IMRPhenomXHM release 122019 polarizations",
+    "imrphenomxhm_122019_modes_match_lalsimulation": "IMRPhenomXHM release 122019 modes",
+    "imrphenomxpnr_matches_lalsimulation": "IMRPhenomXPNR polarizations (incl. every regime switch)",
+    "imrphenomxpnr_uniform_matches_lalsimulation": "IMRPhenomXPNR, uniform grids",
+    "imrphenomxpnr_choose_fd_modes_matches_lalsimulation": "IMRPhenomXPNR modes (ChooseFDModes)",
+    "imrphenomxpnr_sequence_modes_match_lalsimulation": "IMRPhenomXPNR modes on frequency sequences",
+    "choose_fd_modes_matches_lalsimulation": "Modes of IMRPhenomXHM/XPHM (ChooseFDModes)",
+    "modes_on_frequency_sequences_match_lalsimulation": "Modes on frequency sequences",
+    "choose_fd_model_matches_lalsimulation": "Common interface against the reference suites",
+    "conditioned_fd_matches_lalsimulation": "SimInspiralFD conditioning of the FD models",
+    "nrsur7dq4_fd_matches_lalsimulation": "SimInspiralFD, NRSur7dq4",
+    "nrsur7dq4_td_matches_lalsimulation": "SimInspiralTD, NRSur7dq4",
+    "taylorf2_td_matches_lalsimulation": "SimInspiralTD, TaylorF2",
+    "imrphenomd_td_matches_lalsimulation": "SimInspiralTD, IMRPhenomD",
+    "imrphenomxas_td_matches_lalsimulation": "SimInspiralTD, IMRPhenomXAS",
+    "imrphenomxhm_td_matches_lalsimulation": "SimInspiralTD, IMRPhenomXHM",
+    "imrphenomxp_td_matches_lalsimulation": "SimInspiralTD, IMRPhenomXP",
+    "imrphenomxphm_td_matches_lalsimulation": "SimInspiralTD, IMRPhenomXPHM",
+    "imrphenomxpnr_td_matches_lalsimulation": "SimInspiralTD, IMRPhenomXPNR",
 }
 
 
@@ -115,14 +136,40 @@ def factor(value):
     return f"{value:.1f}×"
 
 
-def run_tests():
+def test_output():
+    """Output of all integration tests, one test at a time."""
+    env = dict(os.environ)
+    env.setdefault("NRSUR7DQ4_DATA", str(ROOT / "lal_data" / "NRSur7dq4_v1.0.h5"))
+    return subprocess.run(
+        ["cargo", "test", "--release", "--tests", "--", "--nocapture", "--test-threads=1"],
+        cwd=ROOT, capture_output=True, text=True, check=True, env=env,
+    ).stdout
+
+
+def run_long_tests(output):
+    """Largest errors of the long-waveform tests, by model and path."""
+    pattern = re.compile(
+        r"(?:test \w+ \.\.\. )?(\w+(?: \(\d+\))?) (\S+) \S+ \[(\d+) frequencies\]\s+"
+        r"(per-freq|grid)\s+plus ([0-9.eE+-]+) .*cross ([0-9.eE+-]+)"
+    )
+    models = dict()
+    for line in output.splitlines():
+        match = pattern.search(line)
+        if not match:
+            continue
+        model, case, n, path, plus, cross = match.groups()
+        entry = models.setdefault(model, dict(cases=set(), n=0, per_freq=0.0, grid=0.0))
+        entry["cases"].add(case)
+        entry["n"] = max(entry["n"], int(n))
+        key = "per_freq" if path == "per-freq" else "grid"
+        entry[key] = max(entry[key], float(plus), float(cross))
+    return models
+
+
+def run_tests(output):
     """Parse the per-case output of the LALSimulation comparison tests."""
     suites = dict()
-    for test in ["lalsimulation", "spintaylor", "nrsur"]:
-        output = subprocess.run(
-            ["cargo", "test", "--release", "--test", test, "--", "--nocapture", "--test-threads=1"],
-            cwd=ROOT, capture_output=True, text=True, check=True,
-        ).stdout
+    for output in [output]:
         current = None
         for line in output.splitlines():
             match = re.match(r"test (\w+) \.\.\. ?(.*)", line)
@@ -233,7 +280,9 @@ def build(args):
         )
     values["baseline_rows"] = "\n".join(rows)
 
-    suites = run_tests()
+    output = test_output()
+    suites = run_tests(output)
+    long_models = run_long_tests(output)
     rows = []
     for test, label in TEST_LABELS.items():
         if test not in suites:
@@ -356,6 +405,113 @@ def build(args):
             "They have no grid path yet: nearly all their time is spent per frequency, in the "
             "Euler angles (most of all the MSA angles) and in the co-precessing modes."
         )
+
+    # long waveforms
+    long = json.loads((DATA / "long_timings.json").read_text())
+    sizes = [m["n"] for m in long_models.values()]
+    values["long_min_n"] = f"{min(sizes) // 1000}k"
+    values["long_max_n"] = f"{max(sizes) // 1000}k"
+    rows = []
+    for model, entry in long_models.items():
+        rows.append(
+            f"<tr><td>{model}</td><td class=\"num\">{len(entry['cases'])}</td><td class=\"num\">{entry['n']:,}</td>"
+            f"<td class=\"num\">{sci(entry['per_freq'])}</td><td class=\"num\">{sci(entry['grid'])}</td></tr>"
+        )
+    values["long_accuracy_rows"] = "\n".join(rows)
+    grid_label = max(long["grids"], key=lambda g: long["grids"][g]["n_frequencies"])
+    values["long_grid_label"] = grid_label
+    values["long_grid_n"] = f"{long['grids'][grid_label]['n_frequencies']:,}"
+    values["long_rounds"] = str(long["rounds"])
+    rows = []
+    for case in long["cases"]:
+        if case["grid"] != grid_label:
+            continue
+        lal_t, rust_t = case["lal"], case["rust"]
+        mb = lal_t.get("uniform_multibanding")
+        rows.append(
+            f"<tr><td>{html.escape(case['model'])}{' (' + str(case['version']) + ')' if case['version'] else ''}</td>"
+            f"<td class=\"num\">{duration(lal_t['sequence'])}</td><td class=\"num\">{duration(rust_t['per_call'])}</td>"
+            f"<td class=\"num\">{duration(rust_t['grid'])}</td><td class=\"num\">{duration(mb) if mb else '–'}</td>"
+            f"<td class=\"num\">{factor(lal_t['sequence'] / rust_t['per_call'])}</td></tr>"
+        )
+    values["long_timing_rows"] = "\n".join(rows)
+    memory = long["memory_bytes"].get(f"IMRPhenomXPHM (320), {grid_label}", {})
+    values["long_mem_rust"] = f"{memory.get('rust_all_paths', 0) / 2**20:.0f} MB"
+    values["long_mem_lal"] = f"{memory.get('lal_sequence', 0) / 2**30:.2f} GB"
+
+    # IMRPhenomXPNR
+    xpnr_cases = 0
+    for name in ["imrphenomxpnr", "imrphenomxpnr_uniform", "imrphenomxpnr_modes", "imrphenomxpnr_sequence_modes"]:
+        xpnr_cases += len(json.loads((ROOT / "tests" / "data" / f"{name}.json").read_text())["cases"])
+    values["xpnr_cases"] = str(xpnr_cases)
+    values["xpnr_rust"] = duration(rust["IMRPhenomXPNR"])
+    values["xpnr_lal"] = duration(lal_seq["IMRPhenomXPNR"])
+    values["xpnr_lal_mb"] = duration(lal_uni["IMRPhenomXPNR (uniform, default multibanding)"])
+
+    # batch scaling
+    batch = json.loads((DATA / "batch_scaling.json").read_text())
+    values["batch_nf"] = f"{batch['frequencies']:,}"
+    values["batch_header"] = "".join(
+        f"<th class=\"num\">{t} thread{'s' if t > 1 else ''}</th>" for t in batch["threads"]
+    )
+    rows = []
+    for row in batch["rows"]:
+        rates = row["waveforms_per_second"]
+        cells = "".join(
+            f"<td class=\"num\">{rate:,.0f}{'' if i == 0 else f' ({rate / rates[0]:.1f}×)'}</td>"
+            for i, rate in enumerate(rates)
+        )
+        rows.append(f"<tr><td>{html.escape(row['model'])}</td>{cells}</tr>")
+    values["batch_rows"] = "\n".join(rows)
+
+    # conversions
+    conversions = json.loads((DATA / "conversion_timings.json").read_text())
+    rows = []
+    for row in conversions["rows"]:
+        lal_t = row["lal"]
+        rows.append(
+            f"<tr><td>{html.escape(row['what'])}</td><td>{html.escape(row['label'])}</td>"
+            f"<td class=\"num\">{duration(row['rust'])}</td><td class=\"num\">{duration(lal_t) if lal_t else '–'}</td>"
+            f"<td class=\"num\">{factor(lal_t / row['rust']) if lal_t else '–'}</td></tr>"
+        )
+    values["conversion_rows"] = "\n".join(rows)
+
+    # other platforms
+    comparison = json.loads((DATA / "linux_reference_comparison.json").read_text())
+    arm = comparison["lalsimulation linux-arm64 vs osx-arm64"]
+    amd = comparison["lalsimulation linux-amd64 vs osx-arm64"]
+    rows = []
+    for suite in sorted(arm):
+        rows.append(
+            f"<tr><td><code>{suite}</code></td><td class=\"num\">{sci(arm[suite]['max_relative_error'])}</td>"
+            f"<td class=\"num\">{sci(amd.get(suite, {}).get('max_relative_error'))}</td></tr>"
+        )
+    values["linux_lal_rows"] = "\n".join(rows)
+    arm_models = json.loads((DATA / "linux_validation_arm64.json").read_text())["linux-arm64"]["models"]
+    amd_models = json.loads((DATA / "linux_validation_amd64.json").read_text())["linux-amd64"]["models"]
+    rows = []
+    for model in sorted(set(arm_models) | set(amd_models)):
+        cells = []
+        for table in (arm_models, amd_models):
+            entry = table.get(model)
+            cells.append(
+                f"{sci(entry['median_relative_error'])} / {sci(entry['max_relative_error'])}" if entry else "–"
+            )
+        rows.append(f"<tr><td>{model}</td><td class=\"num\">{cells[0]}</td><td class=\"num\">{cells[1]}</td></tr>")
+    values["linux_validation_rows"] = "\n".join(rows)
+    linux = json.loads((DATA / "linux_timings_arm64.json").read_text())["linux-arm64"]
+    rows = []
+    for model, entry in linux["single"].items():
+        if "lal_us" not in entry:
+            continue
+        grid_entry = linux.get("grid", {}).get(model, {})
+        grid_t = grid_entry.get("grid_us")
+        rows.append(
+            f"<tr><td>{model}</td><td class=\"num\">{duration(entry['rust_us'] * 1e-6)}</td>"
+            f"<td class=\"num\">{duration(entry['lal_us'] * 1e-6)}</td><td class=\"num\">{factor(entry['speedup'])}</td>"
+            f"<td class=\"num\">{duration(grid_t * 1e-6) if grid_t else '–'}</td></tr>"
+        )
+    values["linux_timing_rows"] = "\n".join(rows)
 
     page = (HERE / "template.html").read_text()
     sections = re.findall(r'<section id="([a-z]+)">', page)

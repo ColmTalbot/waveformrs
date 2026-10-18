@@ -10,7 +10,7 @@
 <header class="masthead">
   <p class="eyebrow">Technical report · waveformrs</p>
   <h1>Validating, optimising and extending waveformrs against LALSimulation</h1>
-  <p class="dek">The crate as it was found, the bugs that separated it from LALSimulation, the tests that now hold every model to LALSimulation 6.2.0 at rounding level, the optimisations (including for generating many waveforms in sequence), and new ports of IMRPhenomXAS, XHM, XP and XPHM with SpinTaylor, MSA and NNLO precession angles, and of the NR surrogate NRSur7dq4.</p>
+  <p class="dek">The crate as it was found, the bugs that separated it from LALSimulation, the tests that now hold every model to LALSimulation 6.2.0 at rounding level, the optimisations (including for generating many waveforms in sequence), and new ports of IMRPhenomXAS, XHM, XP and XPHM with SpinTaylor, MSA and NNLO precession angles, IMRPhenomXPNR, and of the NR surrogate NRSur7dq4, with a common interface, batching, domain conversions and Linux testing.</p>
   <dl class="meta">
     <div><dt>Branch</dt><dd><code>xphm-spintaylor-validation</code>, {{n_commits}} commits on <code>main</code> (<code>87f9d9b</code>)</dd></div>
     <div><dt>Reference</dt><dd>lalsimulation {{lalsim_version}}, lal {{lal_version}}, GSL 2.8 (conda-forge, osx-arm64)</dd></div>
@@ -30,9 +30,13 @@
     <li><a href="#accuracy">Accuracy</a></li>
     <li><a href="#performance">Performance</a></li>
     <li><a href="#serial">Many waveforms in sequence</a></li>
+    <li><a href="#long">Long, low-mass waveforms</a></li>
     <li><a href="#models">New models</a></li>
     <li><a href="#xphm">IMRPhenomXPHM with SpinTaylor angles</a></li>
     <li><a href="#nrsur">NRSur7dq4</a></li>
+    <li><a href="#xpnr">IMRPhenomXPNR</a></li>
+    <li><a href="#interfaces">Using the crate</a></li>
+    <li><a href="#platforms">Other platforms</a></li>
     <li><a href="#lal">Issues found in LALSimulation</a></li>
     <li><a href="#api">API review and suggested changes</a></li>
     <li><a href="#limits">Limitations and future work</a></li>
@@ -45,7 +49,7 @@
 
 <section id="summary">
   <h2>Summary</h2>
-  <p class="lede">The crate started with two models, TaylorF2 and IMRPhenomD. It had no tests, and both models disagreed with LALSimulation by mismatches of up to 0.14. Both now agree with LALSimulation at rounding level and run about twice as fast as before. Eight more model configurations were ported, ending with IMRPhenomXPHM using the numerical SpinTaylor precession angles, followed by the time-domain NR surrogate NRSur7dq4. Every model is checked against LALSimulation by <code>cargo test</code> and by {{n_draws_total}} random parameter draws. For samplers, which evaluate many waveforms on one frequency grid, a grid path removes the remaining per-frequency transcendental functions.</p>
+  <p class="lede">The crate started with two models, TaylorF2 and IMRPhenomD. It had no tests, and both models disagreed with LALSimulation by mismatches of up to 0.14. Both now agree with LALSimulation at rounding level and run about twice as fast as before. Eight more model configurations were ported, ending with IMRPhenomXPHM using the numerical SpinTaylor precession angles, followed by the time-domain NR surrogate NRSur7dq4 and IMRPhenomXPNR. All models share one interface with LAL's conventions, can be batched over threads, convert between the time and frequency domains, and have been tested on Linux as well as macOS. Every model is checked against LALSimulation by <code>cargo test</code> and by {{n_draws_total}} random parameter draws. For samplers, which evaluate many waveforms on one frequency grid, a grid path removes the remaining per-frequency transcendental functions.</p>
   <div class="cards">
     <div class="card"><span class="label">Agreement with LALSimulation</span><span class="value">≤ {{max_rel_all}}</span><span class="note">Largest relative error, |h − h<sub>LAL</sub>| / max |h<sub>LAL</sub>|, over all {{n_draws_total}} random draws. The largest mismatch is {{max_mm_all}}.</span></div>
     <div class="card"><span class="label">Reference cases in <code>cargo test</code></span><span class="value">{{n_ref_cases}}</span><span class="note">In {{n_ref_files}} files generated with lalsimulation {{lalsim_version}}, checked to ≤ 1e-9 relative error.</span></div>
@@ -290,6 +294,35 @@ for p in &amp;samples {                                               // many ti
   <p>Caching the waveform across changes of the extrinsic parameters, as NRSur7dq4 now does, would also help the frequency-domain precessing models. Finally, the per-frequency loops are independent, so batches of waveforms could be spread over threads.</p>
 </section>
 
+<section id="long">
+  <h2>Long, low-mass waveforms</h2>
+  <p class="lede">Low-mass binaries stay in band for minutes, so their waveforms need fine frequency resolution and very large grids. The frequency-domain models (all except NRSur7dq4) were tested and timed on grids with Δf = 1/128 Hz, from 10 or 20 Hz up to 0.5–4 kHz. That is {{long_min_n}}–{{long_max_n}} frequencies, for binaries of about 3–10 M<sub>☉</sub>.</p>
+  <h3>Accuracy</h3>
+  <p>Each reference stores LAL's output at about 1250 indices per case, including both ends of the band. Rust evaluates the full grid, because the SpinTaylor angles depend on the grid. The SpinTaylor angles of a ~900 s backward integration (2.3 million PN samples) are bit-identical to <code>SimIMRPhenomXPSpinTaylorAngles</code>.</p>
+  <div class="table-wrap wide">
+    <table>
+      <thead><tr><th>Model</th><th class="num">Cases</th><th class="num">Largest grid</th><th class="num">Per-frequency path</th><th class="num">Grid path</th></tr></thead>
+      <tbody>
+{{long_accuracy_rows}}
+      </tbody>
+      <caption>Largest relative error against LAL over all long cases (<code>tests/long_waveforms.rs</code>).</caption>
+    </table>
+  </div>
+  <p>The inspiral phase reaches 1e4–4e4 rad at the lowest frequencies. A 50-digit evaluation of the IMRPhenomXAS inspiral phase shows that even LAL's own value is off by up to 9 ulp, with a bias of +0.8 ulp from <code>pow(Mf, 1.0/6)</code> using a rounded exponent. The fast per-frequency path is within 8 ulp of the exact value and the grid path within 11, so they differ from LAL by up to about 20 ulp. That explains the ~1e-10 errors above. The paths that repeat LAL's operation order (XHM and the precessing models) agree to ~1e-16. A compensated grid formulation brought the grid path to 7.5 ulp but barely changed the difference from LAL, so it was not adopted. The tests allow 64 ulp of the leading-order phase at f<sub>min</sub>, three to five times the worst case seen.</p>
+  <h3>Memory and speed</h3>
+  <p>For a 3 M<sub>☉</sub> binary, the SpinTaylor angles integrate the PN equations from about 10 Hz and produce 2.8 million samples. The port used to store all 14 variables per sample and copy them three more times, peaking at 850 MB of heap. It now keeps only the orbital frequency and L̂ per sample, reserves its buffers to LAL's length estimate plus a small margin, and transforms the arrays in place, with bit-identical output. For IMRPhenomXPHM with SpinTaylor angles on 259k frequencies, the heap peak fell from 850 to 169 MB and a call from about 450 to 290 ms. On the largest grid, peak memory is {{long_mem_rust}} in Rust against {{long_mem_lal}} for LAL.</p>
+  <div class="table-wrap wide">
+    <table>
+      <thead><tr><th>Model, {{long_grid_label}}</th><th class="num">LAL</th><th class="num">Rust, per call</th><th class="num">Rust, grid</th><th class="num">LAL, default multibanding</th><th class="num">Speed-up over LAL</th></tr></thead>
+      <tbody>
+{{long_timing_rows}}
+      </tbody>
+      <caption>Best of {{long_rounds}} interleaved rounds, single thread, {{long_grid_n}} frequencies (Δf = 1/128 Hz, 20 Hz–4 kHz). The aligned-spin models use a 1.6 + 1.4 M<sub>☉</sub> binary; the precessing models use 1.8 + 1.3 M<sub>☉</sub> with in-plane spins. The speed-up compares Rust per call with LAL. Data: <code>report/data/long_timings.json</code> (<code>report/long_benchmark.py</code>).</caption>
+    </table>
+  </div>
+  <p>Rust is faster than LAL on every frequency sequence. With multibanding on, LAL beats the Rust per-call path for IMRPhenomXHM and for IMRPhenomXPHM with MSA angles; porting multibanding would change that.</p>
+</section>
+
 <section id="models">
   <h2>New models</h2>
   <p>IMRPhenomXPHM needs IMRPhenomXAS for the (2,2) mode, IMRPhenomXHM for the other co-precessing modes, the SpinTaylorT4 equations with LAL's GSL integrator for the angles, and IMRPhenomXP's precession set-up. Each was ported and tested on its own before the next was built on it.</p>
@@ -301,6 +334,8 @@ for p in &amp;samples {                                               // many ti
         <tr><td>IMRPhenomXHM<br><code>xhm.rs</code>, <code>hm_*.rs</code></td><td><code>IMRPhenomXHMGenerateFDOneMode</code>, the 122022 amplitude and 122019 phase releases</td><td><code>IMRPhenomXHM::new</code>, <code>with_mode_array</code>, <code>polarizations(f, φ<sub>ref</sub>, ι)</code>, <code>mode(l, m, f, φ<sub>ref</sub>)</code></td><td>Modes (2,±2), (2,±1), (3,±3), (3,±2) and (4,±4), including the (3,2) spheroidal–spherical mixing. No multibanding.</td></tr>
         <tr><td>SpinTaylorT4<br><code>spintaylor/</code></td><td><code>XLALSimInspiralSpinTaylorT4</code>, GSL's <code>rkf45</code> with standard control, and LAL's adaptive driver with Hermite resampling</td><td><code>SpinTaylorT4::new</code>, <code>evolve_orbit(Δt, f<sub>start</sub>, f<sub>end</sub>)</code></td><td>Bit-identical orbits, 3.3–4.5× faster than LAL.</td></tr>
         <tr><td>IMRPhenomXP<br><code>xp.rs</code>, <code>precession.rs</code>, <code>spintaylor_angles.rs</code>, <code>msa.rs</code>, <code>wigner.rs</code></td><td><code>IMRPhenomXPGenerateFD</code>, <code>IMRPhenomXGetAndSetPrecessionVariables</code>, the NNLO, MSA and SpinTaylor angle routines</td><td><code>IMRPhenomXP::new(&amp;PrecessingBinary)</code>, <code>with_version</code>, <code>polarizations</code>, <code>polarizations_uniform</code>, <code>spin_taylor_angles</code></td><td>PrecVersion 102, 223 and 320 (the crate default), with LAL's fallbacks.</td></tr>
+        <tr><td>IMRPhenomXHM release 122019<br><code>hm_*.rs</code></td><td>the original higher-mode amplitudes (<code>PhenomXHMReleaseVersion</code> 122019)</td><td><code>WaveformOptions</code>, used by XPNR</td><td>Needed by IMRPhenomXPNR; compared with LAL separately.</td></tr>
+        <tr><td>IMRPhenomXPNR<br><code>xpnr.rs</code>, <code>pnr*.rs</code></td><td>the <code>IMRPhenomXPNR</code> generator: XPHM with PNR angles, the tuned co-precessing model and the antisymmetric modes</td><td><code>IMRPhenomXPNR::new</code>, the common interface</td><td>See <a href="#xpnr">section {{sec:xpnr}}</a>.</td></tr>
         <tr><td>IMRPhenomXPHM<br><code>xphm.rs</code></td><td><code>XLALSimIMRPhenomXPHMFrequencySequence</code>, <code>IMRPhenomXPHMTwistUp</code>, <code>IMRPhenomX_Initialize_Euler_Angles</code></td><td><code>IMRPhenomXPHM::new</code>, <code>with_version</code>, <code>with_mode_array</code>, <code>polarizations</code>, <code>polarizations_uniform</code></td><td>No multibanding. See <a href="#xphm">section {{sec:xphm}}</a>.</td></tr>
       </tbody>
     </table>
@@ -410,6 +445,170 @@ let (h_plus, h_cross) = model.polarizations_uniform(0.25, 20.0, 1024.0)?; // lik
   <p>About half of the remaining time goes to the frame rotations. The dynamics fits, the coorbital fits with the basis product, and the trigonometric functions take most of the rest.</p>
 </section>
 
+<section id="xpnr">
+  <h2>IMRPhenomXPNR</h2>
+  <p class="lede">In lalsimulation 6.2.0, IMRPhenomXPNR is IMRPhenomXPHM with these settings forced on:</p>
+  <ul>
+    <li>the 2019 higher-mode release (122019, also ported);</li>
+    <li>the PNR tuned Euler angles;</li>
+    <li>the tuned co-precessing model;</li>
+    <li>the antisymmetric (2,±2) contribution;</li>
+    <li><code>PhenomXPrecVersion</code> 330 and final-spin version 7.</li>
+  </ul>
+  <p>The port (<code>src/imrphenomx/pnr*.rs</code>, <code>xpnr.rs</code>) follows LAL's many regime switches:</p>
+  <ul>
+    <li>PNR is off when the in-plane spins are below 1e-7;</li>
+    <li>NNLO angles are used inside PNR below 1e-6;</li>
+    <li>SpinTaylor falls back to MSA, and MSA to NNLO;</li>
+    <li>outside the calibration region (q ≤ 8.5, χ ≤ 0.85) the model blends into PN angles, reaching them at q = 12 and χ = 1.2;</li>
+    <li>the co-precessing tuning tapers off for 10 &lt; q ≤ 20.</li>
+  </ul>
+  <p>LAL's PNR angles are among those affected by the OpenMP race (<a href="#lal">section {{sec:lal}}</a>), so every reference was generated single-threaded.</p>
+  <p>The reference suites contain {{xpnr_cases}} cases covering every switch above, uniform grids, restricted mode arrays and m<sub>1</sub> &lt; m<sub>2</sub>. They also include the J-frame modes of <code>SimInspiralChooseFDModes</code>, which supports XPNR. All agree with LAL to ≲1.3e-15 relative. So do all 200 random draws in the accuracy table (<a href="#accuracy">section {{sec:accuracy}}</a>). It takes {{xpnr_rust}} against {{xpnr_lal}} for LAL on the benchmark binary, and {{xpnr_lal_mb}} for LAL with multibanding on a uniform grid.</p>
+  <p>XPNR has no fast grid path yet: <code>polarizations_on_grid</code> evaluates the sequence path. Most of its remaining time goes to the SpinTaylor integration and to LAL's O(N·80) moving average in the antisymmetric amplitude. A faster moving average would no longer match LAL bit for bit.</p>
+</section>
+
+<section id="interfaces">
+  <h2>Using the crate</h2>
+  <h3>One interface for every model</h3>
+  <p>All models share one set of parameters, <code>Binary</code>, and two traits, in the conventions of <code>SimInspiralChooseFDWaveform</code>:</p>
+  <ul>
+    <li><code>Binary</code> holds masses in M<sub>☉</sub>, dimensionless spin vectors at f<sub>ref</sub>, distance in Mpc, inclination, orbital φ<sub>ref</sub> and f<sub>ref</sub>. <code>PrecessingBinary</code> is now an alias for it.</li>
+    <li><code>FrequencyDomainModel</code> is implemented by TaylorF2, IMRPhenomD, XAS, XHM, XP, XPHM and XPNR.</li>
+    <li><code>TimeDomainModel</code> is implemented by NRSur7dq4.</li>
+    <li><code>choose_fd_model</code>, <code>choose_td_model</code> and <code>choose_fd_modes</code> dispatch by an <code>Approximant</code> enum that uses LAL's names. A <code>WaveformOptions</code> struct carries the LALDict-style settings.</li>
+  </ul>
+<pre class="code"><code>use waveformrs::{choose_fd_model, Approximant, Binary, FrequencyDomainModel, WaveformOptions};
+
+let options = WaveformOptions::default()              // or ::lalsimulation_defaults()
+    .with_precession_version(PrecessionVersion::Msa)
+    .with_version_fallback(false);                    // error instead of switching versions
+let model = choose_fd_model(Approximant::IMRPhenomXPHM, &binary, &amp;options)?;
+let (hp, hc) = model.polarizations(&amp;frequencies)?;  // = SimInspiralChooseFDWaveformSequence
+model.polarizations_on_grid(&amp;grid, &amp;mut hp, &amp;mut hc)?;
+let modes = model.modes(&amp;frequencies)?;              // h_lm without the spherical harmonics</code></pre>
+  <ul>
+    <li><strong>Reference phase.</strong> <code>phi_c</code> in the <code>Waveform</code> trait now means LAL's orbital reference phase for every model. IMRPhenomD and IMRPhenomXAS used to expect twice that. Their output is bit-identical to the old calls with 2φ<sub>ref</sub>. This is the one breaking change, recorded in <code>CHANGELOG.md</code>.</li>
+    <li><strong>Checks.</strong> <code>from_binary</code> applies LAL's checks: aligned-spin models reject in-plane spins, <code>f_ref = 0</code> means LAL's default, and the bodies are ordered heavier first.</li>
+    <li><strong>Precession default.</strong> The crate keeps SpinTaylor (320) as its default precession version; <code>WaveformOptions::lalsimulation_defaults()</code> selects LAL's MSA (223).</li>
+  </ul>
+  <h3>Modes without the spherical harmonics</h3>
+  <p>Among the ported models, <code>SimInspiralChooseFDModes</code> in 6.2.0 supports IMRPhenomXHM, IMRPhenomXPHM and IMRPhenomXPNR. For these, <code>modes()</code> reproduces it to ≲4e-16:</p>
+  <ul>
+    <li>a two-sided uniform grid;</li>
+    <li>for XPHM and XPNR, J-frame modes for all ℓ, m, with each mode set up as LAL sets it up.</li>
+  </ul>
+  <p>Summing XPHM's SpinTaylor modes reproduces its polarizations only to ~4e-6. That difference is LAL's own: <code>ChooseFDModes</code> gives each J-frame mode its own range of angle integration. For TaylorF2, D, XAS and XP, which LAL doesn't support, the (2,±2) mode (or XP's J-frame (2,m) modes) is returned in a form consistent with the polarizations.</p>
+  <h3>Switching off automatic version changes</h3>
+  <p>By default IMRPhenomXP, XPHM and XPNR change their precession version as LAL does:</p>
+  <ul>
+    <li>to NNLO when the in-plane spins are tiny;</li>
+    <li>to MSA when the SpinTaylor angles can't be computed;</li>
+    <li>to NNLO when the MSA system fails.</li>
+  </ul>
+  <p><code>with_version_fallback(false)</code> (or the option) returns <code>PrecessionVersionUnavailable</code> instead. Tests cover each fallback both ways.</p>
+  <h3>Batched evaluation</h3>
+  <p><code>Batch::new(threads)</code> evaluates many binaries on one grid, or NRSur7dq4 in the time domain, writing into rows of caller-owned buffers. It uses standard-library scoped threads, with one set of buffers or workspace per thread. The results don't depend on the thread count, which the tests check bit for bit.</p>
+  <div class="table-wrap wide">
+    <table>
+      <thead><tr><th>Model</th>{{batch_header}}</tr></thead>
+      <tbody>
+{{batch_rows}}
+      </tbody>
+      <caption>Waveforms per second on {{batch_nf}} frequencies (20–1024 Hz), with the speed-up over one thread in brackets. Apple M2 Ultra (16 performance and 8 efficiency cores), which is why scaling flattens above 16 threads. <code>examples/batch_benchmark.rs</code>.</caption>
+    </table>
+  </div>
+  <h3>Between the time and frequency domains</h3>
+  <p><code>conversions::simulate_td</code> and <code>simulate_fd</code> reproduce LAL's <code>SimInspiralTD</code> and <code>SimInspiralFD</code> for every approximant. They include:</p>
+  <ul>
+    <li>the duration and frequency bounds;</li>
+    <li>the Planck and Tukey tapers;</li>
+    <li>LAL's Butterworth high-pass filter (bit-exact for identical input);</li>
+    <li>the Stage 1/2 conditioning;</li>
+    <li>the epochs, to the nanosecond.</li>
+  </ul>
+  <p>The FFTs come from <code>rustfft</code>, behind the default <code>fft</code> feature. Epochs, lengths and sampling intervals match LAL exactly. The values match to:</p>
+  <ul>
+    <li>~4e-16 for NRSur7dq4 into the frequency domain;</li>
+    <li>≲4e-13 for the frequency-domain re-conditioning of FD models;</li>
+    <li>~2e-12 for the FD models into the time domain;</li>
+    <li>3.6e-11 for a 68 s TaylorF2 neutron-star binary, a limit set by the model's own phase rounding.</li>
+  </ul>
+  <p>The time-domain floor comes from LAL's high-pass filter. Its IIR sections have poles near z = 1 and amplify last-bit differences of their input by ~1e4, so differences between <code>rustfft</code> and FFTW can't be removed.</p>
+  <p>LAL behaviour reproduced here:</p>
+  <ul>
+    <li>For IMRPhenomD, XAS and XHM, <code>SimInspiralTD</code> conditions twice: once in <code>TDFromFD</code>, then again in the time domain.</li>
+    <li><code>ChooseFDWaveform</code> rejects NRSur7dq4; only <code>SimInspiralFD</code> converts it.</li>
+  </ul>
+  <div class="table-wrap wide">
+    <table>
+      <thead><tr><th>Conversion</th><th>Model</th><th class="num">Rust</th><th class="num">LAL</th><th class="num">Speed-up</th></tr></thead>
+      <tbody>
+{{conversion_rows}}
+      </tbody>
+      <caption>Single thread. <code>examples/conversions.rs</code> and <code>scripts/time_conversions_lal.py</code>; data in <code>report/data/conversion_timings.json</code>.</caption>
+    </table>
+  </div>
+</section>
+
+<section id="platforms">
+  <h2>Other platforms</h2>
+  <p class="lede"><code>docker/</code> builds Linux containers for arm64 (native) and amd64 (emulated with Rosetta). Each has conda-forge's lalsimulation 6.2.0 and a Rust toolchain; <code>docs/linux.md</code> explains how to run them. The test suite passes on all three platforms, against both the committed macOS references and each container's own LAL.</p>
+  <div class="table-wrap wide">
+    <table>
+      <thead><tr><th></th><th>macOS arm64</th><th>Linux arm64</th><th>Linux amd64 (emulated)</th></tr></thead>
+      <tbody>
+        <tr><td>Tests against the committed references</td><td><span class="chip good">strict</span></td><td><span class="chip good">pass</span></td><td><span class="chip good">pass</span></td></tr>
+        <tr><td>Tests against that platform's LAL</td><td>–</td><td><span class="chip good">pass</span></td><td><span class="chip good">pass</span></td></tr>
+        <tr><td>Without the <code>fft</code> feature</td><td><span class="chip good">pass</span></td><td><span class="chip good">pass</span></td><td><span class="chip good">pass</span></td></tr>
+        <tr><td>Multiply-add mirroring</td><td>clang's contraction</td><td>clang's subset of GCC's</td><td>none (baseline x86-64)</td></tr>
+      </tbody>
+    </table>
+  </div>
+  <h3>What differs on Linux</h3>
+  <ul>
+    <li><strong>Cube roots.</strong> On Linux, Rust's <code>f64::cbrt</code> is not glibc's. Rust's compiler-builtins links a correctly rounded <code>cbrt</code> ahead of libm, and it differed from the one LAL calls on 57% of arguments. This was the largest source of Linux differences. <code>src/cmath.rs</code> ports glibc's algorithm, which is tested bit for bit against glibc on two million arguments and is also 10–20% faster.</li>
+    <li><strong>Fused multiply-adds.</strong>
+      <ul>
+        <li>On aarch64, GCC's <code>-ffp-contract=fast</code> fuses a superset of what clang fuses. Mirroring clang's subset still brings Linux arm64 closer to its LAL (median IMRPhenomXHM error 1e-8 against 5e-7 without fusing).</li>
+        <li>The linux-64 builds target <code>nocona</code> and contain no FMA instructions, so nothing is fused on x86-64.</li>
+        <li>The vectorised maths no longer falls back to a software <code>fma</code> on x86-64.</li>
+        <li>A <code>--cfg waveformrs_fma</code> flag overrides the choice.</li>
+      </ul>
+    </li>
+    <li><strong>Test tolerances.</strong> The strict tolerances apply only on macOS arm64. Elsewhere only the suites that amplify last-bit differences are loosened, each to about ten times the observed difference: the XHM (3,2) mode, MSA, SpinTaylor, the conversions and the long waveforms. <code>WAVEFORMRS_REFERENCE_DATA</code> points the tests at references generated locally.</li>
+  </ul>
+  <p>LAL itself isn't portable at that level. Comparing its own outputs between builds:</p>
+  <div class="table-wrap wide">
+    <table>
+      <thead><tr><th>Reference suite</th><th class="num">LAL Linux arm64 vs macOS</th><th class="num">LAL Linux amd64 vs macOS</th></tr></thead>
+      <tbody>
+{{linux_lal_rows}}
+      </tbody>
+      <caption>Largest relative difference between LAL's own outputs on the committed reference cases. Data: <code>report/data/linux_reference_comparison.json</code>.</caption>
+    </table>
+  </div>
+  <div class="table-wrap wide">
+    <table>
+      <thead><tr><th>Model</th><th class="num">Linux arm64: median / max rel. error</th><th class="num">Linux amd64: median / max rel. error</th></tr></thead>
+      <tbody>
+{{linux_validation_rows}}
+      </tbody>
+      <caption>waveformrs against the same container's lalsimulation, random draws as in <a href="#testing">section {{sec:testing}}</a>. Data: <code>report/data/linux_validation_{arm64,amd64}.json</code>.</caption>
+    </table>
+  </div>
+  <div class="table-wrap wide">
+    <table>
+      <thead><tr><th>Model</th><th class="num">Rust</th><th class="num">LAL</th><th class="num">Speed-up</th><th class="num">Rust grid path</th></tr></thead>
+      <tbody>
+{{linux_timing_rows}}
+      </tbody>
+      <caption>Linux arm64 container on the same machine, single thread. The aligned-spin models run 1.3–1.7× slower per call than on macOS because glibc's <code>sincos</code>, <code>cbrt</code> and <code>atan</code> are slower than Apple's. Emulated amd64 timings aren't meaningful and are not shown. Data: <code>report/data/linux_timings_arm64.json</code>.</caption>
+    </table>
+  </div>
+  <p>Not covered: real x86-64 hardware, and builds with AVX enabled, which give wrong results under Rosetta even with unchanged arithmetic.</p>
+</section>
+
 <section id="lal">
   <h2>Issues found in LALSimulation</h2>
   <h3>OpenMP data race in IMRPhenomXP (MSA and PNR angles)</h3>
@@ -426,23 +625,31 @@ let (h_plus, h_cross) = model.polarizations_uniform(0.25, 20.0, 1024.0)?; // lik
     <li><strong>Error state left set after a successful fallback.</strong> When the SpinTaylor integration fails through <code>XLAL_ERROR</code>, the C drivers fall back to MSA and return a valid waveform, but <code>xlalErrno</code> stays set. The Python bindings then raise "Internal function call failed" for a call that succeeded.</li>
     <li><strong>Hidden global initialisation.</strong> <code>XLALSimIMRPhenomXPSpinTaylorAngles</code> reads the global <code>powers_of_lalpi</code>, which only the waveform drivers initialise. Called first in a fresh process, its 3PN orbital angular momentum misses the π² term, and the angles are off by ~1e-3.</li>
     <li><strong>Ill-conditioned (3,2) set-up.</strong> The IMRPhenomXHM (3,2) intermediate phase is fixed by a finite-difference second derivative with step 1e-7. Moving the inputs by 1e-15 changes LAL's own (3,2) mode by up to 3e-3 and the polarizations by ~6e-5, a mismatch of ~2e-9.</li>
-    <li><strong>Results depend on the platform.</strong> LAL's arithmetic depends on how the compiler contracts multiply-adds, so SpinTaylor-based results differ between arm64 and x86-64 builds at about the 1e-7 level. This is expected from the analysis in <a href="#testing">section {{sec:testing}}</a> but was not measured on x86-64.</li>
+    <li><strong>A biased power.</strong> LAL computes Mf<sup>1/6</sup> as <code>pow(Mf, 1.0/6)</code>, whose rounded exponent biases the IMRPhenomXAS inspiral phase by +0.8 ulp on average. On long inspirals LAL's phase is up to 9 ulp from the exact value.</li>
+    <li><strong>Modes and polarizations disagree.</strong> For IMRPhenomXPHM with SpinTaylor angles, the modes of <code>SimInspiralChooseFDModes</code> sum to its polarizations only to ~4e-6, because each J-frame mode gets its own range of angle integration.</li>
+    <li><strong>NRSur7dq4 in the frequency domain.</strong> <code>SimInspiralChooseFDWaveform</code> rejects NRSur7dq4; only <code>SimInspiralFD</code> converts it.</li>
+    <li><strong>A sensitive filter.</strong> LAL's high-pass filter amplifies last-bit input differences by ~1e4, which limits how reproducible its time-domain conditioning is.</li>
+    <li><strong>Results depend on the platform.</strong> LAL's arithmetic depends on how the compiler contracts multiply-adds, so SpinTaylor-based results differ between arm64 and x86-64 builds at about the 1e-7 level. This was later measured in Linux containers (<a href="#platforms">section {{sec:platforms}}</a>). LAL's own Linux and macOS builds differ by up to ~1e-3 in the IMRPhenomXHM (3,2) mode, and by ~1e-10 in the SpinTaylor angles.</li>
   </ul>
 </section>
 
 <section id="api">
-  <h2>API review and suggested changes</h2>
-  <p>All work so far kept the existing API: the <code>Waveform</code> trait and the constructors and fields of TaylorF2 and IMRPhenomD are unchanged, and new behaviour comes through additive builders and new types. These changes would make the crate more consistent, and in several cases faster:</p>
+  <h2>API review: done and still open</h2>
+  <p>The first review proposed nine changes. Five are now done:</p>
+  <ul>
+    <li><strong>One meaning for <code>phi_c</code>:</strong> LAL's orbital reference phase throughout. This is the one breaking change; see <code>CHANGELOG.md</code>.</li>
+    <li><strong>One polarization interface:</strong> <code>FrequencyDomainModel</code>/<code>TimeDomainModel</code> with <code>choose_fd_model</code>, and a single <code>Error</code> type.</li>
+    <li><strong>Caller-owned buffers:</strong> <code>polarizations_into</code>, the grid paths and NRSur7dq4's workspace.</li>
+    <li><strong>Optional parallelism:</strong> <code>Batch</code>, without a new dependency.</li>
+    <li><strong>The precession default:</strong> documented, with <code>WaveformOptions::lalsimulation_defaults()</code>.</li>
+  </ul>
+  <p>Still open:</p>
   <ol>
-    <li><strong>One meaning for <code>phi_c</code>.</strong> TaylorF2 treats <code>phi_c</code> as the orbital phase and subtracts 2φ<sub>c</sub>. IMRPhenomD and IMRPhenomXAS treat it as the GW phase, so matching LAL's <code>phi_ref</code> needs <code>phi_c = 2 phi_ref</code>. The precessing models take <code>phi_ref</code> directly. Using the orbital reference phase everywhere, as LAL does, would remove a common source of factor-of-two errors.</li>
-    <li><strong>Private fields and consistent units.</strong> <code>total_mass</code>, <code>luminosity_distance</code> and <code>phasing</code> are public and mutable. The distance is passed in Mpc but stored in metres. Because a caller can change these at any time, the models can't safely cache anything that depends on them, so the evaluators rebuild a snapshot on every call. Private fields with builder methods would allow caching, and would make it impossible to change the mass without updating the phasing.</li>
-    <li><strong>Constructors that return errors.</strong> <code>IMRPhenomXAS::new</code> and <code>IMRPhenomXHM::new</code> panic on invalid input, while <code>from_components</code> and the precessing models return <code>Result</code>. TaylorF2 and IMRPhenomD don't check their input at all. One error type and fallible constructors throughout would suit samplers, which must reject parameters rather than abort.</li>
-    <li><strong>One polarization interface.</strong> The aligned-spin models go through <code>Waveform::waveform_modes(f, phi_c, theta_jn)</code>. IMRPhenomXHM has <code>polarizations(f, phi_ref, inclination)</code>, and IMRPhenomXP/XPHM take everything in <code>PrecessingBinary</code>. A shared trait, with all parameters (including f<sub>ref</sub>, φ<sub>ref</sub> and ι) fixed at construction, would make the models interchangeable. It would also let each model precompute things that depend on the extrinsic parameters, such as spherical harmonics and reference-phase offsets.</li>
-    <li><strong>Caller-owned buffers (now added).</strong> The grid methods of <a href="#serial">section {{sec:serial}}</a> write into buffers the caller owns, and NRSur7dq4 takes a reusable workspace. The original methods still allocate their output; a breaking change could make the buffer versions the main interface.</li>
-    <li><strong>Separating set-up from evaluation.</strong> As in LAL, the SpinTaylor angles depend on the frequency grid through f<sub>min</sub>, and f<sub>ref</sub> = 0 means "the first frequency". Taking f<sub>min</sub> explicitly would let the integration and splines be computed once and reused across grids. This matters for heterodyned or relative-binning likelihoods and ROQ bases, which evaluate one binary on several grids.</li>
-    <li><strong>Uniform grids and multibanding.</strong> LAL's default multibanding makes IMRPhenomXHM and XPHM 1.1–1.7× faster on uniform grids, at a controlled loss of accuracy. A uniform-grid entry point already exists for XP and XPHM (<code>polarizations_uniform</code>). Porting multibanding would make it the fast path for full-band analyses.</li>
-    <li><strong>Optional parallelism.</strong> Apart from the SpinTaylor integration and the γ integral, every per-frequency loop is independent. A <code>rayon</code> feature, comparable to LAL's OpenMP but without the shared state, would speed up long single waveforms almost linearly. The default single-threaded behaviour would stay deterministic.</li>
-    <li><strong>Precession default.</strong> Document the difference from LAL's default (MSA), or offer <code>PrecessionVersion::LalDefault</code>.</li>
+    <li><strong>Private fields and consistent units.</strong> <code>total_mass</code>, <code>luminosity_distance</code> (stored in metres, passed in Mpc) and <code>phasing</code> are still public and mutable on TaylorF2 and IMRPhenomD. This prevents caching anything that depends on them.</li>
+    <li><strong>Constructors that panic.</strong> <code>IMRPhenomXAS::new</code> and <code>IMRPhenomXHM::new</code> still panic on invalid input. <code>from_binary</code> and <code>from_components</code> return errors, and samplers should use those.</li>
+    <li><strong>Method name clashes.</strong> Some models have their own methods with the trait's names but different arguments, such as <code>IMRPhenomXHM::polarizations(f, φ, ι)</code>. The model's method takes precedence, so the trait methods have to be called through generics or <code>dyn</code>. Renaming the old methods in a future breaking release would remove the surprise.</li>
+    <li><strong>Set-up that depends on the grid.</strong> As in LAL, the SpinTaylor angles depend on the grid through f<sub>min</sub>, and f<sub>ref</sub> = 0 means "the first frequency". Taking f<sub>min</sub> explicitly would let the integration be reused across grids, as heterodyned and relative-binning likelihoods need.</li>
+    <li><strong>Multibanding.</strong> LAL's default multibanding makes IMRPhenomXHM, XPHM and XPNR 1.1–1.7× faster on uniform grids. It is the largest remaining speed-up for full-band analyses, and the only case where LAL is faster than the Rust per-call path.</li>
   </ol>
 </section>
 
@@ -450,11 +657,13 @@ let (h_plus, h_cross) = model.polarizations_uniform(0.25, 20.0, 1024.0)?; // lik
   <h2>Limitations and future work</h2>
   <ul>
     <li><strong>Multibanding is not implemented.</strong> Rust reproduces LALSimulation with <code>PhenomXHMThresholdMband = PhenomXPHMThresholdMband = 0</code>. Comparisons with LAL's defaults on uniform grids will differ at the level of the multibanding tolerance.</li>
-    <li><strong>Only the default model versions are ported.</strong> Other <code>PhenomXPrecVersion</code> values (101, 103, 104, 220–222, 224, the PNR and antisymmetric options) and the NRTidal variants are not ported. For the MSA family, 222 differs from 223 only by raising an error instead of falling back to NNLO; 220, 221 and 224 use different expressions.</li>
-    <li><strong>Only one platform was tested.</strong> Bit-for-bit agreement was verified on arm64 macOS against conda-forge builds. The x86-64 path of the FMA helpers is based on how those builds are compiled and has not been run. If it differs, the SpinTaylor-based tests at 1e-9 may need platform-specific tolerances or reference data.</li>
+    <li><strong>Only the default model versions are ported.</strong> Other <code>PhenomXPrecVersion</code> values (101, 103, 104, 220–222, 224) and the NRTidal variants are not ported. The PNR angles and antisymmetric modes exist only as part of IMRPhenomXPNR, not as options for IMRPhenomXP or XPHM. For the MSA family, 222 differs from 223 only by raising an error instead of falling back to NNLO; 220, 221 and 224 use different expressions.</li>
+    <li><strong>Platforms.</strong> The tests pass on macOS arm64 and in Linux arm64 and amd64 containers (<a href="#platforms">section {{sec:platforms}}</a>). Bit-for-bit agreement holds only against the macOS clang builds of LAL. Matching GCC's broader contraction of multiply-adds is not attempted. Nothing has run on real x86-64 hardware or with AVX enabled.</li>
     <li><strong>Only one LAL version was tested.</strong> All reference data comes from lalsimulation 6.2.0. Future LAL changes would show up as test failures, which is intended.</li>
     <li><strong>Grid paths are not bit-exact.</strong> The <code>*_on_grid</code> methods agree with LALSimulation and with the per-frequency paths to about 1e-13, not bit for bit, because products of stored powers are rounded differently from direct powers. Use the per-frequency methods where bit-for-bit agreement matters.</li>
     <li><strong>NRSur7dq4 extras.</strong> The polarisation rotation by <code>longAscNodes</code> isn't exposed; it is zero in the default <code>ChooseTDWaveform</code> call. NRSur7dq2 isn't ported, but the data layer is versioned to allow it. The HDF5 reader only handles the subset that the surrogate files use.</li>
+    <li><strong>Modes and XPNR.</strong> XP has no modes in LAL, so its J-frame modes are checked only against its own polarizations. A co-precessing mode array that leaves out some ℓ drops those J-frame modes, whereas LAL needs <code>ModeArrayJframe</code>. XPNR has no fast grid path, and the <code>precession_version</code> option doesn't apply to it.</li>
+    <li><strong>Conversions.</strong> Agreement with LAL in the time domain is limited to ~1e-12 by LAL's high-pass filter amplifying the last-bit differences between <code>rustfft</code> and FFTW.</li>
     <li><strong>MSA speed.</strong> The MSA angles are only 1.4–1.8× faster than LAL, because the ported elliptic functions dominate.</li>
   </ul>
 </section>
@@ -478,6 +687,12 @@ OMP_NUM_THREADS=1 python scripts/validate_against_lalsimulation.py \
 OMP_NUM_THREADS=1 python report/lal_benchmark.py
 python report/make_figures.py
 python report/build_report.py
+
+# everything at once, on an idle machine
+bash report/measure_all.sh
+
+# Linux containers (see docs/linux.md)
+bash docker/run.sh arm64 test
 
 # NRSur7dq4 (data in lal_data/, from zenodo.org/records/14999310)
 OMP_NUM_THREADS=1 LAL_DATA_PATH=lal_data python scripts/validate_nrsur7dq4.py --n-draws 200 --outdir report/data

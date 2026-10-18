@@ -45,6 +45,7 @@ ORDER = [
     "IMRPhenomXPHM_NNLO",
     "IMRPhenomXPHM_MSA",
     "IMRPhenomXPHM",
+    "IMRPhenomXPNR",
     "NRSur7dq4",
 ]
 LABELS = {
@@ -69,6 +70,7 @@ COLOURS = [
     "#b8662d",
     "#5a6fd6",
     "#8c6d3f",
+    "#3f8c7a",
 ]
 
 
