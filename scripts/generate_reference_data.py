@@ -1079,8 +1079,10 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--n-frequencies", type=int, default=256)
     parser.add_argument("--suites", nargs="*", default=list(SUITES))
+    parser.add_argument("--outdir", default=str(DATA_DIR))
     args = parser.parse_args()
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    outdir = Path(args.outdir)
+    outdir.mkdir(parents=True, exist_ok=True)
     for name in args.suites:
         cases = [generate(case, args.n_frequencies) for case in SUITES[name]()]
         output = dict(
@@ -1088,7 +1090,7 @@ def main():
             lal_version=lal.__version__,
             cases=cases,
         )
-        path = DATA_DIR / f"{name}.json"
+        path = outdir / f"{name}.json"
         with open(path, "w") as ff:
             json.dump(output, ff)
         print(f"Wrote {len(cases)} cases to {path}")

@@ -5,8 +5,9 @@ write ``report/data/timings.json`` with both sets of timings.
 
 Run single-threaded (lalsimulation's IMRPhenomX* loops use OpenMP):
 
-    OMP_NUM_THREADS=1 python report/lal_benchmark.py
+    OMP_NUM_THREADS=1 python report/lal_benchmark.py [--output FILE]
 """
+import argparse
 import json
 import os
 import subprocess
@@ -136,6 +137,9 @@ def rust_timings():
 
 
 def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--output", default=str(ROOT / "report" / "data" / "timings.json"))
+    args = parser.parse_args()
     rust = rust_timings()
     lal_sequence = {name: best_time(sequence(*case)) for name, case in CASES.items()}
     lal_uniform = {name: best_time(uniform(*case)) for name, case in UNIFORM.items()}
@@ -156,7 +160,7 @@ def main():
         lal_sequence=lal_sequence,
         lal_uniform=lal_uniform,
     )
-    path = ROOT / "report" / "data" / "timings.json"
+    path = Path(args.output)
     path.write_text(json.dumps(out, indent=1))
     print(f"{'model':<24}{'rust [us]':>12}{'LAL [us]':>12}{'speed-up':>10}")
     for name, t_rust in rust.items():

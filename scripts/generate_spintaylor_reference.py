@@ -148,6 +148,7 @@ def decimate(length, n_samples):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--n-samples", type=int, default=20)
+    parser.add_argument("--outdir", default=str(DATA_DIR))
     args = parser.parse_args()
     output = list()
     for case in cases():
@@ -159,8 +160,9 @@ def main():
             case[name] = series[indices].tolist()
         output.append(case)
         print(f"{case['label']:45s} {length:7d} samples")
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    path = DATA_DIR / "spintaylor.json"
+    outdir = Path(args.outdir)
+    outdir.mkdir(parents=True, exist_ok=True)
+    path = outdir / "spintaylor.json"
     with open(path, "w") as ff:
         json.dump(
             dict(

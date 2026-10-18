@@ -1,0 +1,16 @@
+# Conda environment of the Linux containers (docker/Dockerfile). The versions
+# of LAL, GSL and the BLAS match the osx-arm64 environment that produced the
+# committed reference data (tests/data) and report/data/validation_*.json.
+name: lal
+channels:
+  - conda-forge
+dependencies:
+  - python=3.12
+  - python-lalsimulation=6.2.0
+  - liblal=7.7.0
+  - gsl=2.8
+  - libblas=*=*openblas
+  - numpy
+  - scipy
+  - h5py
+  - matplotlib-base
