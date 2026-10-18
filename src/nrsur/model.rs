@@ -80,9 +80,19 @@ pub struct NRSurDynamics {
 /// allocating. Create one per thread with [`NRSurWorkspace::new`] and pass it
 /// to [`NRSur7dq4::polarizations_with`] or [`NRSur7dq4::modes_with`]; it is
 /// sized on first use.
+///
+/// The workspace also keeps the inertial-frame modes of the last binary.
+/// When the next call has the same intrinsic parameters (masses, spins,
+/// `f_ref`, `f_min`, mode array and extrapolation setting; compared bit for
+/// bit), only the spherical harmonics, the distance scaling and the
+/// resampling onto the output times are redone, e.g. when a sampler varies
+/// only the inclination, phase, distance or sampling interval.
 #[derive(Clone, Debug, Default)]
 pub struct NRSurWorkspace {
     n_coorb: usize,
+    /// The intrinsic parameters whose inertial modes are in `h_re`, `h_im`,
+    /// with the labelled binary and the start of the output.
+    cached: Option<(IntrinsicKey, Labelled, f64)>,
     /// ODE state at the dynamics nodes.
     dynamics: Vec<State>,
     /// The orbital frequency fit at the nodes for the reference state.
@@ -110,6 +120,20 @@ pub struct NRSurWorkspace {
     hc_model: Vec<f64>,
     c_plus: Vec<f64>,
     c_cross: Vec<f64>,
+    /// The output times located in the coorbital times, and the spline
+    /// coefficients of the intervals they fall in.
+    grid: OutputGrid,
+    coef_b: Vec<f64>,
+    coef_d: Vec<f64>,
+}
+
+/// What the inertial modes depend on.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct IntrinsicKey {
+    data: usize,
+    bits: [u64; 10],
+    unlimited_extrapolation: bool,
+    active: [bool; N_MODES],
 }
 
 impl NRSurWorkspace {
@@ -123,6 +147,7 @@ impl NRSurWorkspace {
         if self.n_coorb == n && self.dynamics.len() == n_ds {
             return;
         }
+        self.cached = None;
         self.n_coorb = n;
         self.dynamics = vec![[0.0; N_STATE]; n_ds];
         self.omega_cache = vec![f64::NAN; n_ds];
@@ -147,6 +172,8 @@ impl NRSurWorkspace {
             &mut self.hc_model,
             &mut self.c_plus,
             &mut self.c_cross,
+            &mut self.coef_b,
+            &mut self.coef_d,
         ] {
             *buffer = vec![0.0; n];
         }
@@ -368,6 +395,28 @@ impl<'a> NRSur7dq4<'a> {
         self.data
     }
 
+    fn intrinsic_key(&self, f_min: f64) -> IntrinsicKey {
+        let b = &self.binary;
+        let values = [
+            b.mass_1,
+            b.mass_2,
+            b.spin_1[0],
+            b.spin_1[1],
+            b.spin_1[2],
+            b.spin_2[0],
+            b.spin_2[1],
+            b.spin_2[2],
+            b.f_ref,
+            f_min,
+        ];
+        IntrinsicKey {
+            data: self.data as *const NRSur7dq4Data as usize,
+            bits: values.map(f64::to_bits),
+            unlimited_extrapolation: self.unlimited_extrapolation,
+            active: self.active,
+        }
+    }
+
     fn labelled(&self) -> Labelled {
         let b = &self.binary;
         let (mut m1, mut m2) = (b.mass_1 * MSUN_SI, b.mass_2 * MSUN_SI);
@@ -418,6 +467,13 @@ impl<'a> NRSur7dq4<'a> {
             return Err(NRSurError::InvalidTimeStep(delta_t));
         }
         ws.prepare(self.data);
+        let key = self.intrinsic_key(f_min);
+        if let Some((cached, labels, t0)) = ws.cached {
+            if cached == key {
+                return Ok(Core { labels, t0 });
+            }
+        }
+        ws.cached = None;
         let data = self.data;
         let l = self.labelled();
         // get_dimless_omega
@@ -481,6 +537,7 @@ impl<'a> NRSur7dq4<'a> {
             &mut ws.h_re,
             &mut ws.h_im,
         );
+        ws.cached = Some((key, l, t0));
         Ok(Core { labels: l, t0 })
     }
 
@@ -683,10 +740,15 @@ impl<'a> NRSur7dq4<'a> {
                 let prefactor = if m % 2 != 0 && l.switched { -1.0 } else { 1.0 };
                 let i = mode_index(ell, m);
                 let (re, im) = (&ws.h_re[i * n..(i + 1) * n], &ws.h_im[i * n..(i + 1) * n]);
-                for t in 0..n {
-                    let (hre, him) = (re[t], im[t]);
-                    ws.hp_model[t] = fma(prefactor, fms(c_re, hre, c_im * him), ws.hp_model[t]);
-                    ws.hc_model[t] = fnms(prefactor, fma(c_im, hre, c_re * him), ws.hc_model[t]);
+                for (((hp, hc), &hre), &him) in ws
+                    .hp_model
+                    .iter_mut()
+                    .zip(ws.hc_model.iter_mut())
+                    .zip(re)
+                    .zip(im)
+                {
+                    *hp = fma(prefactor, fms(c_re, hre, c_im * him), *hp);
+                    *hc = fnms(prefactor, fma(c_im, hre, c_re * him), *hc);
                 }
             }
         }
@@ -700,19 +762,17 @@ impl<'a> NRSur7dq4<'a> {
         out.epoch = gps_epoch(l.m_tot_sec * core.t0);
         out.delta_t = delta_t;
         let knots = &self.data.t_coorb;
-        knots.second_derivatives(&ws.hp_model, &mut ws.c_plus, &mut ws.spline_z);
-        knots.second_derivatives(&ws.hc_model, &mut ws.c_cross, &mut ws.spline_z);
-        resample(
-            knots,
-            [
-                (ws.hp_model.as_slice(), ws.c_plus.as_slice()),
-                (ws.hc_model.as_slice(), ws.c_cross.as_slice()),
-            ],
-            core.t0,
-            dt,
-            nt,
-            [&mut out.hplus, &mut out.hcross],
-        );
+        ws.grid.locate(knots, core.t0, dt, nt);
+        for (y, c, h) in [
+            (&ws.hp_model, &mut ws.c_plus, &mut out.hplus),
+            (&ws.hc_model, &mut ws.c_cross, &mut out.hcross),
+        ] {
+            knots.second_derivatives(y, c, &mut ws.spline_z);
+            h.clear();
+            h.resize(nt, 0.0);
+            ws.grid
+                .evaluate(knots, y, c, &mut ws.coef_b, &mut ws.coef_d, |j, v| h[j] = v);
+        }
         Ok(())
     }
 
@@ -741,6 +801,7 @@ impl<'a> NRSur7dq4<'a> {
         out.epoch = gps_epoch(l.m_tot_sec * core.t0);
         out.delta_t = delta_t;
         let knots = &self.data.t_coorb;
+        ws.grid.locate(knots, core.t0, dt, nt);
         let mut count = 0;
         for ell in 2..=LMAX {
             if !self.ell_active(ell) {
@@ -750,9 +811,14 @@ impl<'a> NRSur7dq4<'a> {
                 let prefactor = if m % 2 != 0 && l.switched { -1.0 } else { 1.0 };
                 let scale = prefactor * a0;
                 let i = mode_index(ell, m);
-                let re = &mut ws.h_re[i * n..(i + 1) * n];
-                let im = &mut ws.h_im[i * n..(i + 1) * n];
-                re.iter_mut().chain(im.iter_mut()).for_each(|h| *h *= scale);
+                // scaled copies (gsl_vector_scale), keeping the modes cached
+                let (re, im) = (&mut ws.hp_model, &mut ws.hc_model);
+                for (out, h) in re.iter_mut().zip(&ws.h_re[i * n..(i + 1) * n]) {
+                    *out = h * scale;
+                }
+                for (out, h) in im.iter_mut().zip(&ws.h_im[i * n..(i + 1) * n]) {
+                    *out = h * scale;
+                }
                 knots.second_derivatives(re, &mut ws.c_plus, &mut ws.spline_z);
                 knots.second_derivatives(im, &mut ws.c_cross, &mut ws.spline_z);
                 if out.modes.len() <= count {
@@ -761,15 +827,14 @@ impl<'a> NRSur7dq4<'a> {
                 let mode = &mut out.modes[count];
                 mode.ell = ell as u32;
                 mode.m = m;
-                resample_complex(
-                    knots,
-                    (re, &ws.c_plus),
-                    (im, &ws.c_cross),
-                    core.t0,
-                    dt,
-                    nt,
-                    &mut mode.data,
-                );
+                let data = &mut mode.data;
+                data.clear();
+                data.resize(nt, Complex::new(0.0, 0.0));
+                let (b, d) = (&mut ws.coef_b, &mut ws.coef_d);
+                ws.grid
+                    .evaluate(knots, re, &ws.c_plus, b, d, |j, v| data[j].re = v);
+                ws.grid
+                    .evaluate(knots, im, &ws.c_cross, b, d, |j, v| data[j].im = v);
                 count += 1;
             }
         }
@@ -913,77 +978,67 @@ fn eval_data_piece(
     }
 }
 
-/// Evaluate natural splines on `knots` at `t0 + dt j`, `j < nt`
-/// (`gsl_spline_eval`, NaN outside the knots as GSL's error value).
-fn resample<const K: usize>(
-    knots: &FixedKnots,
-    splines: [(&[f64], &[f64]); K],
-    t0: f64,
-    dt: f64,
-    nt: usize,
-    out: [&mut Vec<f64>; K],
-) {
-    let mut out = out;
-    for o in out.iter_mut() {
-        o.clear();
-        o.reserve(nt);
-    }
-    let mut index = 0;
-    let mut current = usize::MAX;
-    let mut coefs = [(0.0, 0.0); K];
-    for j in 0..nt {
-        let t = fma(dt, j as f64, t0);
-        if !knots.contains(t) {
-            for o in out.iter_mut() {
-                o.push(f64::NAN);
-            }
-            continue;
-        }
-        index = knots.locate_from(t, index);
-        if index != current {
-            for (k, (y, c)) in splines.iter().enumerate() {
-                coefs[k] = knots.interval(index, y, c);
-            }
-            current = index;
-        }
-        let delx = t - knots.x[index];
-        for (k, (y, c)) in splines.iter().enumerate() {
-            out[k].push(cubic(y[index], coefs[k].0, c[index], coefs[k].1, delx));
-        }
-    }
+/// The output times `t0 + dt j`, `j < nt`, located in the coorbital
+/// times as `gsl_interp_accel_find` locates them.
+#[derive(Clone, Debug, Default)]
+struct OutputGrid {
+    /// Interval of each time ([`usize::MAX`] outside the knots, where GSL
+    /// returns NaN with a domain error).
+    index: Vec<usize>,
+    /// Offset from the left knot of the interval.
+    delx: Vec<f64>,
+    /// The first and last intervals used.
+    first: usize,
+    last: usize,
 }
 
-fn resample_complex(
-    knots: &FixedKnots,
-    re: (&[f64], &[f64]),
-    im: (&[f64], &[f64]),
-    t0: f64,
-    dt: f64,
-    nt: usize,
-    out: &mut Vec<Complex<f64>>,
-) {
-    out.clear();
-    out.reserve(nt);
-    let mut index = 0;
-    let mut current = usize::MAX;
-    let (mut c_re, mut c_im) = ((0.0, 0.0), (0.0, 0.0));
-    for j in 0..nt {
-        let t = fma(dt, j as f64, t0);
-        if !knots.contains(t) {
-            out.push(Complex::new(f64::NAN, f64::NAN));
-            continue;
+impl OutputGrid {
+    fn locate(&mut self, knots: &FixedKnots, t0: f64, dt: f64, nt: usize) {
+        self.index.clear();
+        self.delx.clear();
+        self.first = usize::MAX;
+        self.last = 0;
+        let mut hint = 0;
+        for j in 0..nt {
+            let t = fma(dt, j as f64, t0);
+            if knots.contains(t) {
+                hint = knots.locate_from(t, hint);
+                self.index.push(hint);
+                self.delx.push(t - knots.x[hint]);
+                self.first = self.first.min(hint);
+                self.last = self.last.max(hint);
+            } else {
+                self.index.push(usize::MAX);
+                self.delx.push(f64::NAN);
+            }
         }
-        index = knots.locate_from(t, index);
-        if index != current {
-            c_re = knots.interval(index, re.0, re.1);
-            c_im = knots.interval(index, im.0, im.1);
-            current = index;
+    }
+
+    /// Evaluate the natural spline `(y, c)` at the grid (`gsl_spline_eval`),
+    /// passing each value to `set`. `b` and `d` hold the coefficients of the
+    /// intervals.
+    fn evaluate(
+        &self,
+        knots: &FixedKnots,
+        y: &[f64],
+        c: &[f64],
+        b: &mut [f64],
+        d: &mut [f64],
+        mut set: impl FnMut(usize, f64),
+    ) {
+        if self.first <= self.last {
+            knots.intervals(self.first..self.last + 1, y, c, b, d);
         }
-        let delx = t - knots.x[index];
-        out.push(Complex::new(
-            cubic(re.0[index], c_re.0, re.1[index], c_re.1, delx),
-            cubic(im.0[index], c_im.0, im.1[index], c_im.1, delx),
-        ));
+        for (j, (&i, &delx)) in self.index.iter().zip(&self.delx).enumerate() {
+            set(
+                j,
+                if i == usize::MAX {
+                    f64::NAN
+                } else {
+                    cubic(y[i], b[i], c[i], d[i], delx)
+                },
+            );
+        }
     }
 }
 

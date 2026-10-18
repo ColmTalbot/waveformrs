@@ -10,7 +10,8 @@ use std::path::PathBuf;
 use serde::Deserialize;
 use waveformrs::hdf5::{self, Datatype, ObjectKind};
 use waveformrs::nrsur::{
-    NRSur7dq4, NRSur7dq4Data, NRSurWorkspace, PrecessingBinary, TimeSeriesPolarizations,
+    NRSur7dq4, NRSur7dq4Data, NRSurWorkspace, PrecessingBinary, TimeSeriesModes,
+    TimeSeriesPolarizations,
 };
 
 fn data_file() -> Option<PathBuf> {
@@ -391,4 +392,70 @@ fn nrsur7dq4_dynamics_match_lalsimulation() {
         worst = worst.max(max);
     }
     assert!(worst < 1e-12, "worst error {worst:e}");
+}
+
+/// A reused workspace (with its cache of the inertial modes) gives the same
+/// waveforms as fresh evaluations.
+#[test]
+fn nrsur7dq4_workspace_reuse_is_exact() {
+    let Some(data) = load_data() else { return };
+    let base = PrecessingBinary {
+        mass_1: 40.0,
+        mass_2: 20.0,
+        spin_1: [0.4, -0.3, 0.2],
+        spin_2: [0.1, 0.5, -0.3],
+        luminosity_distance: 100.0,
+        inclination: 0.7,
+        phi_ref: 0.1,
+        f_ref: 20.0,
+    };
+    let variations = [
+        base,
+        PrecessingBinary {
+            inclination: 2.1,
+            phi_ref: 4.0,
+            luminosity_distance: 900.0,
+            ..base
+        },
+        PrecessingBinary {
+            mass_1: 20.0,
+            mass_2: 40.0,
+            ..base
+        },
+        PrecessingBinary {
+            spin_1: [0.0, 0.0, 0.3],
+            ..base
+        },
+        base,
+    ];
+    let mut workspace = NRSurWorkspace::new();
+    let mut out = TimeSeriesPolarizations::default();
+    let mut modes = TimeSeriesModes::default();
+    for (k, binary) in variations.iter().enumerate() {
+        let delta_t = if k % 2 == 0 {
+            1.0 / 4096.0
+        } else {
+            1.0 / 2048.0
+        };
+        let model = NRSur7dq4::new(data, binary).unwrap();
+        model
+            .polarizations_with(&mut workspace, delta_t, 20.0, &mut out)
+            .unwrap();
+        let fresh = model.polarizations(delta_t, 20.0).unwrap();
+        assert_eq!(out.epoch, fresh.epoch);
+        assert_eq!(out.hplus, fresh.hplus, "case {k}");
+        assert_eq!(out.hcross, fresh.hcross, "case {k}");
+        model
+            .modes_with(&mut workspace, delta_t, 20.0, &mut modes)
+            .unwrap();
+        let fresh = model.modes(delta_t, 20.0).unwrap();
+        for (a, b) in modes.modes.iter().zip(&fresh.modes) {
+            assert_eq!((a.ell, a.m), (b.ell, b.m));
+            assert_eq!(a.data, b.data, "case {k} mode ({}, {})", a.ell, a.m);
+        }
+        // an error does not leave a stale cache behind
+        assert!(model
+            .polarizations_with(&mut workspace, delta_t, 5.0, &mut out)
+            .is_err());
+    }
 }

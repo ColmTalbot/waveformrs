@@ -109,6 +109,28 @@ impl FixedKnots {
         (b, d)
     }
 
+    /// [`Self::interval`] for the intervals `range`, written to `b[i]`,
+    /// `d[i]`.
+    pub(crate) fn intervals(
+        &self,
+        range: std::ops::Range<usize>,
+        y: &[f64],
+        c: &[f64],
+        b: &mut [f64],
+        d: &mut [f64],
+    ) {
+        let (lo, hi) = (range.start, range.end);
+        let h = &self.h[lo..hi];
+        let (y0, y1) = (&y[lo..hi], &y[lo + 1..hi + 1]);
+        let (c0, c1) = (&c[lo..hi], &c[lo + 1..hi + 1]);
+        for (k, (b, d)) in b[lo..hi].iter_mut().zip(&mut d[lo..hi]).enumerate() {
+            let dx = h[k];
+            let dy = y1[k] - y0[k];
+            *b = dy / dx - dx * fma(2.0, c0[k], c1[k]) / 3.0;
+            *d = (c1[k] - c0[k]) / (3.0 * dx);
+        }
+    }
+
     /// Index `i` with `x[i] <= t < x[i + 1]` (`len() - 2` at the last knot),
     /// as `gsl_interp_accel_find` returns it, searching up from `hint`.
     #[inline]
