@@ -201,6 +201,14 @@ def nrsur_case_arguments(case):
     )
 
 
+def nrsur_dict(case):
+    """The LALDict of a NRSur7dq4 case: mode array and extrapolation."""
+    params = lal_dict(case.get("lal_flags"), case.get("mode_array"))
+    if case.get("unlimited_extrapolation"):
+        lal.DictInsertUINT4Value(params, "unlimited_extrapolation", 1)
+    return params
+
+
 def generate_td(case):
     """Polarizations of SimInspiralChooseTDWaveform (or the error)."""
     case = dict(case)
@@ -217,7 +225,7 @@ def generate_td(case):
             case["delta_t"],
             case["f_min"],
             case["f_ref"],
-            lal_dict(case.get("lal_flags"), case.get("mode_array")),
+            nrsur_dict(case),
             lalsim.GetApproximantFromString(case["approximant"]),
         )
     except RuntimeError as error:
@@ -240,7 +248,7 @@ def generate_td_modes(case):
         case["f_min"],
         case["f_ref"],
         case["luminosity_distance"] * 1e6 * lal.PC_SI,
-        lal_dict(case.get("lal_flags"), case.get("mode_array")),
+        nrsur_dict(case),
         4,
         lalsim.GetApproximantFromString(case["approximant"]),
     )
@@ -249,6 +257,9 @@ def generate_td_modes(case):
     for ell in range(2, 5):
         for emm in range(-ell, ell + 1):
             hlm = lalsim.SphHarmTimeSeriesGetMode(hlms, ell, emm)
+            if hlm is None:
+                # all modes of this ell are inactive in the mode array
+                continue
             case["epoch"] = float(hlm.epoch)
             case["length"] = hlm.data.length
             case["modes"].append(
@@ -767,6 +778,45 @@ def nrsur7dq4_cases():
         (40.0, 20.0, [0.4, -0.3, 0.2], [0.1, 0.5, -0.3], 0.0, 5.0),
         (40.0, 20.0, [0.6, -0.6, 0.6], [0.1, 0.5, -0.3], 20.0, 20.0),
     ]
+    # coorbital mode arrays and unlimited extrapolation
+    options = [
+        dict(mode_array=[(2, 2), (2, -2)]),
+        dict(mode_array=[(ell, m) for ell in (2, 3) for m in range(-ell, ell + 1)]),
+        dict(mode_array=[(2, 0), (3, 1), (4, -4)]),
+    ]
+    for option in options:
+        cases.append(
+            dict(
+                approximant="NRSur7dq4",
+                mass_1=40.0,
+                mass_2=20.0,
+                spin_1=[0.4, -0.3, 0.2],
+                spin_2=[0.1, 0.5, -0.3],
+                luminosity_distance=100.0,
+                inclination=0.7,
+                phi_ref=0.1,
+                f_min=20.0,
+                f_ref=20.0,
+                delta_t=1 / 2048,
+                **option,
+            )
+        )
+    cases.append(
+        dict(
+            approximant="NRSur7dq4",
+            mass_1=70.0,
+            mass_2=10.0,
+            spin_1=[0.1, 0.0, 0.0],
+            spin_2=[0.0, 0.0, 0.1],
+            luminosity_distance=100.0,
+            inclination=0.5,
+            phi_ref=0.0,
+            f_min=20.0,
+            f_ref=20.0,
+            delta_t=1 / 2048,
+            unlimited_extrapolation=True,
+        )
+    )
     for m1, m2, s1, s2, fmin, fref in errors:
         cases.append(
             dict(
@@ -809,6 +859,20 @@ def nrsur7dq4_mode_cases():
             sample_stride=2,
         )
         for m1, m2, s1, s2, fmin, fref, dt in configs
+    ] + [
+        dict(
+            approximant="NRSur7dq4",
+            mass_1=40.0,
+            mass_2=20.0,
+            spin_1=[0.4, -0.3, 0.2],
+            spin_2=[0.1, 0.5, -0.3],
+            luminosity_distance=400.0,
+            f_min=20.0,
+            f_ref=20.0,
+            delta_t=1 / 1024,
+            sample_stride=2,
+            mode_array=[(2, 2), (2, -2), (3, 3), (3, -3)],
+        )
     ]
 
 

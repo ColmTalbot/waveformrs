@@ -182,6 +182,10 @@ struct TdCase {
     modes: Vec<ModeData>,
     length: Option<usize>,
     sample_stride: Option<usize>,
+    #[serde(default)]
+    mode_array: Vec<(u32, i32)>,
+    #[serde(default)]
+    unlimited_extrapolation: bool,
 }
 
 #[derive(Deserialize, Debug)]
@@ -193,6 +197,16 @@ struct ModeData {
 }
 
 impl TdCase {
+    fn model<'a>(&self, data: &'a NRSur7dq4Data) -> NRSur7dq4<'a> {
+        let mut model = NRSur7dq4::new(data, &self.binary())
+            .unwrap()
+            .with_unlimited_extrapolation(self.unlimited_extrapolation);
+        if !self.mode_array.is_empty() {
+            model = model.with_mode_array(&self.mode_array).unwrap();
+        }
+        model
+    }
+
     fn binary(&self) -> PrecessingBinary {
         PrecessingBinary {
             mass_1: self.mass_1,
@@ -208,14 +222,24 @@ impl TdCase {
 
     fn label(&self) -> String {
         format!(
-            "m1={} m2={} s1={:?} s2={:?} f_min={} f_ref={} dt=1/{}",
+            "m1={} m2={} s1={:?} s2={:?} f_min={} f_ref={} dt=1/{}{}{}",
             self.mass_1,
             self.mass_2,
             self.spin_1,
             self.spin_2,
             self.f_min,
             self.f_ref,
-            (1.0 / self.delta_t).round()
+            (1.0 / self.delta_t).round(),
+            if self.mode_array.is_empty() {
+                String::new()
+            } else {
+                format!(" modes={:?}", self.mode_array)
+            },
+            if self.unlimited_extrapolation {
+                " unlimited"
+            } else {
+                ""
+            }
         )
     }
 }
@@ -244,7 +268,7 @@ fn nrsur7dq4_polarizations_match_lalsimulation() {
     let mut workspace = NRSurWorkspace::new();
     let mut out = TimeSeriesPolarizations::default();
     for case in &reference.cases {
-        let model = NRSur7dq4::new(data, &case.binary()).unwrap();
+        let model = case.model(data);
         let result = model.polarizations_with(&mut workspace, case.delta_t, case.f_min, &mut out);
         if let Some(error) = &case.lal_error {
             let err = result.expect_err(&format!("LAL fails ({error}): {}", case.label()));
@@ -277,7 +301,7 @@ fn nrsur7dq4_modes_match_lalsimulation() {
     let reference: ReferenceFile<TdCase> = reference("nrsur7dq4_modes");
     let mut worst: f64 = 0.0;
     for case in &reference.cases {
-        let model = NRSur7dq4::new(data, &case.binary()).unwrap();
+        let model = case.model(data);
         let modes = model.modes(case.delta_t, case.f_min).unwrap();
         assert_eq!(modes.epoch, case.epoch.unwrap(), "{}", case.label());
         assert_eq!(modes.modes.len(), case.modes.len());
