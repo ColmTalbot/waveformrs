@@ -1,0 +1,737 @@
+{
+ "lalsimulation_version": "6.2.0",
+ "rustc": "rustc 1.86.0-nightly (854f22563 2025-01-31)",
+ "machine": "macOS-26.6.2-arm64-arm-64bit",
+ "processor": "arm",
+ "date": "2026-10-18",
+ "rounds": 5,
+ "rust_repeats_per_round": 2,
+ "load_average": [
+  6.1806640625,
+  6.98681640625,
+  4.65625,
+  6.5791015625,
+  11.037109375,
+  10.48828125
+ ],
+ "grids": {
+  "1 kHz": {
+   "f_min": 20.0,
+   "f_max": 1024.0,
+   "delta_f": 0.0078125,
+   "n_frequencies": 128513
+  },
+  "2 kHz": {
+   "f_min": 20.0,
+   "f_max": 2048.0,
+   "delta_f": 0.0078125,
+   "n_frequencies": 259585
+  },
+  "4 kHz": {
+   "f_min": 20.0,
+   "f_max": 4096.0,
+   "delta_f": 0.0078125,
+   "n_frequencies": 521729
+  }
+ },
+ "binaries": {
+  "aligned": {
+   "mass_1": 1.6,
+   "mass_2": 1.4,
+   "spin_1": [
+    0.0,
+    0.0,
+    0.05
+   ],
+   "spin_2": [
+    0.0,
+    0.0,
+    0.02
+   ],
+   "luminosity_distance": 150.0,
+   "inclination": 0.6,
+   "phi_ref": 1.3,
+   "f_ref": 20.0
+  },
+  "precessing": {
+   "mass_1": 1.8,
+   "mass_2": 1.3,
+   "spin_1": [
+    0.3,
+    0.1,
+    0.05
+   ],
+   "spin_2": [
+    -0.1,
+    0.2,
+    0.02
+   ],
+   "luminosity_distance": 200.0,
+   "inclination": 1.1,
+   "phi_ref": 0.4,
+   "f_ref": 20.0
+  }
+ },
+ "cases": [
+  {
+   "label": "TaylorF2, 1 kHz",
+   "model": "TaylorF2",
+   "version": null,
+   "grid": "1 kHz",
+   "lal": {
+    "sequence": 0.0046744998544454575
+   },
+   "rust": {
+    "n_frequencies": 128513,
+    "per_call": 0.002413916,
+    "grid": 0.000877084,
+    "grid_setup": 0.001225833
+   }
+  },
+  {
+   "label": "IMRPhenomD, 1 kHz",
+   "model": "IMRPhenomD",
+   "version": null,
+   "grid": "1 kHz",
+   "lal": {
+    "sequence": 0.007463416084647179
+   },
+   "rust": {
+    "n_frequencies": 128513,
+    "per_call": 0.003031542,
+    "grid": 0.001276416,
+    "grid_setup": 0.000844959
+   }
+  },
+  {
+   "label": "IMRPhenomXAS, 1 kHz",
+   "model": "IMRPhenomXAS",
+   "version": null,
+   "grid": "1 kHz",
+   "lal": {
+    "sequence": 0.007454332895576954
+   },
+   "rust": {
+    "n_frequencies": 128513,
+    "per_call": 0.003054208,
+    "grid": 0.001314417,
+    "grid_setup": 0.00083525
+   }
+  },
+  {
+   "label": "IMRPhenomXHM, 1 kHz",
+   "model": "IMRPhenomXHM",
+   "version": null,
+   "grid": "1 kHz",
+   "lal": {
+    "sequence": 0.03303508320823312,
+    "uniform": 0.030831833835691214,
+    "uniform_multibanding": 0.019240709021687508
+   },
+   "rust": {
+    "n_frequencies": 128513,
+    "per_call": 0.01923175,
+    "grid": 0.01257725,
+    "grid_setup": 0.000887875
+   }
+  },
+  {
+   "label": "IMRPhenomXP (102), 1 kHz",
+   "model": "IMRPhenomXP",
+   "version": 102,
+   "grid": "1 kHz",
+   "lal": {
+    "sequence": 0.02275037532672286,
+    "uniform": 0.02315350016579032
+   },
+   "rust": {
+    "n_frequencies": 128513,
+    "per_call": 0.011568583,
+    "grid": 0.002904834,
+    "uniform": 0.011731917,
+    "grid_setup": 0.000853291
+   }
+  },
+  {
+   "label": "IMRPhenomXP (223), 1 kHz",
+   "model": "IMRPhenomXP",
+   "version": 223,
+   "grid": "1 kHz",
+   "lal": {
+    "sequence": 0.0528594171628356,
+    "uniform": 0.05252970801666379
+   },
+   "rust": {
+    "n_frequencies": 128513,
+    "per_call": 0.034577667,
+    "grid": 0.018836834,
+    "uniform": 0.034734042,
+    "grid_setup": 0.000872792
+   }
+  },
+  {
+   "label": "IMRPhenomXP (320), 1 kHz",
+   "model": "IMRPhenomXP",
+   "version": 320,
+   "grid": "1 kHz",
+   "lal": {
+    "sequence": 0.1465246668085456,
+    "uniform": 0.13667908310890198
+   },
+   "rust": {
+    "n_frequencies": 128513,
+    "per_call": 0.044898875,
+    "grid": 0.039281208,
+    "uniform": 0.0438225,
+    "grid_setup": 0.000858334
+   }
+  },
+  {
+   "label": "IMRPhenomXPHM (102), 1 kHz",
+   "model": "IMRPhenomXPHM",
+   "version": 102,
+   "grid": "1 kHz",
+   "lal": {
+    "sequence": 0.12011800007894635,
+    "uniform": 0.12386179156601429,
+    "uniform_multibanding": 0.09602175001055002
+   },
+   "rust": {
+    "n_frequencies": 128513,
+    "per_call": 0.056909708,
+    "grid": 0.01673525,
+    "uniform": 0.057074,
+    "grid_setup": 0.000838667
+   }
+  },
+  {
+   "label": "IMRPhenomXPHM (223), 1 kHz",
+   "model": "IMRPhenomXPHM",
+   "version": 223,
+   "grid": "1 kHz",
+   "lal": {
+    "sequence": 0.2625262080691755,
+    "uniform": 0.2620904999785125,
+    "uniform_multibanding": 0.10750362509861588
+   },
+   "rust": {
+    "n_frequencies": 128513,
+    "per_call": 0.146962125,
+    "grid": 0.063086792,
+    "uniform": 0.147286917,
+    "grid_setup": 0.000856166
+   }
+  },
+  {
+   "label": "IMRPhenomXPHM (320), 1 kHz",
+   "model": "IMRPhenomXPHM",
+   "version": 320,
+   "grid": "1 kHz",
+   "lal": {
+    "sequence": 1.055175124667585,
+    "uniform": 0.9929651659913361,
+    "uniform_multibanding": 0.756927833892405
+   },
+   "rust": {
+    "n_frequencies": 128513,
+    "per_call": 0.212246416,
+    "grid": 0.186829959,
+    "uniform": 0.204100584,
+    "grid_setup": 0.000863
+   }
+  },
+  {
+   "label": "TaylorF2, 2 kHz",
+   "model": "TaylorF2",
+   "version": null,
+   "grid": "2 kHz",
+   "lal": {
+    "sequence": 0.008239666931331158
+   },
+   "rust": {
+    "n_frequencies": 259585,
+    "per_call": 0.004815708,
+    "grid": 0.001774542,
+    "grid_setup": 0.002239083
+   }
+  },
+  {
+   "label": "IMRPhenomD, 2 kHz",
+   "model": "IMRPhenomD",
+   "version": null,
+   "grid": "2 kHz",
+   "lal": {
+    "sequence": 0.01241924986243248
+   },
+   "rust": {
+    "n_frequencies": 259585,
+    "per_call": 0.005432417,
+    "grid": 0.002164166,
+    "grid_setup": 0.0017955
+   }
+  },
+  {
+   "label": "IMRPhenomXAS, 2 kHz",
+   "model": "IMRPhenomXAS",
+   "version": null,
+   "grid": "2 kHz",
+   "lal": {
+    "sequence": 0.014435125049203634
+   },
+   "rust": {
+    "n_frequencies": 259585,
+    "per_call": 0.006447709,
+    "grid": 0.003071125,
+    "grid_setup": 0.001720542
+   }
+  },
+  {
+   "label": "IMRPhenomXHM, 2 kHz",
+   "model": "IMRPhenomXHM",
+   "version": null,
+   "grid": "2 kHz",
+   "lal": {
+    "sequence": 0.06046999990940094,
+    "uniform": 0.0594823332503438,
+    "uniform_multibanding": 0.02971925027668476
+   },
+   "rust": {
+    "n_frequencies": 259585,
+    "per_call": 0.037984292,
+    "grid": 0.025626792,
+    "grid_setup": 0.001763083
+   }
+  },
+  {
+   "label": "IMRPhenomXP (102), 2 kHz",
+   "model": "IMRPhenomXP",
+   "version": 102,
+   "grid": "2 kHz",
+   "lal": {
+    "sequence": 0.04459979198873043,
+    "uniform": 0.04458529222756624
+   },
+   "rust": {
+    "n_frequencies": 259585,
+    "per_call": 0.023085208,
+    "grid": 0.006445417,
+    "uniform": 0.023307791,
+    "grid_setup": 0.001627458
+   }
+  },
+  {
+   "label": "IMRPhenomXP (223), 2 kHz",
+   "model": "IMRPhenomXP",
+   "version": 223,
+   "grid": "2 kHz",
+   "lal": {
+    "sequence": 0.1048058751039207,
+    "uniform": 0.10598220815882087
+   },
+   "rust": {
+    "n_frequencies": 259585,
+    "per_call": 0.070487708,
+    "grid": 0.038705708,
+    "uniform": 0.071016167,
+    "grid_setup": 0.001590208
+   }
+  },
+  {
+   "label": "IMRPhenomXP (320), 2 kHz",
+   "model": "IMRPhenomXP",
+   "version": 320,
+   "grid": "2 kHz",
+   "lal": {
+    "sequence": 0.17776395799592137,
+    "uniform": 0.1653635841794312
+   },
+   "rust": {
+    "n_frequencies": 259585,
+    "per_call": 0.072856083,
+    "grid": 0.061292292,
+    "uniform": 0.072174542,
+    "grid_setup": 0.001731042
+   }
+  },
+  {
+   "label": "IMRPhenomXPHM (102), 2 kHz",
+   "model": "IMRPhenomXPHM",
+   "version": 102,
+   "grid": "2 kHz",
+   "lal": {
+    "sequence": 0.24563350016251206,
+    "uniform": 0.24865687498822808,
+    "uniform_multibanding": 0.17826533410698175
+   },
+   "rust": {
+    "n_frequencies": 259585,
+    "per_call": 0.118509916,
+    "grid": 0.036163833,
+    "uniform": 0.119074958,
+    "grid_setup": 0.001735167
+   }
+  },
+  {
+   "label": "IMRPhenomXPHM (223), 2 kHz",
+   "model": "IMRPhenomXPHM",
+   "version": 223,
+   "grid": "2 kHz",
+   "lal": {
+    "sequence": 0.5317247076891363,
+    "uniform": 0.5293536246754229,
+    "uniform_multibanding": 0.18801687518134713
+   },
+   "rust": {
+    "n_frequencies": 259585,
+    "per_call": 0.311706708,
+    "grid": 0.133376291,
+    "uniform": 0.311495833,
+    "grid_setup": 0.001733125
+   }
+  },
+  {
+   "label": "IMRPhenomXPHM (320), 2 kHz",
+   "model": "IMRPhenomXPHM",
+   "version": 320,
+   "grid": "2 kHz",
+   "lal": {
+    "sequence": 1.151368792168796,
+    "uniform": 1.1148149170912802,
+    "uniform_multibanding": 0.8363598752766848
+   },
+   "rust": {
+    "n_frequencies": 259585,
+    "per_call": 0.299232666,
+    "grid": 0.231419833,
+    "uniform": 0.279899042,
+    "grid_setup": 0.001818833
+   }
+  },
+  {
+   "label": "TaylorF2, 4 kHz",
+   "model": "TaylorF2",
+   "version": null,
+   "grid": "4 kHz",
+   "lal": {
+    "sequence": 0.01711724977940321
+   },
+   "rust": {
+    "n_frequencies": 521729,
+    "per_call": 0.009658125,
+    "grid": 0.003586,
+    "grid_setup": 0.003552791
+   }
+  },
+  {
+   "label": "IMRPhenomD, 4 kHz",
+   "model": "IMRPhenomD",
+   "version": null,
+   "grid": "4 kHz",
+   "lal": {
+    "sequence": 0.024149708915501833
+   },
+   "rust": {
+    "n_frequencies": 521729,
+    "per_call": 0.010782,
+    "grid": 0.004866459,
+    "grid_setup": 0.003416459
+   }
+  },
+  {
+   "label": "IMRPhenomXAS, 4 kHz",
+   "model": "IMRPhenomXAS",
+   "version": null,
+   "grid": "4 kHz",
+   "lal": {
+    "sequence": 0.02846674993634224
+   },
+   "rust": {
+    "n_frequencies": 521729,
+    "per_call": 0.012729709,
+    "grid": 0.0065075,
+    "grid_setup": 0.003363
+   }
+  },
+  {
+   "label": "IMRPhenomXHM, 4 kHz",
+   "model": "IMRPhenomXHM",
+   "version": null,
+   "grid": "4 kHz",
+   "lal": {
+    "sequence": 0.13178420811891556,
+    "uniform": 0.12007229076698422,
+    "uniform_multibanding": 0.05225549964234233
+   },
+   "rust": {
+    "n_frequencies": 521729,
+    "per_call": 0.074123541,
+    "grid": 0.052201709,
+    "grid_setup": 0.003383125
+   }
+  },
+  {
+   "label": "IMRPhenomXP (102), 4 kHz",
+   "model": "IMRPhenomXP",
+   "version": 102,
+   "grid": "4 kHz",
+   "lal": {
+    "sequence": 0.08616529079154134,
+    "uniform": 0.08594045881181955
+   },
+   "rust": {
+    "n_frequencies": 521729,
+    "per_call": 0.045021708,
+    "grid": 0.01307975,
+    "uniform": 0.045864042,
+    "grid_setup": 0.003404083
+   }
+  },
+  {
+   "label": "IMRPhenomXP (223), 4 kHz",
+   "model": "IMRPhenomXP",
+   "version": 223,
+   "grid": "4 kHz",
+   "lal": {
+    "sequence": 0.20903629204258323,
+    "uniform": 0.20848420821130276
+   },
+   "rust": {
+    "n_frequencies": 521729,
+    "per_call": 0.14159775,
+    "grid": 0.077434333,
+    "uniform": 0.142303708,
+    "grid_setup": 0.003255333
+   }
+  },
+  {
+   "label": "IMRPhenomXP (320), 4 kHz",
+   "model": "IMRPhenomXP",
+   "version": 320,
+   "grid": "4 kHz",
+   "lal": {
+    "sequence": 0.2617894997820258,
+    "uniform": 0.2551349173299968
+   },
+   "rust": {
+    "n_frequencies": 521729,
+    "per_call": 0.103161417,
+    "grid": 0.078421292,
+    "uniform": 0.102747,
+    "grid_setup": 0.003444084
+   }
+  },
+  {
+   "label": "IMRPhenomXPHM (102), 4 kHz",
+   "model": "IMRPhenomXPHM",
+   "version": 102,
+   "grid": "4 kHz",
+   "lal": {
+    "sequence": 0.49437549989670515,
+    "uniform": 0.4862894997932017,
+    "uniform_multibanding": 0.34194150008261204
+   },
+   "rust": {
+    "n_frequencies": 521729,
+    "per_call": 0.224176584,
+    "grid": 0.0685555,
+    "uniform": 0.226617042,
+    "grid_setup": 0.003266833
+   }
+  },
+  {
+   "label": "IMRPhenomXPHM (223), 4 kHz",
+   "model": "IMRPhenomXPHM",
+   "version": 223,
+   "grid": "4 kHz",
+   "lal": {
+    "sequence": 1.0402374998666346,
+    "uniform": 1.0403690417297184,
+    "uniform_multibanding": 0.3550574998371303
+   },
+   "rust": {
+    "n_frequencies": 521729,
+    "per_call": 0.600605709,
+    "grid": 0.257070458,
+    "uniform": 0.612104209,
+    "grid_setup": 0.003384583
+   }
+  },
+  {
+   "label": "IMRPhenomXPHM (320), 4 kHz",
+   "model": "IMRPhenomXPHM",
+   "version": 320,
+   "grid": "4 kHz",
+   "lal": {
+    "sequence": 1.4286313746124506,
+    "uniform": 1.373771458864212,
+    "uniform_multibanding": 1.0053684171289206
+   },
+   "rust": {
+    "n_frequencies": 521729,
+    "per_call": 0.464751208,
+    "grid": 0.304435334,
+    "uniform": 0.436934959,
+    "grid_setup": 0.003410334
+   }
+  }
+ ],
+ "memory_bytes": {
+  "baseline": {
+   "rust": 6160384,
+   "lal": 38305792
+  },
+  "TaylorF2, 1 kHz": {
+   "rust_all_paths": 21856256,
+   "lal_sequence": 48463872
+  },
+  "IMRPhenomD, 1 kHz": {
+   "rust_all_paths": 21987328,
+   "lal_sequence": 49758208
+  },
+  "IMRPhenomXAS, 1 kHz": {
+   "rust_all_paths": 21905408,
+   "lal_sequence": 48349184
+  },
+  "IMRPhenomXHM, 1 kHz": {
+   "rust_all_paths": 22085632,
+   "lal_sequence": 88080384,
+   "lal_uniform": 88195072,
+   "lal_uniform_multibanding": 63176704
+  },
+  "IMRPhenomXP (102), 1 kHz": {
+   "rust_all_paths": 32423936,
+   "lal_sequence": 48529408,
+   "lal_uniform": 48758784
+  },
+  "IMRPhenomXP (223), 1 kHz": {
+   "rust_all_paths": 32423936,
+   "lal_sequence": 48578560,
+   "lal_uniform": 51888128
+  },
+  "IMRPhenomXP (320), 1 kHz": {
+   "rust_all_paths": 64815104,
+   "lal_sequence": 284999680,
+   "lal_uniform": 273285120
+  },
+  "IMRPhenomXPHM (102), 1 kHz": {
+   "rust_all_paths": 53280768,
+   "lal_sequence": 55050240,
+   "lal_uniform": 52051968,
+   "lal_uniform_multibanding": 85245952
+  },
+  "IMRPhenomXPHM (223), 1 kHz": {
+   "rust_all_paths": 58703872,
+   "lal_sequence": 58294272,
+   "lal_uniform": 62865408,
+   "lal_uniform_multibanding": 65421312
+  },
+  "IMRPhenomXPHM (320), 1 kHz": {
+   "rust_all_paths": 214777856,
+   "lal_sequence": 2050162688,
+   "lal_uniform": 2256076800,
+   "lal_uniform_multibanding": 1850851328
+  },
+  "TaylorF2, 2 kHz": {
+   "rust_all_paths": 37617664,
+   "lal_sequence": 58474496
+  },
+  "IMRPhenomD, 2 kHz": {
+   "rust_all_paths": 37748736,
+   "lal_sequence": 54444032
+  },
+  "IMRPhenomXAS, 2 kHz": {
+   "rust_all_paths": 37683200,
+   "lal_sequence": 59654144
+  },
+  "IMRPhenomXHM, 2 kHz": {
+   "rust_all_paths": 37863424,
+   "lal_sequence": 134447104,
+   "lal_uniform": 135315456,
+   "lal_uniform_multibanding": 88031232
+  },
+  "IMRPhenomXP (102), 2 kHz": {
+   "rust_all_paths": 56623104,
+   "lal_sequence": 54886400,
+   "lal_uniform": 56033280
+  },
+  "IMRPhenomXP (223), 2 kHz": {
+   "rust_all_paths": 58703872,
+   "lal_sequence": 54870016,
+   "lal_uniform": 55705600
+  },
+  "IMRPhenomXP (320), 2 kHz": {
+   "rust_all_paths": 118407168,
+   "lal_sequence": 318144512,
+   "lal_uniform": 301187072
+  },
+  "IMRPhenomXPHM (102), 2 kHz": {
+   "rust_all_paths": 100646912,
+   "lal_sequence": 80609280,
+   "lal_uniform": 69369856,
+   "lal_uniform_multibanding": 107528192
+  },
+  "IMRPhenomXPHM (223), 2 kHz": {
+   "rust_all_paths": 111460352,
+   "lal_sequence": 68796416,
+   "lal_uniform": 68681728,
+   "lal_uniform_multibanding": 169787392
+  },
+  "IMRPhenomXPHM (320), 2 kHz": {
+   "rust_all_paths": 271482880,
+   "lal_sequence": 2093760512,
+   "lal_uniform": 2280194048,
+   "lal_uniform_multibanding": 1868218368
+  },
+  "TaylorF2, 4 kHz": {
+   "rust_all_paths": 69091328,
+   "lal_sequence": 69025792
+  },
+  "IMRPhenomD, 4 kHz": {
+   "rust_all_paths": 69238784,
+   "lal_sequence": 67616768
+  },
+  "IMRPhenomXAS, 4 kHz": {
+   "rust_all_paths": 69140480,
+   "lal_sequence": 68386816
+  },
+  "IMRPhenomXHM, 4 kHz": {
+   "rust_all_paths": 69369856,
+   "lal_sequence": 227540992,
+   "lal_uniform": 227983360,
+   "lal_uniform_multibanding": 130285568
+  },
+  "IMRPhenomXP (102), 4 kHz": {
+   "rust_all_paths": 106987520,
+   "lal_sequence": 74661888,
+   "lal_uniform": 75431936
+  },
+  "IMRPhenomXP (223), 4 kHz": {
+   "rust_all_paths": 111181824,
+   "lal_sequence": 74514432,
+   "lal_uniform": 70057984
+  },
+  "IMRPhenomXP (320), 4 kHz": {
+   "rust_all_paths": 165101568,
+   "lal_sequence": 460210176,
+   "lal_uniform": 406716416
+  },
+  "IMRPhenomXPHM (102), 4 kHz": {
+   "rust_all_paths": 195149824,
+   "lal_sequence": 93765632,
+   "lal_uniform": 93831168,
+   "lal_uniform_multibanding": 235732992
+  },
+  "IMRPhenomXPHM (223), 4 kHz": {
+   "rust_all_paths": 216727552,
+   "lal_sequence": 108183552,
+   "lal_uniform": 94928896,
+   "lal_uniform_multibanding": 214073344
+  },
+  "IMRPhenomXPHM (320), 4 kHz": {
+   "rust_all_paths": 392888320,
+   "lal_sequence": 2152005632,
+   "lal_uniform": 2277146624,
+   "lal_uniform_multibanding": 1936359424
+  }
+ }
+}
