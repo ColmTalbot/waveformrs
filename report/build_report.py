@@ -191,11 +191,15 @@ def build(args):
     values["max_rel_all"] = sci(max(summary[m[0]]["max_relative_error"] for m in MODELS))
     values["max_mm_all"] = sci(max(summary[m[0]]["max_mismatch"] for m in MODELS))
 
-    ref_files = sorted((ROOT / "tests" / "data").glob("*.json"))
-    values["n_ref_files"] = str(len(ref_files))
-    values["n_ref_cases"] = str(
-        sum(len(json.loads(path.read_text())["cases"]) for path in ref_files)
-    )
+    # reference files generated with lalsimulation (the HDF5 checksum dump
+    # comes from h5py)
+    references = [
+        json.loads(path.read_text())
+        for path in sorted((ROOT / "tests" / "data").glob("*.json"))
+    ]
+    references = [ref for ref in references if "cases" in ref]
+    values["n_ref_files"] = str(len(references))
+    values["n_ref_cases"] = str(sum(len(ref["cases"]) for ref in references))
 
     values["xphm320_rust"] = duration(rust["IMRPhenomXPHM (320)"])
     values["xphm320_lal"] = duration(lal_seq["IMRPhenomXPHM (320)"])

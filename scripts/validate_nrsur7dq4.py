@@ -226,7 +226,9 @@ def main():
     compared = [r for r in records if r["same_length"]]
     errors = np.array([max(r["max_rel_err_plus"], r["max_rel_err_cross"]) for r in compared])
     mismatches = np.array([max(r["mismatch_plus"], r["mismatch_cross"]) for r in compared])
-    speedup = np.array([r["time_lal"] / r["time_rust"] for r in records])
+    # Fresh calls: the reused-workspace timing repeats the same binary, so it
+    # measures the cache for extrinsic-only changes, not a new waveform.
+    speedup = np.array([r["time_lal"] / r["time_rust_fresh"] for r in records])
     summary = dict(
         approximant="NRSur7dq4",
         lalsimulation_version=lalsim.__version__,
@@ -241,7 +243,8 @@ def main():
         max_mismatch=float(mismatches.max()),
         median_mismatch=float(np.median(mismatches)),
         median_time_lal=float(np.median([r["time_lal"] for r in records])),
-        median_time_rust=float(np.median([r["time_rust"] for r in records])),
+        median_time_rust=float(np.median([r["time_rust_fresh"] for r in records])),
+        median_time_rust_cached=float(np.median([r["time_rust"] for r in records])),
         median_speedup=float(np.median(speedup)),
         records=records,
     )
@@ -255,7 +258,8 @@ def main():
         f"{summary['n_epoch_mismatch']} epoch / {summary['n_length_mismatch']} length "
         f"differences, {len(failures)} failures, "
         f"median time lal {1e3 * summary['median_time_lal']:.2f} ms / rust "
-        f"{1e3 * summary['median_time_rust']:.2f} ms (x{np.median(speedup):.1f})"
+        f"{1e3 * summary['median_time_rust']:.2f} ms (x{np.median(speedup):.1f}; "
+        f"{1e3 * summary['median_time_rust_cached']:.3f} ms when only extrinsic parameters change)"
     )
 
 

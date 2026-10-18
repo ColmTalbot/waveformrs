@@ -276,7 +276,7 @@ for p in &amp;samples {                                               // many ti
   </div>
   <h3>What limits the gains</h3>
   <ul>
-    <li><strong>TaylorF2.</strong> Each frequency costs one polynomial and the vectorised <code>sin_cos</code>, about 6 ns.</li>
+    <li><strong>TaylorF2.</strong> On the grid, each frequency costs one polynomial and the vectorised <code>sin_cos</code>, about 6 ns. Its per-call time depends noticeably on memory layout. It includes allocating the outputs, and it slows down when the allocator places them in a way that conflicts in the cache with the input. A call takes about 150 µs for a single repeated binary, but averaged more than that over these 300 draws, roughly level with LAL. The grid path writes into fixed buffers and avoids this.</li>
     <li><strong>IMRPhenomD, XAS and XHM.</strong> Most of a 20–1024 Hz grid lies in the merger–ringdown region of a binary black hole, where each frequency still calls <code>atan</code> and <code>exp</code>. IMRPhenomXHM adds per-mode work. Its (3,2) ringdown is a sum of a spheroidal term and a rotated (2,2) term. The per-frequency path combines them with <code>cexp</code> and then splits the result back into amplitude and phase with <code>atan2</code> and <code>hypot</code>. The grid path converts the two terms separately, which removes those calls.</li>
     <li><strong>IMRPhenomXP and XPHM.</strong> {{xp_grid_text}}</li>
     <li><strong>NRSur7dq4.</strong> It has no frequency grid. Reusing a workspace removes the allocations. The workspace also keeps the last binary's inertial-frame modes. When only inclination, phase, distance or Δt change, the surrogate is skipped and a waveform costs {{nrsur_extrinsic_range}} instead of about 1 ms.</li>

@@ -54,6 +54,7 @@ LABELS = {
     "IMRPhenomXPHM_NNLO": "IMRPhenomXPHM (102)",
     "IMRPhenomXPHM_MSA": "IMRPhenomXPHM (223)",
     "IMRPhenomXPHM": "IMRPhenomXPHM (320)",
+    "NRSur7dq4": "NRSur7dq4 (bit-identical)",
 }
 # Mid-tone colours that read on both light and dark backgrounds.
 COLOURS = [
@@ -129,6 +130,12 @@ def total_mass(record):
     return record["mass_1"] + record["mass_2"]
 
 
+def rust_time(record):
+    """Time of a fresh Rust call (the NRSur7dq4 harness also times a reused
+    workspace, which can skip the surrogate when the binary repeats)."""
+    return record.get("time_rust_fresh", record["time_rust"])
+
+
 def accuracy(results):
     names = list(results)
     ncols = 4
@@ -167,7 +174,7 @@ def speedup(results):
     rng = np.random.default_rng(1)
     for ii, name in enumerate(names):
         records = results[name]["records"]
-        ratio = np.array([r["time_lal"] / r["time_rust"] for r in records])
+        ratio = np.array([r["time_lal"] / rust_time(r) for r in records])
         colour = COLOURS[ORDER.index(name) % len(COLOURS)]
         yy = ii + rng.uniform(-0.18, 0.18, len(ratio))
         ax.scatter(ratio, yy, s=5, color=colour, linewidths=0, alpha=0.7)
@@ -195,7 +202,7 @@ def summary(results):
     rows = list()
     for name, result in results.items():
         records = result["records"]
-        ratio = np.array([r["time_lal"] / r["time_rust"] for r in records])
+        ratio = np.array([r["time_lal"] / rust_time(r) for r in records])
         rows.append(
             dict(
                 approximant=name,
@@ -209,7 +216,7 @@ def summary(results):
                 median_speedup=float(np.median(ratio)),
                 min_speedup=float(np.min(ratio)),
                 max_speedup=float(np.max(ratio)),
-                median_time_rust=float(np.median([r["time_rust"] for r in records])),
+                median_time_rust=float(np.median([rust_time(r) for r in records])),
                 median_time_lal=float(np.median([r["time_lal"] for r in records])),
                 failures=[
                     dict(

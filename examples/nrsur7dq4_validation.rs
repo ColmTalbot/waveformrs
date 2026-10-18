@@ -11,9 +11,11 @@
 //! Output: {"results": [{"epoch": ..., "hplus": [...], "hcross": [...],
 //!          "seconds": ..., "seconds_fresh": ..., "error": null | "..."}, ...]}
 //!
-//! `seconds` is the median time of a call reusing an [`NRSurWorkspace`] and
-//! the output buffers (as in a sampler), `seconds_fresh` that of
-//! [`NRSur7dq4::new`] plus [`NRSur7dq4::polarizations`].
+//! `seconds` is the median time of repeated calls for the same binary
+//! reusing an [`NRSurWorkspace`] and the output buffers, which reuse the
+//! cached inertial modes (the cost when only extrinsic parameters change);
+//! `seconds_fresh` that of [`NRSur7dq4::new`] plus
+//! [`NRSur7dq4::polarizations`].
 use std::io::Read;
 use std::time::Instant;
 
