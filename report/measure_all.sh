@@ -17,7 +17,7 @@ cargo build --release --examples
 "$PY" report/lal_benchmark.py
 "$PY" report/nrsur_benchmark.py
 "$PY" report/serial_benchmark.py --n-draws 300
-"$PY" report/long_benchmark.py
+"$PY" report/long_benchmark.py --memory
 "$PY" report/conversions_benchmark.py
 cargo run --quiet --release --example batch_benchmark -- --json report/data/batch_scaling.json
 "$PY" report/build_report.py

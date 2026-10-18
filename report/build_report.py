@@ -435,9 +435,11 @@ def build(args):
             f"<td class=\"num\">{factor(lal_t['sequence'] / rust_t['per_call'])}</td></tr>"
         )
     values["long_timing_rows"] = "\n".join(rows)
-    memory = long["memory_bytes"].get(f"IMRPhenomXPHM (320), {grid_label}", {})
-    values["long_mem_rust"] = f"{memory.get('rust_all_paths', 0) / 2**20:.0f} MB"
-    values["long_mem_lal"] = f"{memory.get('lal_sequence', 0) / 2**30:.2f} GB"
+    memory = (long.get("memory_bytes") or {}).get(f"IMRPhenomXPHM (320), {grid_label}")
+    if not memory:
+        raise SystemExit("long_timings.json has no memory measurements: run report/long_benchmark.py --memory")
+    values["long_mem_rust"] = f"{memory['rust_all_paths'] / 2**20:.0f} MB"
+    values["long_mem_lal"] = f"{memory['lal_sequence'] / 2**30:.2f} GB"
 
     # IMRPhenomXPNR
     xpnr_cases = 0
@@ -469,8 +471,11 @@ def build(args):
     rows = []
     for row in conversions["rows"]:
         lal_t = row["lal"]
+        what, label = row["what"], row["label"]
+        if what.startswith("("):  # FFT rows: "(plan + FFT)", "forward real FFT, N = ..."
+            what, label = label, what.strip("()")
         rows.append(
-            f"<tr><td>{html.escape(row['what'])}</td><td>{html.escape(row['label'])}</td>"
+            f"<tr><td>{html.escape(what)}</td><td>{html.escape(label)}</td>"
             f"<td class=\"num\">{duration(row['rust'])}</td><td class=\"num\">{duration(lal_t) if lal_t else '–'}</td>"
             f"<td class=\"num\">{factor(lal_t / row['rust']) if lal_t else '–'}</td></tr>"
         )
@@ -502,7 +507,8 @@ def build(args):
     linux = json.loads((DATA / "linux_timings_arm64.json").read_text())["linux-arm64"]
     rows = []
     for model, entry in linux["single"].items():
-        if "lal_us" not in entry:
+        # the workspace row repeats one binary, so it times the cached modes
+        if "lal_us" not in entry or "workspace" in model:
             continue
         grid_entry = linux.get("grid", {}).get(model, {})
         grid_t = grid_entry.get("grid_us")
