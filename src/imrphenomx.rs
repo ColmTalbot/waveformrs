@@ -18,6 +18,7 @@
 //! | `utilities`    | `LALSimIMRPhenomXUtilities.c`                          |
 //! | `linalg`       | the GSL LU solves used for the collocation systems     |
 //! | `xp`           | `LALSimIMRPhenomX.c` (IMRPhenomXP driver)              |
+//! | `precessing_grid` | IMRPhenomXP/XPHM on a prepared frequency grid (no LAL counterpart) |
 //! | `precession`   | `LALSimIMRPhenomX_precession.c` (precession struct, J frame, NNLO angles) |
 //! | `spintaylor_angles` | `LALSimIMRPhenomX_precession.c` (SpinTaylor Euler angles) |
 //! | `msa`          | `LALSimIMRPhenomX_precession.c` (MSA Euler angles)     |
@@ -44,6 +45,7 @@ pub(crate) mod libm;
 mod linalg;
 mod msa;
 mod phase;
+mod precessing_grid;
 mod precession;
 mod qnm;
 mod ringdown;

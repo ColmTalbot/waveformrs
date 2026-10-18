@@ -568,6 +568,28 @@ impl ModeGenerator {
             }
         }
     }
+
+    /// Whether the mode vanishes identically (odd modes of equal-mass,
+    /// equal-spin binaries).
+    pub(crate) fn vanishes(&self) -> bool {
+        matches!(self, Self::HigherMode { mode, .. } if mode.wfhm.amp_zero)
+    }
+
+    /// Amplitude and phase of [`Self::h`], `h = amplitude exp(i phase)`, for
+    /// a mode that does not vanish.
+    #[inline]
+    pub(crate) fn amplitude_phase(&self, mf: f64, powers: &UsefulPowers) -> (f64, f64) {
+        match self {
+            Self::Xas22 { xas, phif_ref } => (
+                xas.amplitude_22_full(mf, powers),
+                xas.phase_22_full(mf, powers, *phif_ref),
+            ),
+            Self::HigherMode { mode, amp0 } => {
+                let (amp, phi) = mode.amplitude_phase(powers, None);
+                (amp0 * amp, phi)
+            }
+        }
+    }
 }
 
 /// `IMRPhenomXHMGenerateFDOneMode` (and `IMRPhenomXASGenerateFD` for the

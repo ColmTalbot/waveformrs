@@ -9,15 +9,19 @@ use std::f64::consts::PI;
 use num_complex::Complex;
 
 use crate::constants::{MSUN_SI, PC_SI};
+use crate::grid::{FrequencyGrid, ScalePowers};
 use crate::imrphenomx::internals::{hz_to_mf, IMRPhenomXError, UsefulPowers, WaveformStruct};
 use crate::imrphenomx::phase::PhaseCoefficients;
+use crate::imrphenomx::precessing_grid::{
+    add_twisted_mode, angles_with_reuse, rotate_polarizations, AngleArrays, TwistArrays,
+};
 use crate::imrphenomx::precession::{
     mf_to_hz, PrecessingBinary, PrecessionStruct, PrecessionVersion,
 };
 use crate::imrphenomx::spintaylor_angles::{inspiral_angles_spintaylor, SpinTaylorAngles};
 use crate::imrphenomx::wigner::half_angles;
 use crate::imrphenomx::xhm::{ModeGenerator, IMRPHENOMXHM_MODES};
-use crate::imrphenomx::xp::Polarizations;
+use crate::imrphenomx::xp::{frequency_bounds, Polarizations};
 
 /// `pPrec->sqrt*` as hard-coded in `IMRPhenomXGetAndSetPrecessionVariables`
 /// (`sqrt10` is only accurate to 15 digits there).
@@ -143,7 +147,7 @@ impl Twist {
 /// `d^l_{k, m'}(beta)` for `k = -l..l` (Appendix A of arXiv:2004.06503),
 /// written as in `IMRPhenomXPHMTwistUp`.
 #[inline]
-fn wigner_d(ell: u32, mprime: u32, c: &[f64; 9], s: &[f64; 9]) -> [f64; 9] {
+pub(crate) fn wigner_d(ell: u32, mprime: u32, c: &[f64; 9], s: &[f64; 9]) -> [f64; 9] {
     let mut d = [0.0; 9];
     match (ell, mprime) {
         (2, 2) => {
@@ -496,6 +500,136 @@ impl Setup {
         }
         Ok((hp, hc))
     }
+
+    /// [`Self::generate`] on a prepared grid, written into `hplus` and
+    /// `hcross` (see [`crate::imrphenomx::precessing_grid`]).
+    fn generate_grid(
+        &mut self,
+        mode_list: &[(u32, u32)],
+        grid: &FrequencyGrid,
+        hplus: &mut [Complex<f64>],
+        hcross: &mut [Complex<f64>],
+    ) -> Result<(), IMRPhenomXError> {
+        if self.wf.f_max_prime <= self.wf.f_min {
+            return Err(IMRPhenomXError::InvalidFrequencies("fCut <= f_min"));
+        }
+        let spintaylor = if self.prec.precessing_tag == 3 {
+            Some(self.initialize_euler_angles()?)
+        } else {
+            None
+        };
+        let modes = match self.modes.take() {
+            Some(modes) => modes,
+            None => build_modes(&self.wf, mode_list),
+        };
+        let wf = &self.wf;
+        let prec = &self.prec;
+        let frequencies = grid.frequencies();
+        let mf_cut = wf.f_max_prime * wf.m_sec;
+        // the frequencies with Mf <= mf_cut
+        let n = frequencies.partition_point(|&f| wf.m_sec * f <= mf_cut);
+
+        let mut mprimes: Vec<u32> = modes.iter().map(|mode| mode.emm).collect();
+        mprimes.sort_unstable();
+        mprimes.dedup();
+        let angles = match &spintaylor {
+            Some(angles) => spintaylor_angle_arrays(angles, wf, prec, &frequencies[..n], &mprimes)?,
+            None => {
+                // Evaluate m' = 2 first: the other m' reuse its angles.
+                mprimes.sort_by_key(|&mprime| mprime != 2);
+                if prec.msa.is_some() {
+                    // v = (pi Mf 2 / m')^(1/3) as in the per-frequency path
+                    let argument = |mprime: u32, i: usize| {
+                        PI * (wf.m_sec * frequencies[i]) * (2.0 / mprime as f64)
+                    };
+                    angles_with_reuse(&mprimes, n, argument, |arguments, angles| {
+                        for &x in arguments {
+                            let (alpha, epsilon, cos_beta) = prec.msa_angles(x.cbrt());
+                            angles.push(alpha, cos_beta, epsilon);
+                        }
+                    })
+                } else {
+                    // omega = pi Mf 2 / m'
+                    let argument = |mprime: u32, i: usize| {
+                        PI * (wf.m_sec * frequencies[i]) * 2. / mprime as f64
+                    };
+                    angles_with_reuse(&mprimes, n, argument, |arguments, angles| {
+                        for &omega in arguments {
+                            let (alpha, epsilon, cos_beta) = prec.nnlo_angles(omega, wf.eta);
+                            angles.push(alpha, cos_beta, epsilon);
+                        }
+                    })
+                }
+            }
+        };
+        let twists: [Option<TwistArrays>; 5] =
+            std::array::from_fn(|mprime| angles[mprime].as_ref().map(TwistArrays::new));
+
+        let zero = Complex::new(0.0, 0.0);
+        hplus.fill(zero);
+        hcross.fill(zero);
+        let mut scratch = vec![zero; n];
+        let scale = ScalePowers::new(wf.m_sec);
+        for mode in &modes {
+            if mode.generator.vanishes() {
+                continue;
+            }
+            let emm = mode.emm as usize;
+            add_twisted_mode(
+                mode.ell,
+                mode.emm,
+                harmonics(prec, mode.ell),
+                angles[emm].as_ref().expect("angles of m'"),
+                twists[emm].as_ref().expect("twist of m'"),
+                &mut scratch,
+                |i| {
+                    let powers = grid.powers(&scale, i);
+                    let mf = powers.itself;
+                    mode.generator
+                        .amplitude_phase(mf, &UsefulPowers::from_grid(&powers))
+                },
+                hplus,
+                hcross,
+            );
+        }
+        rotate_polarizations(prec.zeta_polarization, &mut hplus[..n], &mut hcross[..n]);
+        Ok(())
+    }
+}
+
+/// The SpinTaylor Euler angles of [`spintaylor_angles`] for each `m'` in
+/// `mprimes` (increasing) at the frequencies `frequencies`, returning the
+/// error the per-frequency loop of [`Setup::generate`] meets first.
+fn spintaylor_angle_arrays(
+    angles: &SpinTaylorAngles,
+    wf: &WaveformStruct,
+    prec: &PrecessionStruct,
+    frequencies: &[f64],
+    mprimes: &[u32],
+) -> Result<[Option<AngleArrays>; 5], IMRPhenomXError> {
+    let mut out: [Option<AngleArrays>; 5] = Default::default();
+    // (frequency index, error) of the first failure in the order of the
+    // per-frequency loop (frequencies outside, increasing m' inside)
+    let mut first_error: Option<(usize, IMRPhenomXError)> = None;
+    for &mprime in mprimes {
+        let end = first_error.as_ref().map_or(frequencies.len(), |(i, _)| *i);
+        let mut cursor = AngleCursor::default();
+        let mut arrays = AngleArrays::with_capacity(frequencies.len());
+        for (i, &f) in frequencies[..end].iter().enumerate() {
+            match spintaylor_angles(angles, wf, prec, wf.m_sec * f, mprime, &mut cursor) {
+                Ok((alpha, cos_beta, epsilon)) => arrays.push(alpha, cos_beta, epsilon),
+                Err(error) => {
+                    first_error = Some((i, error));
+                    break;
+                }
+            }
+        }
+        out[mprime as usize] = Some(arrays);
+    }
+    match first_error {
+        Some((_, error)) => Err(error),
+        None => Ok(out),
+    }
 }
 
 /// The SpinTaylor Euler angles `(alpha, cos(beta), epsilon)` for mode `m'`
@@ -677,26 +811,10 @@ impl IMRPhenomXPHM {
     /// and `f_max`, frequencies above `min(f_max, f_cut)` with
     /// `f_cut = 0.3 / M` give zero.
     pub fn polarizations(&self, frequencies: &[f64]) -> Result<Polarizations, IMRPhenomXError> {
-        let (Some(&f_min), Some(&f_max)) = (frequencies.first(), frequencies.last()) else {
+        let Some((f_min, f_max)) = frequency_bounds(frequencies)? else {
             return Ok((Vec::new(), Vec::new()));
         };
-        if f_min.is_nan() || f_min <= 0.0 {
-            return Err(IMRPhenomXError::InvalidFrequencies(
-                "frequencies must be positive",
-            ));
-        }
-        if frequencies
-            .windows(2)
-            .any(|w| w[0] >= w[1] || w[0].is_nan() || w[1].is_nan())
-        {
-            return Err(IMRPhenomXError::InvalidFrequencies(
-                "frequencies must be strictly increasing",
-            ));
-        }
-        let mut setup = match &self.setup {
-            Some(setup) => setup.with_bounds(f_min, f_max),
-            None => Setup::new(&self.binary, self.version, &self.modes, 0.0, f_min, f_max)?,
-        };
+        let mut setup = self.setup(f_min, f_max)?;
         fallback_to_msa(
             setup.generate(&self.modes, frequencies),
             &self.binary,
@@ -706,6 +824,62 @@ impl IMRPhenomXPHM {
             f_min,
             f_max,
         )
+    }
+
+    /// [`Self::polarizations`] at the frequencies of a prepared
+    /// [`FrequencyGrid`], written into `hplus` and `hcross` (each with the
+    /// length of the grid).
+    ///
+    /// For evaluating many waveforms on the same frequencies: the Euler
+    /// angles are those of [`Self::polarizations`] (evaluated once where
+    /// two `m'` need them at the same argument), while the co-precessing
+    /// modes use the powers of `Mf` stored in the grid and the twisting up
+    /// is done in vectorisable passes over the grid. The result agrees with
+    /// [`Self::polarizations`] to rounding (~1e-13 relative), including the
+    /// fallback of the SpinTaylor angles to the MSA angles.
+    ///
+    /// # Panics
+    ///
+    /// If `hplus` or `hcross` do not have the length of the grid.
+    pub fn polarizations_on_grid(
+        &self,
+        grid: &FrequencyGrid,
+        hplus: &mut [Complex<f64>],
+        hcross: &mut [Complex<f64>],
+    ) -> Result<(), IMRPhenomXError> {
+        assert_eq!(hplus.len(), grid.len(), "output length must match the grid");
+        assert_eq!(
+            hcross.len(),
+            grid.len(),
+            "output length must match the grid"
+        );
+        let Some((f_min, f_max)) = frequency_bounds(grid.frequencies())? else {
+            return Ok(());
+        };
+        let modes = &self.modes;
+        match self
+            .setup(f_min, f_max)?
+            .generate_grid(modes, grid, hplus, hcross)
+        {
+            Err(IMRPhenomXError::SpinTaylorFallbackToMsa(_)) => Setup::new(
+                &self.binary,
+                PrecessionVersion::Msa,
+                modes,
+                0.0,
+                f_min,
+                f_max,
+            )?
+            .generate_grid(modes, grid, hplus, hcross),
+            result => result,
+        }
+    }
+
+    /// The set-up for a non-uniform grid from `f_min` to `f_max`.
+    fn setup(&self, f_min: f64, f_max: f64) -> Result<Setup, IMRPhenomXError> {
+        match &self.setup {
+            Some(setup) => Ok(setup.with_bounds(f_min, f_max)),
+            None => Setup::new(&self.binary, self.version, &self.modes, 0.0, f_min, f_max),
+        }
     }
 
     /// `(h_+, h_x)` on the uniform grid `k delta_f`, `k = 0 .. n - 1`,
