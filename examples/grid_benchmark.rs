@@ -39,18 +39,26 @@ fn ab(
         vec![Complex::new(0.0, 0.0); n],
     );
     let (mut t_old, mut t_new) = (f64::INFINITY, f64::INFINITY);
-    for _ in 0..repeats {
-        let start = Instant::now();
-        for k in 0..batch {
-            black_box(per_frequency(k));
+    // alternate the order: running one right after the other can slow it
+    // down (seen for IMRPhenomD on the grid after the per-frequency path)
+    for repeat in 0..repeats {
+        for path in [repeat % 2, 1 - repeat % 2] {
+            let start = Instant::now();
+            for k in 0..batch {
+                if path == 0 {
+                    black_box(per_frequency(k));
+                } else {
+                    on_grid(k, &mut hp, &mut hc);
+                    black_box((&hp, &hc));
+                }
+            }
+            let elapsed = start.elapsed().as_secs_f64() / batch as f64;
+            if path == 0 {
+                t_old = t_old.min(elapsed);
+            } else {
+                t_new = t_new.min(elapsed);
+            }
         }
-        t_old = t_old.min(start.elapsed().as_secs_f64() / batch as f64);
-        let start = Instant::now();
-        for k in 0..batch {
-            on_grid(k, &mut hp, &mut hc);
-            black_box((&hp, &hc));
-        }
-        t_new = t_new.min(start.elapsed().as_secs_f64() / batch as f64);
     }
     let (p_old, c_old) = per_frequency(3);
     on_grid(3, &mut hp, &mut hc);
