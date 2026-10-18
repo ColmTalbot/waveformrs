@@ -327,7 +327,7 @@ impl WaveformOptions {
 /// f)`.
 ///
 /// The models are `Send + Sync`, so one model can be evaluated from several
-/// threads (see `crate::batch`).
+/// threads (see [`crate::batch`]).
 pub trait FrequencyDomainModel: Send + Sync + fmt::Debug {
     /// The model for `binary`, with LAL's default settings for the
     /// approximant (and the crate's default Euler angles for the precessing

@@ -1,5 +1,5 @@
 //! The error type of the common model interface ([`crate::model`]) and the
-//! batch evaluation (`crate::batch`).
+//! batch evaluation ([`crate::batch`]).
 //!
 //! [`Error`] wraps the errors of the individual model families
 //! ([`IMRPhenomXError`], [`NRSurError`]) and adds the failures of the

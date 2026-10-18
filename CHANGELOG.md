@@ -66,3 +66,14 @@ All notable changes to `waveformrs` are recorded here.
   switch off they return the new
   `IMRPhenomXError::PrecessionVersionUnavailable` instead (polarizations,
   grid and uniform paths, and modes).
+- **Batched evaluation**, `waveformrs::batch::Batch`: many binaries (built
+  with any `from_binary`-like function) or prepared models on one
+  `FrequencyGrid` (`polarizations_on_grid`, `models_on_grid`, into
+  caller-provided row-major buffers), at arbitrary frequencies
+  (`polarizations`, returning a `Vec`), and NRSur7dq4 in the time domain
+  (`time_domain_polarizations`, `time_domain_models`, one workspace per
+  thread). `Batch::new(threads)` splits the work into chunks taken by
+  `std::thread::scope` threads (no new dependency); one thread is exactly
+  a serial loop and the results do not depend on the number of threads
+  (`tests/batch.rs`). `examples/batch_benchmark.rs` reports the throughput
+  for 1, 2, 4, 8 and all threads.
