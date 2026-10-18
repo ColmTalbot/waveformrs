@@ -1,5 +1,6 @@
 use std::f64::consts::PI;
 
+use crate::cmath::LibmCbrt;
 use crate::imrphenomd::coefficients::{COLLOCATION_COEFFS, GAMMA_COEFFS, RHO_COEFFS};
 use crate::imrphenomd::constants::{AMP_FJOIN_INS, POWERS_OF_PI};
 use crate::imrphenomd::utils::{
@@ -100,7 +101,7 @@ fn phenomd_inspiral_amplitude_pn(params: &Params) -> PNAmplitude {
 }
 
 pub fn inspiral_amplitude(frequency: f64, prefactors: &AmplitudePrefactors) -> f64 {
-    let orbital_speed = (frequency * POWERS_OF_PI.one).cbrt();
+    let orbital_speed = (frequency * POWERS_OF_PI.one).libm_cbrt();
     inspiral_amplitude_from_speed(orbital_speed, prefactors)
 }
 
@@ -119,7 +120,7 @@ fn inspiral_amplitude_from_speed(orbital_speed: f64, prefactors: &AmplitudePrefa
 }
 
 pub fn inspiral_amplitude_derivative(frequency: f64, prefactors: &AmplitudePrefactors) -> f64 {
-    let orbital_speed = (frequency * POWERS_OF_PI.one).cbrt();
+    let orbital_speed = (frequency * POWERS_OF_PI.one).libm_cbrt();
     let mut cumulative_power_frequency = 1.0;
     let mut amplitude = 0.0;
     let mut power = 0.0;

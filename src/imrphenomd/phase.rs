@@ -1,5 +1,6 @@
 use std::f64::consts::PI;
 
+use crate::cmath::LibmCbrt;
 use crate::imrphenomd::coefficients::{ALPHA_COEFFS, BETA_COEFFS, SIGMA_COEFFS};
 use crate::imrphenomd::constants::PHI_FJOIN_INS;
 use crate::imrphenomd::constants::POWERS_OF_PI;
@@ -106,7 +107,7 @@ fn phase_connection_coefficients(
 }
 
 fn inspiral_phase(frequency: f64, prefactors: &PNPhasing) -> f64 {
-    let v = frequency.cbrt() * POWERS_OF_PI.third;
+    let v = frequency.libm_cbrt() * POWERS_OF_PI.third;
     inspiral_phase_from_speed(v, v.ln(), prefactors)
 }
 
@@ -128,7 +129,7 @@ fn inspiral_phase_from_speed(orbital_speed: f64, logv: f64, prefactors: &PNPhasi
 }
 
 fn inspiral_phase_derivative(frequency: f64, prefactors: &PNPhasing) -> f64 {
-    let orbital_speed = frequency.cbrt() * POWERS_OF_PI.third;
+    let orbital_speed = frequency.libm_cbrt() * POWERS_OF_PI.third;
     let logv = orbital_speed.ln();
 
     let mut phasing = 0.0;

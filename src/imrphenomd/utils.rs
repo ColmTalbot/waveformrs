@@ -1,5 +1,6 @@
 use once_cell::sync::Lazy;
 
+use crate::cmath::LibmCbrt;
 use crate::grid::GridPowers;
 use crate::imrphenomd::coefficients::FINAL_SPIN_COEFFS;
 use crate::imrphenomd::constants::POWERS_OF_PI;
@@ -22,7 +23,7 @@ pub struct Powers {
 
 impl Powers {
     pub fn new(value: f64) -> Self {
-        let third = value.cbrt();
+        let third = value.libm_cbrt();
         let sixth = third.sqrt();
         Self {
             minus_one_sixth: sixth.powi(-1),
@@ -52,7 +53,7 @@ pub(crate) struct MfPowers {
 impl MfPowers {
     #[inline(always)]
     pub fn new(mf: f64) -> Self {
-        let third = mf.cbrt();
+        let third = mf.libm_cbrt();
         Self {
             mf,
             third,

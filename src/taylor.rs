@@ -2,6 +2,7 @@ use std::f64::consts::PI;
 
 use num_complex::Complex;
 
+use crate::cmath::LibmCbrt;
 use crate::{
     constants::{MPC_SI, SOLAR_RADIUS_IN_M, SOLAR_RADIUS_IN_S},
     fastmath,
@@ -172,7 +173,7 @@ struct Evaluator {
 impl Evaluator {
     #[inline(always)]
     fn evaluate(&self, frequency: f64) -> Complex<f64> {
-        let v = (self.pi_m * frequency).cbrt();
+        let v = (self.pi_m * frequency).libm_cbrt();
         let v2 = v * v;
         let inv_v5 = 1.0 / (v2 * v * v2);
         // v^(-7/2) = v^-5 * v^(3/2)
@@ -221,7 +222,7 @@ impl Evaluator {
 
 impl Waveform for TaylorF2 {
     fn orbital_speed(&self, frequency: f64) -> f64 {
-        (PI * self.total_mass * SOLAR_RADIUS_IN_S * frequency).cbrt()
+        (PI * self.total_mass * SOLAR_RADIUS_IN_S * frequency).libm_cbrt()
     }
 
     fn amplitude(&self, v: f64) -> f64 {

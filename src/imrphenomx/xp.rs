@@ -6,6 +6,7 @@ use std::f64::consts::PI;
 
 use num_complex::Complex;
 
+use crate::cmath::LibmCbrt;
 use crate::constants::MSUN_SI;
 use crate::grid::{FrequencyGrid, ScalePowers};
 use crate::imrphenomx::internals::{hz_to_mf, IMRPhenomXError, UsefulPowers, WaveformStruct};
@@ -219,7 +220,7 @@ impl Setup {
                         // LAL's powers of Mf (IMRPhenomX_Initialize_Powers)
                         let h22 = xas.h22_with_powers(mf, &UsefulPowers::new(mf), phif_ref);
                         let (alpha, epsilon, cos_beta) =
-                            prec.msa_angles((std::f64::consts::PI * mf).cbrt());
+                            prec.msa_angles((std::f64::consts::PI * mf).libm_cbrt());
                         (hp[i], hc[i]) = twist_up_22(h22, alpha, cos_beta, epsilon, y2);
                     }
                 }

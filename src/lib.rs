@@ -1,4 +1,5 @@
 pub mod batch;
+pub(crate) mod cmath;
 pub mod conditioning;
 pub(crate) mod constants;
 pub mod conversions;

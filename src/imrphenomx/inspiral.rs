@@ -8,6 +8,7 @@
 
 use std::f64::consts::PI;
 
+use crate::cmath::LibmCbrt;
 use crate::imrphenomx::amplitude::AmpCoefficients;
 use crate::imrphenomx::internals::{fma, UsefulPowers, WaveformStruct, POWERS_OF_LALPI};
 use crate::imrphenomx::phase::PhaseCoefficients;
@@ -115,9 +116,9 @@ pub(crate) fn pow_7_of(x: f64) -> f64 {
 /// `IMRPhenomX_Inspiral_Amp_22_rho1`: pseudo-PN amplitude coefficient of
 /// f^(7/3) from the collocation values `v1..v3` at `f1..f3`.
 pub(crate) fn amp_22_rho1(v1: f64, v2: f64, v3: f64, f1: f64, f2: f64, f3: f64) -> f64 {
-    let f1p1o3 = f1.cbrt();
-    let f2p1o3 = f2.cbrt();
-    let f3p1o3 = f3.cbrt();
+    let f1p1o3 = f1.libm_cbrt();
+    let f2p1o3 = f2.libm_cbrt();
+    let f3p1o3 = f3.libm_cbrt();
     let f1p7o3 = pow_7_of(f1p1o3);
     let f1p8o3 = f1p7o3 * f1p1o3;
     let f2p7o3 = pow_7_of(f2p1o3);
@@ -146,9 +147,9 @@ pub(crate) fn amp_22_rho1(v1: f64, v2: f64, v3: f64, f1: f64, f2: f64, f3: f64) 
 /// `IMRPhenomX_Inspiral_Amp_22_rho2`: pseudo-PN amplitude coefficient of
 /// f^(8/3).
 pub(crate) fn amp_22_rho2(v1: f64, v2: f64, v3: f64, f1: f64, f2: f64, f3: f64) -> f64 {
-    let f1p1o3 = f1.cbrt();
-    let f2p1o3 = f2.cbrt();
-    let f3p1o3 = f3.cbrt();
+    let f1p1o3 = f1.libm_cbrt();
+    let f2p1o3 = f2.libm_cbrt();
+    let f3p1o3 = f3.libm_cbrt();
     let f1p7o3 = pow_7_of(f1p1o3);
     let f2p7o3 = pow_7_of(f2p1o3);
     let f3p7o3 = pow_7_of(f3p1o3);
@@ -174,9 +175,9 @@ pub(crate) fn amp_22_rho2(v1: f64, v2: f64, v3: f64, f1: f64, f2: f64, f3: f64) 
 /// `IMRPhenomX_Inspiral_Amp_22_rho3`: pseudo-PN amplitude coefficient of
 /// f^3.
 pub(crate) fn amp_22_rho3(v1: f64, v2: f64, v3: f64, f1: f64, f2: f64, f3: f64) -> f64 {
-    let f1p1o3 = f1.cbrt();
-    let f2p1o3 = f2.cbrt();
-    let f3p1o3 = f3.cbrt();
+    let f1p1o3 = f1.libm_cbrt();
+    let f2p1o3 = f2.libm_cbrt();
+    let f3p1o3 = f3.libm_cbrt();
     let f1p7o3 = pow_7_of(f1p1o3);
     let f1p8o3 = f1p7o3 * f1p1o3;
     let f2p7o3 = pow_7_of(f2p1o3);

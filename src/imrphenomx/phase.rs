@@ -5,6 +5,7 @@
 
 use std::f64::consts::{LN_2, PI};
 
+use crate::cmath::LibmCbrt;
 use crate::constants::EGAMMA;
 use crate::imrphenomx::internals::{fma, UsefulPowers, WaveformStruct, POWERS_OF_LALPI};
 use crate::imrphenomx::linalg::lu_solve;
@@ -209,7 +210,7 @@ impl PhaseCoefficients {
         let mut matrix = [[0.0; 5]; 5];
         for (row, &ff) in matrix.iter_mut().zip(&points_rd) {
             let invff = 1.0 / ff;
-            let ff1 = invff.cbrt();
+            let ff1 = invff.libm_cbrt();
             let ff2 = invff * invff;
             let ff3 = ff2 * ff2;
             let ff4 = -dphase0 / fma(f_damp, f_damp, (ff - f_ring) * (ff - f_ring));
@@ -236,7 +237,7 @@ impl PhaseCoefficients {
         ];
         let mut matrix = [[0.0; 4]; 4];
         for (row, &ff) in matrix.iter_mut().zip(&points_ins) {
-            let ff1 = ff.cbrt();
+            let ff1 = ff.libm_cbrt();
             let ff2 = ff1 * ff1;
             *row = [1.0, ff1, ff2, ff];
         }

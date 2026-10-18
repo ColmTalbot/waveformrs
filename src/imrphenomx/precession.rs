@@ -18,6 +18,7 @@
 
 use std::f64::consts::{FRAC_PI_2, PI};
 
+use crate::cmath::LibmCbrt;
 use crate::constants::{C_SI, G_SI, MSUN_SI, MTSUN_SI};
 use crate::grid::{FrequencyGrid, ScalePowers};
 use crate::imrphenomx::internals::{IMRPhenomXError, WaveformStruct, POWERS_OF_LALPI};
@@ -176,7 +177,7 @@ pub(crate) fn chirp_time_bound(f_start: f64, m1: f64, m2: f64, s1: f64, s2: f64)
     let c2 = 7.43 / 2.52 + 11. / 3. * eta;
     let c3 = (226.0 / 15.0) * chi;
     let c4 = 30.58673 / 5.08032 + 54.29 / 5.04 * eta + 61.7 / 7.2 * eta * eta;
-    let v = (PI * G_SI * m * f_start).cbrt() / C_SI;
+    let v = (PI * G_SI * m * f_start).libm_cbrt() / C_SI;
     c0 * v.powf(-8.0) * (1.0 + (c2 + (c3 + c4 * v) * v) * v * v)
 }
 
@@ -656,12 +657,12 @@ impl PrecessionStruct {
         let omega_ref = wf.pi_m * wf.f_ref * 2. / 2.;
         let (alpha_offset, epsilon_offset) = match &msa {
             Some(msa) => {
-                let angles = msa.phi_zeta_costhetal(omega_ref.cbrt());
+                let angles = msa.phi_zeta_costhetal(omega_ref.libm_cbrt());
                 (angles.phiz - alpha0, angles.zeta - epsilon0)
             }
             None => {
                 let logomega_ref = omega_ref.ln();
-                let omega_ref_cbrt = omega_ref.cbrt();
+                let omega_ref_cbrt = omega_ref.libm_cbrt();
                 let omega_ref_cbrt2 = omega_ref_cbrt * omega_ref_cbrt;
                 let (alpha, epsilon) =
                     nnlo.evaluate(omega_ref, logomega_ref, omega_ref_cbrt, omega_ref_cbrt2);
@@ -717,7 +718,7 @@ impl PrecessionStruct {
     #[inline]
     pub(crate) fn nnlo_angles(&self, omega: f64, eta: f64) -> (f64, f64, f64) {
         let logomega = omega.ln();
-        let omega_cbrt = omega.cbrt();
+        let omega_cbrt = omega.libm_cbrt();
         let omega_cbrt2 = omega_cbrt * omega_cbrt;
         let (alpha, epsilon) = self.nnlo.evaluate(omega, logomega, omega_cbrt, omega_cbrt2);
         let alpha = alpha - self.alpha_offset;

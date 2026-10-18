@@ -17,6 +17,7 @@ use super::coefficients::*;
 use super::fp::{cross, dot, fma, fnms};
 use super::integrator::OdeSystem;
 use super::SpinTaylorError;
+use crate::cmath::LibmCbrt;
 use crate::constants::{MSUN_SI, MTSUN_SI, REAL4_EPS};
 use std::f64::consts::PI;
 
@@ -596,7 +597,7 @@ impl SpinTaylorT4Coefficients {
             return ST_DERIVATIVE_OMEGANONPOS;
         }
 
-        let v = omega.cbrt();
+        let v = omega.libm_cbrt();
         let v2 = v * v;
         let v11 = omega * omega * omega * v2;
 
@@ -725,7 +726,7 @@ impl SpinTaylorT4Coefficients {
         prev_domega: &mut f64,
     ) -> i32 {
         let omega = values[1];
-        let v = omega.cbrt();
+        let v = omega.libm_cbrt();
         let lnh = [values[2], values[3], values[4]];
         let s1 = [values[5], values[6], values[7]];
         let s2 = [values[8], values[9], values[10]];

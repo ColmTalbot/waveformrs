@@ -7,6 +7,7 @@
 
 use std::f64::consts::PI;
 
+use crate::cmath::LibmCbrt;
 use crate::imrphenomx::internals::fma;
 
 /// `XLALSimIMRPhenomXsign`: sign of `x`, zero for zero.
@@ -180,8 +181,8 @@ pub(crate) fn f_meco(eta: f64, chi1l: f64, chi2l: f64) -> f64 {
 /// frequency for final spin `chif`, in units of the total mass.
 pub(crate) fn f_isco(chif: f64) -> f64 {
     let mut z1 = fma(
-        fma(-chif, chif, 1.0).cbrt(),
-        (1.0 + chif).cbrt() + (1.0 - chif).cbrt(),
+        fma(-chif, chif, 1.0).libm_cbrt(),
+        (1.0 + chif).libm_cbrt() + (1.0 - chif).libm_cbrt(),
         1.0,
     );
     if z1 > 3.0 {

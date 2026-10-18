@@ -8,6 +8,7 @@ use std::f64::consts::PI;
 use num_complex::Complex;
 
 use super::{frequency_bounds, phif_ref_xp, IMRPhenomXP, Setup};
+use crate::cmath::LibmCbrt;
 use crate::imrphenomx::internals::{IMRPhenomXError, UsefulPowers};
 use crate::imrphenomx::libm::cexp_i;
 use crate::imrphenomx::precession::PrecessionVersion;
@@ -46,7 +47,7 @@ impl Setup {
                     -(angles.gamma[i] - gamma_ref) + prec.epsilon0,
                 ),
                 None if prec.msa.is_some() => {
-                    let (alpha, epsilon, cos_beta) = prec.msa_angles((PI * mf).cbrt());
+                    let (alpha, epsilon, cos_beta) = prec.msa_angles((PI * mf).libm_cbrt());
                     (alpha, cos_beta, epsilon)
                 }
                 None => {

@@ -43,6 +43,7 @@
 
 use std::f64::consts::{PI, TAU};
 
+use crate::cmath::LibmCbrt;
 use crate::fastmath;
 use crate::spintaylor::fp::{fma, fms, fnms};
 
@@ -318,7 +319,7 @@ impl MsaSystem {
         let s1_0_norm = norm(s1v);
         let s2_0_norm = norm(s2v);
 
-        let v_0 = (input.pi_gm * input.f_ref).cbrt();
+        let v_0 = (input.pi_gm * input.f_ref).libm_cbrt();
         let v_0_2 = v_0 * v_0;
         let lhat = [0.0, 0.0, 1.0];
         let l_0 = lhat.map(|c| c * (eta / v_0));
@@ -1013,7 +1014,7 @@ impl MsaSystem {
         for block in x.chunks(BLOCK) {
             let points = &mut points[..block.len()];
             for (point, &x) in points.iter_mut().zip(block) {
-                let v = x.cbrt();
+                let v = x.libm_cbrt();
                 let powers = VPowers::new(v);
                 let l_norm = self.eta / v;
                 let j_norm = self.j_norm(l_norm);
@@ -1400,7 +1401,7 @@ mod tests {
                 let mut batch = Vec::with_capacity(x.len());
                 msa.phi_zeta_costhetal_many(&x, |angles| batch.push(angles));
                 for (x, b) in x.iter().zip(&batch) {
-                    let a = msa.phi_zeta_costhetal(x.cbrt());
+                    let a = msa.phi_zeta_costhetal(x.libm_cbrt());
                     assert_eq!((a.phiz, a.zeta), (b.phiz, b.zeta), "{chi1:?} {m1} {x}");
                     assert!((a.cos_theta_l - b.cos_theta_l).abs() < 1e-14);
                 }

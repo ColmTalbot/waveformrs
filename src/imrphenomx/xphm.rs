@@ -8,6 +8,7 @@ use std::f64::consts::PI;
 
 use num_complex::Complex;
 
+use crate::cmath::LibmCbrt;
 use crate::constants::{MSUN_SI, PC_SI};
 use crate::grid::{FrequencyGrid, ScalePowers};
 use crate::imrphenomx::internals::{hz_to_mf, IMRPhenomXError, UsefulPowers, WaveformStruct};
@@ -468,7 +469,7 @@ impl Setup {
                         // IMRPhenomX_Return_phi_zeta_costhetaL_MSA at
                         // v = (pi Mf 2 / m')^(1/3), with the offsets of
                         // Get_alpha_epsilon_offset (the same for every m')
-                        let v = (PI * mf * (2.0 / mprime as f64)).cbrt();
+                        let v = (PI * mf * (2.0 / mprime as f64)).libm_cbrt();
                         let (alpha, epsilon, cos_beta) = prec.msa_angles(v);
                         (alpha, cos_beta, epsilon)
                     }
@@ -1171,7 +1172,7 @@ mod tests {
                 for (i, &f) in frequencies.iter().enumerate() {
                     let mf = wf.m_sec * f;
                     let (alpha, epsilon, cos_beta) = if version == PrecessionVersion::Msa {
-                        prec.msa_angles((PI * mf * (2.0 / mprime as f64)).cbrt())
+                        prec.msa_angles((PI * mf * (2.0 / mprime as f64)).libm_cbrt())
                     } else {
                         prec.nnlo_angles(PI * mf * 2. / mprime as f64, wf.eta)
                     };

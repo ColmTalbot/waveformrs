@@ -47,6 +47,7 @@ use dynamics::{mass_in_seconds, SpinTaylorT4System};
 pub use dynamics::{SpinTaylorT4Coefficients, NUM_VARIABLES};
 use integrator::{adaptive_rk4_hermite_into, HermiteSink, IntegratorSettings};
 
+use crate::cmath::LibmCbrt;
 use crate::constants::MSUN_SI;
 
 /// Absolute tolerance of the adaptive integrator, `LAL_ST4_ABSOLUTE_TOLERANCE`.
@@ -263,7 +264,7 @@ impl Evolution {
     /// `v = (M omega)^(1/3)`.
     #[inline]
     pub(crate) fn v(omega: f64) -> f64 {
-        omega.cbrt()
+        omega.libm_cbrt()
     }
 
     /// The unit Newtonian orbital angular momentum of a state.

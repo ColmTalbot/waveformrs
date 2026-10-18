@@ -105,6 +105,7 @@ impl fmt::Display for IMRPhenomXError {
 
 impl std::error::Error for IMRPhenomXError {}
 
+use crate::cmath::LibmCbrt;
 /// `a * b + c` as compiled from the C expression, see
 /// [`crate::spintaylor::fp`].
 ///
@@ -209,7 +210,7 @@ impl UsefulPowers {
     /// `sqrt`, one `ln` and a single division.
     #[inline]
     pub(crate) fn fast(number: f64) -> Self {
-        let one_third = number.cbrt();
+        let one_third = number.libm_cbrt();
         Self::from_roots(
             number,
             one_third,
@@ -580,7 +581,7 @@ impl WaveformStruct {
             phif_ref: 0.0,
             mf_ref: hz_to_mf(f_ref, m_tot),
             pi_m,
-            v_ref: (pi_m * f_ref).cbrt(),
+            v_ref: (pi_m * f_ref).libm_cbrt(),
             m_sec,
             delta_f,
             delta_mf: hz_to_mf(delta_f, m_tot),
@@ -655,7 +656,7 @@ impl WaveformStruct {
     pub(crate) fn set_reference_frequency(&mut self, f_ref: f64) {
         self.f_ref = if f_ref == 0.0 { self.f_min } else { f_ref };
         self.mf_ref = hz_to_mf(self.f_ref, self.m_tot);
-        self.v_ref = (self.pi_m * self.f_ref).cbrt();
+        self.v_ref = (self.pi_m * self.f_ref).libm_cbrt();
     }
 
     /// Effective maximum frequency for a requested maximum frequency
@@ -714,7 +715,8 @@ mod tests {
                 (a.sqrt, b.sqrt),
             ];
             for (i, (a, b)) in pairs.iter().enumerate() {
-                assert!(((a - b) / a).abs() < 2e-15, "{i}: {a} != {b} at {x}");
+                // a few ulp: glibc's cbrt (linux-gnu) is within 1 ulp
+                assert!(((a - b) / a).abs() < 4e-15, "{i}: {a} != {b} at {x}");
             }
         }
     }

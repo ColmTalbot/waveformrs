@@ -21,6 +21,7 @@ use std::f64::consts::PI;
 use num_complex::Complex;
 
 use super::{build_modes, spintaylor_angles, wigner_d, AngleCursor, IMRPhenomXPHM, Setup};
+use crate::cmath::LibmCbrt;
 use crate::constants::{MSUN_SI, PC_SI};
 use crate::imrphenomx::internals::{IMRPhenomXError, UsefulPowers, WaveformStruct};
 use crate::imrphenomx::libm::cexp_i;
@@ -349,7 +350,7 @@ fn twist_up_modes(
                     &mut cursors[mprime as usize],
                 )?,
                 None if prec.msa.is_some() => {
-                    let v = (PI * mf * (2.0 / mprime as f64)).cbrt();
+                    let v = (PI * mf * (2.0 / mprime as f64)).libm_cbrt();
                     let (alpha, epsilon, cos_beta) = prec.msa_angles(v);
                     (alpha, cos_beta, epsilon)
                 }
