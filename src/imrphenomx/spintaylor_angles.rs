@@ -35,7 +35,8 @@ use crate::imrphenomx::precession::{
 };
 use crate::interpolate::CubicSpline;
 use crate::spintaylor::fp::{fma, fms, fnms};
-use crate::spintaylor::{SpinTaylorOrbit, SpinTaylorT4};
+use crate::spintaylor::integrator::HermiteSink;
+use crate::spintaylor::{Evolution, FullSamples, OrbitSamples, SpinTaylorT4, NUM_VARIABLES};
 
 /// Knots of the `gamma` grid integrated beyond the last frequency at which
 /// the spline is evaluated, see [`SpinTaylorAngles::interpolate_gamma`].
@@ -59,15 +60,16 @@ fn boole(a: &[f64; 5], step: f64) -> f64 {
 }
 
 /// The solution of the PN precession equations used for the angles
-/// (`PhenomXPInspiralArrays`): `v = (pi M f)^(1/3)`, the dimensionless spins
-/// and the Newtonian orbital angular momentum direction in the source frame
-/// at `f_ref`.
+/// (`PhenomXPInspiralArrays`): `v = (pi M f)^(1/3)` and the Newtonian
+/// orbital angular momentum direction in the source frame at `f_ref` at
+/// every sample, and the dimensionless spins at the last sample (the only
+/// ones the angles use, for the final spin).
 #[derive(Clone, Debug, Default)]
 pub(crate) struct PnArrays {
     pub(crate) v: Vec<f64>,
-    pub(crate) s1: [Vec<f64>; 3],
-    pub(crate) s2: [Vec<f64>; 3],
     pub(crate) lnhat: [Vec<f64>; 3],
+    pub(crate) s1_end: [f64; 3],
+    pub(crate) s2_end: [f64; 3],
 }
 
 impl PnArrays {
@@ -76,35 +78,223 @@ impl PnArrays {
     }
 }
 
-/// `SpinTaylorOrbit` series in a fixed order for stitching.
-fn series(orbit: &SpinTaylorOrbit) -> [&Vec<f64>; 13] {
-    [
-        &orbit.v,
-        &orbit.s1_x,
-        &orbit.s1_y,
-        &orbit.s1_z,
-        &orbit.s2_x,
-        &orbit.s2_y,
-        &orbit.s2_z,
-        &orbit.lnhat_x,
-        &orbit.lnhat_y,
-        &orbit.lnhat_z,
-        &orbit.e1_x,
-        &orbit.e1_y,
-        &orbit.e1_z,
-    ]
+/// Full states kept at each end of a run recorded in [`CompactSamples`].
+const KEPT_STATES: usize = 32;
+
+/// The samples of a PN integration with what the angles need at every
+/// sample, `M omega` and `LNhat`, and the full states of the first and the
+/// last [`KEPT_STATES`] samples. A long integration (millions of samples
+/// for binaries of a few solar masses) then takes 32 bytes per sample
+/// rather than 112, and the series of [`crate::spintaylor::SpinTaylorOrbit`]
+/// that are not needed are never formed.
+#[derive(Debug, Default)]
+struct CompactSamples {
+    omega: Vec<f64>,
+    lnhat: [Vec<f64>; 3],
+    head: Vec<[f64; NUM_VARIABLES]>,
+    /// The last [`KEPT_STATES`] states, sample `i` at `i % KEPT_STATES`.
+    tail: Vec<[f64; NUM_VARIABLES]>,
 }
 
-/// `appendTS` of `LALSimIMRPhenomX_precession.c`: the second series is
-/// copied over the last two samples of the first one and the result has
-/// length `len1 + len2 - 1`, so that it ends with a zero.
-fn append_ts(start: &[f64], end: &[f64]) -> Vec<f64> {
-    let origlen = start.len();
-    let mut out = Vec::with_capacity(origlen + end.len() - 1);
-    out.extend_from_slice(&start[..origlen - 2]);
-    out.extend_from_slice(end);
-    out.push(0.0);
-    out
+impl HermiteSink<NUM_VARIABLES> for CompactSamples {
+    fn reserve(&mut self, n: usize) {
+        self.omega.reserve(n);
+        self.lnhat.iter_mut().for_each(|series| series.reserve(n));
+    }
+
+    #[inline]
+    fn push(&mut self, _t: f64, y: &[f64; NUM_VARIABLES]) {
+        let i = self.omega.len();
+        self.omega.push(y[1]);
+        let [x, y_, z] = Evolution::lnhat(y);
+        self.lnhat[0].push(x);
+        self.lnhat[1].push(y_);
+        self.lnhat[2].push(z);
+        if i < KEPT_STATES {
+            self.head.push(*y);
+            self.tail.push(*y);
+        } else {
+            self.tail[i % KEPT_STATES] = *y;
+        }
+    }
+}
+
+impl OrbitSamples for CompactSamples {
+    fn len(&self) -> usize {
+        self.omega.len()
+    }
+
+    fn omega(&self, i: usize) -> f64 {
+        self.omega[i]
+    }
+}
+
+impl CompactSamples {
+    /// The full state of recorded sample `i`, if it was kept.
+    fn state(&self, i: usize) -> Option<[f64; NUM_VARIABLES]> {
+        let n = self.omega.len();
+        if i < self.head.len() {
+            Some(self.head[i])
+        } else if i < n && i + KEPT_STATES >= n {
+            Some(self.tail[i % KEPT_STATES])
+        } else {
+            None
+        }
+    }
+}
+
+/// The series of `SpinTaylorOrbit` that IMRPhenomX uses, at one sample.
+#[derive(Clone, Copy, Debug, Default)]
+struct Point {
+    v: f64,
+    s1: [f64; 3],
+    s2: [f64; 3],
+    lnhat: [f64; 3],
+    e1: [f64; 3],
+}
+
+/// One run of `XLALSimInspiralSpinTaylorPNEvolveOrbit`.
+struct Run {
+    binary: SpinTaylorT4,
+    delta_t: f64,
+    f_start: f64,
+    f_end: f64,
+    samples: CompactSamples,
+    evolution: Evolution,
+}
+
+impl Run {
+    fn evolve(
+        binary: &SpinTaylorT4,
+        delta_t: f64,
+        f_start: f64,
+        f_end: f64,
+    ) -> Result<Self, IMRPhenomXError> {
+        let mut samples = CompactSamples::default();
+        let evolution = binary
+            .evolve_orbit_into(delta_t, f_start, f_end, &mut samples)
+            .map_err(|_| {
+                IMRPhenomXError::SpinTaylorFallbackToMsa(
+                    "XLALSimInspiralSpinTaylorPNEvolveOrbit failed",
+                )
+            })?;
+        Ok(Self {
+            binary: *binary,
+            delta_t,
+            f_start,
+            f_end,
+            samples,
+            evolution,
+        })
+    }
+
+    /// Number of samples of the orbit.
+    fn len(&self) -> usize {
+        self.evolution.len
+    }
+
+    /// Sample `j` of the orbit (ordered forward in time).
+    fn point(&self, j: usize) -> Point {
+        let i = self.evolution.recorded(j);
+        let y = self.samples.state(i).unwrap_or_else(|| {
+            // Only states near the ends of the runs are read (see
+            // `inspiral_angles_spintaylor`), so this is not expected:
+            // integrate again keeping every state.
+            let mut full = FullSamples::default();
+            self.binary
+                .evolve_orbit_into(self.delta_t, self.f_start, self.f_end, &mut full)
+                .expect("the integration succeeded before");
+            full.0[i]
+        });
+        Point {
+            v: Evolution::v(y[1]),
+            s1: self.evolution.s1(&y),
+            s2: self.evolution.s2(&y),
+            lnhat: Evolution::lnhat(&y),
+            e1: Evolution::e1(&y),
+        }
+    }
+
+    /// Append `v` and `LNhat` of the first `n` samples of the orbit.
+    fn extend_series(&self, v: &mut Vec<f64>, lnhat: &mut [Vec<f64>; 3], n: usize) {
+        for j in 0..n {
+            let i = self.evolution.recorded(j);
+            v.push(Evolution::v(self.samples.omega[i]));
+            for (series, recorded) in lnhat.iter_mut().zip(&self.samples.lnhat) {
+                series.push(recorded[i]);
+            }
+        }
+    }
+
+    /// `v` and `LNhat` of the first `n` samples of the orbit, reusing the
+    /// recorded series, with room for `capacity` samples.
+    fn into_series(self, n: usize, capacity: usize) -> (Vec<f64>, [Vec<f64>; 3]) {
+        let Self {
+            samples, evolution, ..
+        } = self;
+        let CompactSamples {
+            mut omega,
+            mut lnhat,
+            ..
+        } = samples;
+        for series in std::iter::once(&mut omega).chain(lnhat.iter_mut()) {
+            series.truncate(evolution.len);
+            if evolution.backwards {
+                series.reverse();
+            }
+            series.truncate(n);
+            series.reserve_exact(capacity.saturating_sub(n));
+        }
+        omega.iter_mut().for_each(|w| *w = Evolution::v(*w));
+        (omega, lnhat)
+    }
+}
+
+/// The first, coarse part of the PN integration: a forward run from `f_ref`,
+/// after a backward run from `f_ref` unless `f_ref = f_min`. The two runs
+/// are joined by `appendTS` of `LALSimIMRPhenomX_precession.c`: the forward
+/// run is copied over the last two samples of the backward one and the
+/// result has length `len1 + len2 - 1`, ending with a zero sample.
+struct Coarse {
+    backward: Option<Run>,
+    forward: Run,
+}
+
+impl Coarse {
+    /// Number of samples of the backward run before the forward one.
+    fn split(&self) -> usize {
+        self.backward.as_ref().map_or(0, |run| run.len() - 2)
+    }
+
+    fn len(&self) -> usize {
+        match &self.backward {
+            None => self.forward.len(),
+            Some(_) => self.split() + self.forward.len() + 1,
+        }
+    }
+
+    fn point(&self, i: usize) -> Point {
+        let split = self.split();
+        match &self.backward {
+            Some(backward) if i < split => backward.point(i),
+            _ if i < split + self.forward.len() => self.forward.point(i - split),
+            _ => Point::default(),
+        }
+    }
+
+    /// `v` and `LNhat` of the first `n < len()` samples, with room for
+    /// `capacity` samples.
+    fn into_series(self, n: usize, capacity: usize) -> (Vec<f64>, [Vec<f64>; 3]) {
+        let split = self.split().min(n);
+        match self.backward {
+            None => self.forward.into_series(n, capacity),
+            Some(backward) => {
+                let (mut v, mut lnhat) = backward.into_series(split, capacity);
+                self.forward.extend_series(&mut v, &mut lnhat, n - split);
+                (v, lnhat)
+            }
+        }
+    }
 }
 
 /// `IMRPhenomX_InspiralAngles_SpinTaylor` for black-hole binaries: evolve the
@@ -115,6 +305,12 @@ fn append_ts(start: &[f64], end: &[f64]) -> Vec<f64> {
 /// Every failure is reported as
 /// [`IMRPhenomXError::SpinTaylorFallbackToMsa`]: LALSimulation then falls
 /// back to the MSA angles.
+///
+/// Only `v` and `LNhat` are kept at every sample. The full states read are
+/// near the ends of the runs: the fine run starts 10 samples before the end
+/// of the coarse solution (within the first 11 samples of the backward run
+/// if the forward run is shorter than 10 samples), and the angles use the
+/// spins at the end of the fine run.
 pub(crate) fn inspiral_angles_spintaylor(
     wf: &WaveformStruct,
     prec: &PrecessionStruct,
@@ -143,60 +339,54 @@ pub(crate) fn inspiral_angles_spintaylor(
     let coarse_fac = 10.0f32 as f64;
     let delta_t_coarse = 0.5 * coarse_fac / f_cut;
 
-    let evolve = |binary: &SpinTaylorT4, dt: f64, f_start: f64, f_end: f64| {
-        binary
-            .evolve_orbit(dt, f_start, f_end)
-            .map_err(|_| fallback("XLALSimInspiralSpinTaylorPNEvolveOrbit failed"))
-    };
-
-    let coarse: [Vec<f64>; 13] = if f_ref < REAL4_EPS || (f_ref - f_min).abs() < REAL4_EPS {
+    let coarse = if f_ref < REAL4_EPS || (f_ref - f_min).abs() < REAL4_EPS {
         // f_ref is (re)set to f_min: a single forward integration.
-        let orbit = evolve(&binary, delta_t_coarse, f_min, f_cut)?;
-        series(&orbit).map(|s| s.clone())
+        Coarse {
+            backward: None,
+            forward: Run::evolve(&binary, delta_t_coarse, f_min, f_cut)?,
+        }
     } else if (f_ref - f_min) > REAL4_EPS {
         // Integrate backward to fStart, then forward to the end of the waveform.
-        let backward = evolve(&binary, delta_t_coarse, f_ref, f_min - 0.5)?;
+        let backward = Run::evolve(&binary, delta_t_coarse, f_ref, f_min - 0.5)?;
         if backward.len() <= 1 {
             return Err(fallback("backward PN integration returned a single sample"));
         }
-        let forward = evolve(&binary, delta_t_coarse, f_ref, f_cut)?;
-        let (b, f) = (series(&backward), series(&forward));
-        std::array::from_fn(|k| append_ts(b[k], f[k]))
+        let forward = Run::evolve(&binary, delta_t_coarse, f_ref, f_cut)?;
+        Coarse {
+            backward: Some(backward),
+            forward,
+        }
     } else {
         return Err(fallback("fRef must be >= fmin"));
     };
 
     // At high frequencies, perform a fine integration, starting some bins
     // before the last one.
-    let len_low = coarse[0].len();
+    let len_low = coarse.len();
     let nbuffer = 9.min(len_low - 1);
     let copy_length = len_low - 1 - nbuffer;
-    let at = |k: usize| coarse[k][copy_length];
-    let f_trans = at(0).powf(3.) / pi_gm;
+    let at = coarse.point(copy_length);
+    let f_trans = at.v.powf(3.) / pi_gm;
     if f_trans.is_nan() || f_trans <= 0. {
         return Err(fallback(
             "transition frequency in PN integration is not positive",
         ));
     }
-    let fine_binary = SpinTaylorT4::new(m1_si, m2_si, [at(1), at(2), at(3)], [at(4), at(5), at(6)])
-        .with_orientation([at(7), at(8), at(9)], [at(10), at(11), at(12)]);
-    let fine = evolve(&fine_binary, 0.5 / f_cut, f_trans, f_cut)?;
+    let fine_binary =
+        SpinTaylorT4::new(m1_si, m2_si, at.s1, at.s2).with_orientation(at.lnhat, at.e1);
+    let fine = Run::evolve(&fine_binary, 0.5 / f_cut, f_trans, f_cut)?;
     let len_pn = copy_length + fine.len();
     if len_pn < 4 {
         return Err(fallback("too few points for spline interpolation"));
     }
-    let fine = series(&fine);
-    let stitch = |k: usize| {
-        let mut out = Vec::with_capacity(len_pn);
-        out.extend_from_slice(&coarse[k][..copy_length]);
-        out.extend_from_slice(fine[k]);
-        out
-    };
+    let (mut v, mut lnhat) = coarse.into_series(copy_length, len_pn);
+    fine.extend_series(&mut v, &mut lnhat, fine.len());
+    let end = fine.point(fine.len() - 1);
     let arrays = PnArrays {
-        v: stitch(0),
-        s1: [stitch(1), stitch(2), stitch(3)],
-        s2: [stitch(4), stitch(5), stitch(6)],
-        lnhat: [stitch(7), stitch(8), stitch(9)],
+        v,
+        lnhat,
+        s1_end: end.s1,
+        s2_end: end.s2,
     };
 
     // The first frequency node must lie below the requested fmin to avoid
@@ -496,23 +686,32 @@ impl SpinTaylorAngles {
     /// `IMRPhenomX_InterpolateAlphaBeta_SpinTaylor` with
     /// `PhenomXPFinalSpinMod` 4: also sets the final spin of `wf` from the
     /// spins at the end of the PN integration and updates `fRING`, `fDAMP`.
+    ///
+    /// The PN arrays are overwritten with `Mf`, `alpha` and `cos(beta)`,
+    /// which become the knots and values of the splines.
     pub(crate) fn new(
         wf: &mut WaveformStruct,
         prec: &PrecessionStruct,
-        arrays: &PnArrays,
+        arrays: PnArrays,
     ) -> Result<Self, IMRPhenomXError> {
         let len_pn = arrays.len();
-        let mut fgw = Vec::with_capacity(len_pn);
-        let mut alphaaux = Vec::with_capacity(len_pn);
-        let mut cosbeta = Vec::with_capacity(len_pn);
+        let i_max = len_pn - 1;
+        let PnArrays {
+            v: mut fgw,
+            lnhat: [mut alpha, lnhat_y, mut cosbeta],
+            s1_end,
+            s2_end,
+        } = arrays;
+        // the direction of L at the end of the integration, in the source frame
+        let lnf = [alpha[i_max], lnhat_y[i_max], cosbeta[i_max]];
         let (cz1, sz1) = ((-prec.phi_j_sf).cos(), (-prec.phi_j_sf).sin());
         let (cy, sy) = ((-prec.theta_j_sf).cos(), (-prec.theta_j_sf).sin());
         let (cz2, sz2) = ((-prec.kappa).cos(), (-prec.kappa).sin());
         let mut mfmax_pn = 0.;
         for i in 0..len_pn {
-            let lnhat = [arrays.lnhat[0][i], arrays.lnhat[1][i], arrays.lnhat[2][i]];
+            let lnhat = [alpha[i], lnhat_y[i], cosbeta[i]];
             let lnhat = rotate_z_cs(cz2, sz2, rotate_y_cs(cy, sy, rotate_z_cs(cz1, sz1, lnhat)));
-            let fgw_hz = arrays.v[i].powf(3.) / prec.pi_gm;
+            let fgw_hz = fgw[i].powf(3.) / prec.pi_gm;
             let fgw_mf = hz_to_mf(fgw_hz, wf.m_tot);
             if fgw_hz.is_nan() || fgw_hz <= 0. {
                 // LAL leaves the remaining nodes uninitialised.
@@ -520,13 +719,13 @@ impl SpinTaylorAngles {
                     "non-positive frequency in the PN solution",
                 ));
             }
-            // Euler angles in the J frame
-            alphaaux.push(lnhat[1].atan2(lnhat[0]));
-            cosbeta.push(lnhat[2]);
-            fgw.push(fgw_mf);
+            // Euler angles in the J frame (alpha before unwrapping)
+            alpha[i] = lnhat[1].atan2(lnhat[0]);
+            cosbeta[i] = lnhat[2];
+            fgw[i] = fgw_mf;
             mfmax_pn = fgw_mf;
         }
-        let i_max = len_pn - 1;
+        drop(lnhat_y);
         if fgw
             .windows(2)
             .any(|w| w[0] >= w[1] || w[0].is_nan() || w[1].is_nan())
@@ -542,9 +741,8 @@ impl SpinTaylorAngles {
         }
         let ftrans_mrd = 0.98 * fmax_inspiral;
 
-        let alpha = unwrap(&alphaaux);
-        let alpha_spline = CubicSpline::new(&fgw, &alpha);
-        let cosbeta_spline = CubicSpline::new(&fgw, &cosbeta);
+        unwrap_in_place(&mut alpha);
+        let (alpha_spline, cosbeta_spline) = CubicSpline::pair(fgw, alpha, cosbeta);
         if !cosbeta_spline.contains(fmax_inspiral) {
             return Err(IMRPhenomXError::SpinTaylorAngles(
                 "cos(beta) could not be evaluated at the end of the inspiral",
@@ -556,12 +754,9 @@ impl SpinTaylorAngles {
         // integration (PhenomXPFinalSpinMod 4).
         let m1 = wf.m1_si / wf.m_tot_si;
         let m2 = wf.m2_si / wf.m_tot_si;
-        let at = |s: &[Vec<f64>; 3]| [s[0][i_max], s[1][i_max], s[2][i_max]];
         let dot = |a: [f64; 3], b: [f64; 3]| crate::spintaylor::fp::dot(&a, &b);
-        let lnf = at(&arrays.lnhat);
         let lnorm = dot(lnf, lnf).sqrt();
-        let s1f = at(&arrays.s1);
-        let s2f = at(&arrays.s2);
+        let (s1f, s2f) = (s1_end, s2_end);
         let dot_s1l = dot(s1f, lnf) / lnorm;
         let dot_s2l = dot(s2f, lnf) / lnorm;
         let perp = |s: [f64; 3], sl: f64, mass: f64| {
@@ -846,7 +1041,7 @@ impl SpinTaylorAngles {
             };
             gamma.push(previous + deltagamma);
         }
-        let spline = CubicSpline::new(&frequencies, &gamma);
+        let spline = CubicSpline::from_vecs(frequencies, gamma);
         self.gamma_ref = spline.eval_unchecked(wf.mf_ref);
         self.gamma_spline = Some(spline);
         Ok(())
@@ -1035,12 +1230,15 @@ impl EulerAngles {
     }
 }
 
-/// `XLALSimIMRPhenomXUnwrapArray`.
-pub(crate) fn unwrap(input: &[f64]) -> Vec<f64> {
-    let mut out = Vec::with_capacity(input.len());
-    out.push(input[0]);
-    for i in 1..input.len() {
-        let mut d = input[i] - input[i - 1];
+/// `XLALSimIMRPhenomXUnwrapArray`, overwriting its input.
+pub(crate) fn unwrap_in_place(values: &mut [f64]) {
+    let Some(&first) = values.first() else {
+        return;
+    };
+    let mut previous_input = first;
+    for i in 1..values.len() {
+        let input = values[i];
+        let mut d = input - previous_input;
         d = if d > PI {
             d - 2. * PI
         } else if d < -PI {
@@ -1048,7 +1246,63 @@ pub(crate) fn unwrap(input: &[f64]) -> Vec<f64> {
         } else {
             d
         };
-        out.push(out[i - 1] + d);
+        values[i] = values[i - 1] + d;
+        previous_input = input;
     }
-    out
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::constants::MSUN_SI;
+
+    /// A backward and a forward run recorded in [`CompactSamples`] give the
+    /// same `v`, `LNhat` and full states as `SpinTaylorT4::evolve_orbit`,
+    /// including states that were not kept (which are integrated again).
+    #[test]
+    fn compact_runs_match_the_orbit() {
+        let binary = SpinTaylorT4::new(
+            1.8 * MSUN_SI,
+            1.3 * MSUN_SI,
+            [0.3, 0.1, 0.05],
+            [-0.1, 0.2, 0.02],
+        );
+        for (f_start, f_end) in [(30.0, 25.0), (30.0, 400.0)] {
+            let delta_t = 1.0 / 2048.0;
+            let orbit = binary.evolve_orbit(delta_t, f_start, f_end).unwrap();
+            let run = Run::evolve(&binary, delta_t, f_start, f_end).unwrap();
+            let n = run.len();
+            assert_eq!(n, orbit.len());
+            assert!(n > 4 * KEPT_STATES);
+            let mut v = Vec::new();
+            let mut lnhat = [Vec::new(), Vec::new(), Vec::new()];
+            run.extend_series(&mut v, &mut lnhat, n);
+            assert_eq!(v, orbit.v);
+            assert_eq!(lnhat[0], orbit.lnhat_x);
+            assert_eq!(lnhat[1], orbit.lnhat_y);
+            assert_eq!(lnhat[2], orbit.lnhat_z);
+            for j in [0, 1, KEPT_STATES, n / 2, n - KEPT_STATES - 1, n - 2, n - 1] {
+                let point = run.point(j);
+                assert_eq!(point.v, orbit.v[j]);
+                assert_eq!(point.s1, [orbit.s1_x[j], orbit.s1_y[j], orbit.s1_z[j]]);
+                assert_eq!(point.s2, [orbit.s2_x[j], orbit.s2_y[j], orbit.s2_z[j]]);
+                let lnhat_j = [orbit.lnhat_x[j], orbit.lnhat_y[j], orbit.lnhat_z[j]];
+                assert_eq!(point.lnhat, lnhat_j);
+                assert_eq!(point.e1, [orbit.e1_x[j], orbit.e1_y[j], orbit.e1_z[j]]);
+            }
+            let (series_v, series_lnhat) = run.into_series(n - 3, n);
+            assert_eq!(series_v, orbit.v[..n - 3]);
+            assert_eq!(series_lnhat[2], orbit.lnhat_z[..n - 3]);
+        }
+    }
+
+    #[test]
+    fn unwrap_removes_jumps_of_two_pi() {
+        let mut values = [3.0, -3.0, -0.5, 3.1, -3.1];
+        unwrap_in_place(&mut values);
+        let expected = [3.0, -3.0 + 2. * PI, -0.5 + 2. * PI, 3.1, -3.1 + 2. * PI];
+        for (a, b) in values.iter().zip(expected) {
+            assert!((a - b).abs() < 1e-14, "{a} {b}");
+        }
+    }
 }

@@ -172,7 +172,7 @@ impl Setup {
             ));
         }
         let arrays = inspiral_angles_spintaylor(&self.wf, prec, f_low)?;
-        let mut angles = SpinTaylorAngles::new(&mut self.wf, prec, &arrays)?;
+        let mut angles = SpinTaylorAngles::new(&mut self.wf, prec, arrays)?;
         let mf_cut = self.wf.f_max_prime * self.wf.m_sec;
         let euler = angles.angles_imr(&self.wf, prec, frequencies, mf_cut, fast)?;
         self.xas = Some(IMRPhenomXAS::from_waveform_struct(self.wf, true));
@@ -671,7 +671,7 @@ impl IMRPhenomXP {
             ));
         }
         let arrays = inspiral_angles_spintaylor(&wf, &prec, f_low)?;
-        let angles = SpinTaylorAngles::new(&mut wf, &prec, &arrays)?;
+        let angles = SpinTaylorAngles::new(&mut wf, &prec, arrays)?;
 
         let mf_min = hz_to_mf(f_min, wf.m_tot);
         if !angles.alpha_spline.contains(mf_min) {

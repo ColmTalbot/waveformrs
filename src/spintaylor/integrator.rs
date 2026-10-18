@@ -450,6 +450,28 @@ pub struct IntegratorSettings {
     pub stop_on_test_only: bool,
 }
 
+/// Where [`adaptive_rk4_hermite_into`] records the evenly spaced samples.
+pub(crate) trait HermiteSink<const N: usize> {
+    /// Called once before the first sample with LAL's estimate of the number
+    /// of samples (which can be exceeded).
+    fn reserve(&mut self, n: usize);
+    /// The state `y` at time `t`.
+    fn push(&mut self, t: f64, y: &[f64; N]);
+}
+
+impl<const N: usize> HermiteSink<N> for HermiteOutput<N> {
+    fn reserve(&mut self, n: usize) {
+        self.t.reserve(n);
+        self.y.reserve(n);
+    }
+
+    #[inline]
+    fn push(&mut self, t: f64, y: &[f64; N]) {
+        self.t.push(t);
+        self.y.push(*y);
+    }
+}
+
 /// Port of `XLALAdaptiveRungeKutta4Hermite`.
 ///
 /// Integrates from `tinit` with adaptive RKF45 steps and records the state
@@ -464,6 +486,27 @@ pub fn adaptive_rk4_hermite<S: OdeSystem<N>, const N: usize>(
     tend_in: f64,
     deltat: f64,
 ) -> Result<HermiteOutput<N>, IntegratorError> {
+    let mut output = HermiteOutput {
+        t: Vec::new(),
+        y: Vec::new(),
+        return_code: 0,
+    };
+    output.return_code =
+        adaptive_rk4_hermite_into(sys, settings, yinit, tinit, tend_in, deltat, &mut output)?;
+    Ok(output)
+}
+
+/// [`adaptive_rk4_hermite`] recording the samples in `sink`; returns the
+/// integrator's return code.
+pub(crate) fn adaptive_rk4_hermite_into<S: OdeSystem<N>, K: HermiteSink<N>, const N: usize>(
+    sys: &mut S,
+    settings: &IntegratorSettings,
+    yinit: &mut [f64; N],
+    tinit: f64,
+    tend_in: f64,
+    deltat: f64,
+    sink: &mut K,
+) -> Result<i32, IntegratorError> {
     let mut tend = tend_in;
     if settings.stop_on_test_only {
         tend = if tend < tinit {
@@ -479,9 +522,10 @@ pub fn adaptive_rk4_hermite<S: OdeSystem<N>, const N: usize>(
     if length_estimate < 0 {
         return Err(IntegratorError::InvalidInterval);
     }
+    // LAL's estimate is often slightly short (its callers estimate the
+    // duration at Newtonian order); a margin avoids growing the buffers.
     let capacity = (length_estimate + 2).clamp(2, 1 << 24) as usize;
-    let mut times = Vec::with_capacity(capacity);
-    let mut values: Vec<[f64; N]> = Vec::with_capacity(capacity);
+    sink.reserve(capacity + capacity / 8);
 
     let mut evolve = Evolve::<N>::new(StandardControl::y_new(settings.eps_abs, settings.eps_rel));
     let mut return_code = 0;
@@ -491,8 +535,8 @@ pub fn adaptive_rk4_hermite<S: OdeSystem<N>, const N: usize>(
     let mut h = deltat;
 
     // Copy over first step.
-    times.push(tinit);
-    values.push(*yinit);
+    sink.push(tinit, yinit);
+    let mut last = *yinit;
 
     evolve.reset();
 
@@ -545,8 +589,8 @@ pub fn adaptive_rk4_hermite<S: OdeSystem<N>, const N: usize>(
                 x = fma(h_i1, rkf.k1[i], x);
                 ytemp[i] = fma(h_i6, rkf.k6[i], x);
             }
-            times.push(tintp);
-            values.push(ytemp);
+            sink.push(tintp, &ytemp);
+            last = ytemp;
         }
 
         // Now that we have recorded the last interpolated step that we
@@ -565,13 +609,9 @@ pub fn adaptive_rk4_hermite<S: OdeSystem<N>, const N: usize>(
     }
 
     // Store the final *interpolated* sample in yinit.
-    *yinit = *values.last().unwrap();
+    *yinit = last;
 
-    Ok(HermiteOutput {
-        t: times,
-        y: values,
-        return_code,
-    })
+    Ok(return_code)
 }
 
 #[cfg(test)]

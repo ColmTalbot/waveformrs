@@ -23,36 +23,26 @@ impl CubicSpline {
     /// Construct the spline. `x` must be strictly increasing and contain at
     /// least three points.
     pub fn new(x: &[f64], y: &[f64]) -> Self {
-        let size = x.len();
-        assert_eq!(size, y.len(), "x and y must have the same length");
-        assert!(size >= 3, "cubic spline needs at least three points");
-        let max_index = size - 1;
-        let sys_size = max_index - 1;
-        let mut c = vec![0.0; size];
-        let mut g = vec![0.0; sys_size];
-        let mut diag = vec![0.0; sys_size];
-        let mut offdiag = vec![0.0; sys_size];
-        for i in 0..sys_size {
-            let h_i = x[i + 1] - x[i];
-            let h_ip1 = x[i + 2] - x[i + 1];
-            let ydiff_i = y[i + 1] - y[i];
-            let ydiff_ip1 = y[i + 2] - y[i + 1];
-            let g_i = if h_i != 0.0 { 1.0 / h_i } else { 0.0 };
-            let g_ip1 = if h_ip1 != 0.0 { 1.0 / h_ip1 } else { 0.0 };
-            offdiag[i] = h_ip1;
-            diag[i] = 2.0 * (h_ip1 + h_i);
-            g[i] = 3.0 * fms(ydiff_ip1, g_ip1, ydiff_i * g_i);
-        }
-        if sys_size == 1 {
-            c[1] = g[0] / diag[0];
-        } else {
-            solve_symmetric_tridiagonal(&diag, &offdiag, &g, &mut c[1..=sys_size]);
-        }
-        Self {
-            x: x.to_vec(),
-            y: y.to_vec(),
-            c,
-        }
+        Self::from_vecs(x.to_vec(), y.to_vec())
+    }
+
+    /// [`CubicSpline::new`] taking ownership of the knots and values.
+    pub fn from_vecs(x: Vec<f64>, y: Vec<f64>) -> Self {
+        let [c] = natural_c(&x, [&y]);
+        Self { x, y, c }
+    }
+
+    /// The splines through `(x, y1)` and `(x, y2)`, the same as
+    /// [`CubicSpline::new`] for each but sharing the work that depends only
+    /// on the knots.
+    pub fn pair(x: Vec<f64>, y1: Vec<f64>, y2: Vec<f64>) -> (Self, Self) {
+        let [c1, c2] = natural_c(&x, [&y1, &y2]);
+        let first = Self {
+            x: x.clone(),
+            y: y1,
+            c: c1,
+        };
+        (first, Self { x, y: y2, c: c2 })
     }
 
     /// Index `i` such that `x[i] <= value < x[i + 1]` (clamped to the table).
@@ -168,32 +158,68 @@ impl CubicSpline {
     }
 }
 
-/// Port of `gsl_linalg_solve_symm_tridiag` (LDL^T factorisation).
-fn solve_symmetric_tridiagonal(diag: &[f64], offdiag: &[f64], b: &[f64], x: &mut [f64]) {
-    let n = diag.len();
-    let mut gamma = vec![0.0; n];
-    let mut alpha = vec![0.0; n];
-    let mut z = vec![0.0; n];
-    alpha[0] = diag[0];
-    gamma[0] = offdiag[0] / alpha[0];
-    for i in 1..n - 1 {
-        alpha[i] = fnms(offdiag[i - 1], gamma[i - 1], diag[i]);
-        gamma[i] = offdiag[i] / alpha[i];
+/// The `c` arrays (half the second derivatives) of the natural cubic
+/// splines through `(x, y_k)`: `cspline_init` of GSL, which sets up the
+/// tridiagonal system for the interior knots and solves it with
+/// `gsl_linalg_solve_symm_tridiag` (an LDL^T factorisation).
+///
+/// The operations on each value are GSL's, in GSL's order, but the set-up,
+/// the factorisation and the forward substitution are done in one pass, the
+/// reciprocal of each knot spacing is computed once rather than twice, and
+/// the factorisation (which depends only on `x`) is shared by the splines.
+/// Only one array of the factorisation is stored, which matters for splines
+/// with millions of knots.
+fn natural_c<const K: usize>(x: &[f64], ys: [&[f64]; K]) -> [Vec<f64>; K] {
+    let size = x.len();
+    for y in ys {
+        assert_eq!(size, y.len(), "x and y must have the same length");
     }
-    if n > 1 {
-        alpha[n - 1] = fnms(offdiag[n - 2], gamma[n - 2], diag[n - 1]);
-    }
-    z[0] = b[0];
-    for i in 1..n {
-        z[i] = fnms(gamma[i - 1], z[i - 1], b[i]);
-    }
+    assert!(size >= 3, "cubic spline needs at least three points");
+    // the size of the system, for the interior knots 1 ..= n
+    let n = size - 2;
+    let mut cs: [Vec<f64>; K] = std::array::from_fn(|_| vec![0.0; size]);
+    // gamma of the LDL^T factorisation, `offdiag[i] / alpha[i]`
+    let mut gamma = vec![0.0; n.saturating_sub(1)];
+    let reciprocal = |h: f64| if h != 0.0 { 1.0 / h } else { 0.0 };
+    let mut h_i = x[1] - x[0];
+    let mut g_i = reciprocal(h_i);
+    // the forward substitution before the division by alpha
+    let mut z = [0.0; K];
     for i in 0..n {
-        z[i] /= alpha[i];
+        let h_ip1 = x[i + 2] - x[i + 1];
+        let g_ip1 = reciprocal(h_ip1);
+        // diag[i] = 2 (h_ip1 + h_i) and offdiag[i - 1] = h_i
+        let diag = 2.0 * (h_ip1 + h_i);
+        let alpha = if i == 0 {
+            diag
+        } else {
+            fnms(h_i, gamma[i - 1], diag)
+        };
+        if i + 1 < n {
+            gamma[i] = h_ip1 / alpha;
+        }
+        for k in 0..K {
+            let y = ys[k];
+            let ydiff_i = y[i + 1] - y[i];
+            let ydiff_ip1 = y[i + 2] - y[i + 1];
+            let b = 3.0 * fms(ydiff_ip1, g_ip1, ydiff_i * g_i);
+            z[k] = if i == 0 {
+                b
+            } else {
+                fnms(gamma[i - 1], z[k], b)
+            };
+            cs[k][i + 1] = z[k] / alpha;
+        }
+        h_i = h_ip1;
+        g_i = g_ip1;
     }
-    x[n - 1] = z[n - 1];
-    for i in (0..n - 1).rev() {
-        x[i] = fnms(gamma[i], x[i + 1], z[i]);
+    // back substitution
+    for c in cs.iter_mut() {
+        for i in (0..n - 1).rev() {
+            c[i + 1] = fnms(gamma[i], c[i + 2], c[i + 1]);
+        }
     }
+    cs
 }
 
 #[cfg(test)]
@@ -211,6 +237,71 @@ mod tests {
             assert!((spline.derivative(v) - 2.0).abs() < 1e-13);
         }
         assert!(spline.eval(-0.1).is_nan());
+    }
+
+    /// `cspline_init` with `gsl_linalg_solve_symm_tridiag` as separate
+    /// steps, as GSL does them.
+    fn gsl_c(x: &[f64], y: &[f64]) -> Vec<f64> {
+        let sys_size = x.len() - 2;
+        let (mut g, mut diag, mut offdiag) = (
+            vec![0.0; sys_size],
+            vec![0.0; sys_size],
+            vec![0.0; sys_size],
+        );
+        for i in 0..sys_size {
+            let h_i = x[i + 1] - x[i];
+            let h_ip1 = x[i + 2] - x[i + 1];
+            let g_i = if h_i != 0.0 { 1.0 / h_i } else { 0.0 };
+            let g_ip1 = if h_ip1 != 0.0 { 1.0 / h_ip1 } else { 0.0 };
+            offdiag[i] = h_ip1;
+            diag[i] = 2.0 * (h_ip1 + h_i);
+            g[i] = 3.0 * fms(y[i + 2] - y[i + 1], g_ip1, (y[i + 1] - y[i]) * g_i);
+        }
+        let mut c = vec![0.0; x.len()];
+        let n = sys_size;
+        if n == 1 {
+            c[1] = g[0] / diag[0];
+            return c;
+        }
+        let (mut gamma, mut alpha, mut z) = (vec![0.0; n], vec![0.0; n], vec![0.0; n]);
+        alpha[0] = diag[0];
+        gamma[0] = offdiag[0] / alpha[0];
+        for i in 1..n - 1 {
+            alpha[i] = fnms(offdiag[i - 1], gamma[i - 1], diag[i]);
+            gamma[i] = offdiag[i] / alpha[i];
+        }
+        alpha[n - 1] = fnms(offdiag[n - 2], gamma[n - 2], diag[n - 1]);
+        z[0] = g[0];
+        for i in 1..n {
+            z[i] = fnms(gamma[i - 1], z[i - 1], g[i]);
+        }
+        for i in 0..n {
+            z[i] /= alpha[i];
+        }
+        c[n] = z[n - 1];
+        for i in (0..n - 1).rev() {
+            c[i + 1] = fnms(gamma[i], c[i + 2], z[i]);
+        }
+        c
+    }
+
+    /// The fused construction gives GSL's coefficients bit for bit, also
+    /// for two splines sharing their knots.
+    #[test]
+    fn constructors_match_gsl() {
+        for n in [3, 4, 5, 50] {
+            let x: Vec<f64> = (0..n).map(|i| (i as f64 * 0.37).powf(1.3)).collect();
+            let y1: Vec<f64> = x.iter().map(|x| x.sin()).collect();
+            let y2: Vec<f64> = x.iter().map(|x| (0.3 * x).exp()).collect();
+            let (a, b) = CubicSpline::pair(x.clone(), y1.clone(), y2.clone());
+            assert_eq!(a.c, gsl_c(&x, &y1));
+            assert_eq!(b.c, gsl_c(&x, &y2));
+            assert_eq!(CubicSpline::new(&x, &y1).c, gsl_c(&x, &y1));
+            assert_eq!(
+                CubicSpline::from_vecs(x.clone(), y2.clone()).c,
+                gsl_c(&x, &y2)
+            );
+        }
     }
 
     #[test]

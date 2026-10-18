@@ -45,7 +45,7 @@ use std::fmt;
 
 use dynamics::{mass_in_seconds, SpinTaylorT4System};
 pub use dynamics::{SpinTaylorT4Coefficients, NUM_VARIABLES};
-use integrator::{adaptive_rk4_hermite, IntegratorSettings};
+use integrator::{adaptive_rk4_hermite_into, HermiteSink, IntegratorSettings};
 
 use crate::constants::MSUN_SI;
 
@@ -200,6 +200,97 @@ impl SpinTaylorOrbit {
     }
 }
 
+/// Storage for the samples of an evolution, in the order of the integration
+/// (see [`SpinTaylorT4::evolve_into`]).
+pub(crate) trait OrbitSamples: HermiteSink<NUM_VARIABLES> {
+    /// Number of samples recorded.
+    fn len(&self) -> usize;
+    /// The (dimensionless) orbital frequency `M omega` of sample `i`.
+    fn omega(&self, i: usize) -> f64;
+}
+
+/// Every sample with its full state.
+#[derive(Clone, Debug, Default)]
+pub(crate) struct FullSamples(pub(crate) Vec<[f64; NUM_VARIABLES]>);
+
+impl HermiteSink<NUM_VARIABLES> for FullSamples {
+    fn reserve(&mut self, n: usize) {
+        self.0.reserve(n);
+    }
+
+    #[inline]
+    fn push(&mut self, _t: f64, y: &[f64; NUM_VARIABLES]) {
+        self.0.push(*y);
+    }
+}
+
+impl OrbitSamples for FullSamples {
+    fn len(&self) -> usize {
+        self.0.len()
+    }
+
+    fn omega(&self, i: usize) -> f64 {
+        self.0[i][1]
+    }
+}
+
+/// An evolution recorded in some [`OrbitSamples`]: which samples form the
+/// orbit and how a state converts to the series of [`SpinTaylorOrbit`].
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Evolution {
+    /// Number of samples of the orbit: the first `len` recorded.
+    pub(crate) len: usize,
+    /// Whether the integration ran backwards in time, in which case the
+    /// orbit (ordered forward in time) is the recorded samples reversed.
+    pub(crate) backwards: bool,
+    norm1: f64,
+    norm2: f64,
+    /// LAL's integrator return code.
+    pub(crate) return_code: i32,
+}
+
+impl Evolution {
+    /// Index among the recorded samples of sample `i` of the orbit.
+    #[inline]
+    pub(crate) fn recorded(&self, i: usize) -> usize {
+        if self.backwards {
+            self.len - 1 - i
+        } else {
+            i
+        }
+    }
+
+    /// `v = (M omega)^(1/3)`.
+    #[inline]
+    pub(crate) fn v(omega: f64) -> f64 {
+        omega.cbrt()
+    }
+
+    /// The unit Newtonian orbital angular momentum of a state.
+    #[inline]
+    pub(crate) fn lnhat(y: &[f64; NUM_VARIABLES]) -> [f64; 3] {
+        [y[2], y[3], y[4]]
+    }
+
+    /// The dimensionless spin of the first body of a state.
+    #[inline]
+    pub(crate) fn s1(&self, y: &[f64; NUM_VARIABLES]) -> [f64; 3] {
+        [y[5] / self.norm1, y[6] / self.norm1, y[7] / self.norm1]
+    }
+
+    /// The dimensionless spin of the second body of a state.
+    #[inline]
+    pub(crate) fn s2(&self, y: &[f64; NUM_VARIABLES]) -> [f64; 3] {
+        [y[8] / self.norm2, y[9] / self.norm2, y[10] / self.norm2]
+    }
+
+    /// The orbital-plane basis vector of a state.
+    #[inline]
+    pub(crate) fn e1(y: &[f64; NUM_VARIABLES]) -> [f64; 3] {
+        [y[11], y[12], y[13]]
+    }
+}
+
 /// A binary to be evolved with the orbit-averaged SpinTaylorT4 equations.
 #[derive(Clone, Copy, Debug)]
 pub struct SpinTaylorT4 {
@@ -320,14 +411,63 @@ impl SpinTaylorT4 {
         f_end: f64,
     ) -> Result<SpinTaylorOrbit, SpinTaylorError> {
         let coefficients = self.coefficients(f_start, f_end)?;
-        self.evolve(&coefficients, delta_t)
+        let mut samples = FullSamples::default();
+        let evolution = self.evolve_into(&coefficients, delta_t, &mut samples)?;
+        let samples = &samples.0;
+        let cutlen = evolution.len;
+        let mut orbit = SpinTaylorOrbit::with_capacity(cutlen);
+        orbit.delta_t = delta_t;
+        orbit.epoch = -1.0 * (cutlen as f64 - 1.0) * delta_t;
+        orbit.return_code = evolution.return_code;
+        let mut push = |y: &[f64; NUM_VARIABLES]| {
+            orbit.phi.push(y[0]);
+            orbit.v.push(Evolution::v(y[1]));
+            let [x, y_, z] = Evolution::lnhat(y);
+            orbit.lnhat_x.push(x);
+            orbit.lnhat_y.push(y_);
+            orbit.lnhat_z.push(z);
+            // spins are returned in the standard convention
+            let [x, y_, z] = evolution.s1(y);
+            orbit.s1_x.push(x);
+            orbit.s1_y.push(y_);
+            orbit.s1_z.push(z);
+            let [x, y_, z] = evolution.s2(y);
+            orbit.s2_x.push(x);
+            orbit.s2_y.push(y_);
+            orbit.s2_z.push(z);
+            let [x, y_, z] = Evolution::e1(y);
+            orbit.e1_x.push(x);
+            orbit.e1_y.push(y_);
+            orbit.e1_z.push(z);
+        };
+        if evolution.backwards {
+            samples[..cutlen].iter().rev().for_each(&mut push);
+        } else {
+            samples[..cutlen].iter().for_each(&mut push);
+        }
+        Ok(orbit)
     }
 
-    fn evolve(
+    /// [`Self::evolve_orbit`] recording the samples in `samples` rather
+    /// than in a [`SpinTaylorOrbit`], for callers that need only some of the
+    /// series: the orbit is given by the returned [`Evolution`].
+    pub(crate) fn evolve_orbit_into<K: OrbitSamples>(
+        &self,
+        delta_t: f64,
+        f_start: f64,
+        f_end: f64,
+        samples: &mut K,
+    ) -> Result<Evolution, SpinTaylorError> {
+        let coefficients = self.coefficients(f_start, f_end)?;
+        self.evolve_into(&coefficients, delta_t, samples)
+    }
+
+    fn evolve_into<K: OrbitSamples>(
         &self,
         coefficients: &SpinTaylorT4Coefficients,
         delta_t: f64,
-    ) -> Result<SpinTaylorOrbit, SpinTaylorError> {
+        samples: &mut K,
+    ) -> Result<Evolution, SpinTaylorError> {
         let f_start = coefficients.f_start;
         let f_end = coefficients.f_end;
         if f_start <= 0. || f_start.is_nan() {
@@ -385,16 +525,16 @@ impl SpinTaylorT4 {
             prev_domega: 0.0,
         };
         // time is measured in units of the total mass
-        let output = adaptive_rk4_hermite(
+        let return_code = adaptive_rk4_hermite_into(
             &mut system,
             &settings,
             &mut yinit,
             0.0,
             lengths / msec,
             sgn * delta_t / msec,
+            samples,
         )
         .map_err(|_| SpinTaylorError::InvalidInterval)?;
-        let samples = &output.y;
         let len = samples.len();
 
         // The integrator takes one adaptive stride past fEnd; keep the first
@@ -402,7 +542,7 @@ impl SpinTaylorT4 {
         let mut cutlen = len;
         if f_end != 0. && f_end < f_start {
             let w_end = PI * msec * f_end;
-            while cutlen > 0 && samples[cutlen - 1][1] < w_end {
+            while cutlen > 0 && samples.omega(cutlen - 1) < w_end {
                 cutlen -= 1;
             }
             if cutlen < len {
@@ -410,40 +550,19 @@ impl SpinTaylorT4 {
             }
         } else if f_end > f_start {
             let w_end = PI * msec * f_end;
-            while cutlen > 0 && samples[cutlen - 1][1] > w_end {
+            while cutlen > 0 && samples.omega(cutlen - 1) > w_end {
                 cutlen -= 1;
             }
             if cutlen < len {
                 cutlen += 1;
             }
         }
-
-        let mut orbit = SpinTaylorOrbit::with_capacity(cutlen);
-        orbit.delta_t = delta_t;
-        orbit.epoch = -1.0 * (cutlen as f64 - 1.0) * delta_t;
-        orbit.return_code = output.return_code;
-        let mut push = |y: &[f64; NUM_VARIABLES]| {
-            orbit.phi.push(y[0]);
-            orbit.v.push(y[1].cbrt());
-            orbit.lnhat_x.push(y[2]);
-            orbit.lnhat_y.push(y[3]);
-            orbit.lnhat_z.push(y[4]);
-            // spins are returned in the standard convention
-            orbit.s1_x.push(y[5] / norm1);
-            orbit.s1_y.push(y[6] / norm1);
-            orbit.s1_z.push(y[7] / norm1);
-            orbit.s2_x.push(y[8] / norm2);
-            orbit.s2_y.push(y[9] / norm2);
-            orbit.s2_z.push(y[10] / norm2);
-            orbit.e1_x.push(y[11]);
-            orbit.e1_y.push(y[12]);
-            orbit.e1_z.push(y[13]);
-        };
-        if backwards {
-            samples[..cutlen].iter().rev().for_each(&mut push);
-        } else {
-            samples[..cutlen].iter().for_each(&mut push);
-        }
-        Ok(orbit)
+        Ok(Evolution {
+            len: cutlen,
+            backwards,
+            norm1,
+            norm2,
+            return_code,
+        })
     }
 }

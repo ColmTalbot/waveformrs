@@ -389,7 +389,7 @@ impl Setup {
                 "SpinTaylor angles need f_min <= f_ref and f_min < f_max",
             ));
         }
-        let mut angles = SpinTaylorAngles::new(wf, prec, &arrays)?;
+        let mut angles = SpinTaylorAngles::new(wf, prec, arrays)?;
         // gamma is evaluated at Mf' = 2 Mf / m' up to the cutoff, at f_ref
         // and at ftrans_MRD: the integration can stop beyond these (see
         // SpinTaylorAngles::interpolate_gamma), which leaves the spline
