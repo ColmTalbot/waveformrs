@@ -337,9 +337,15 @@ def build(args):
                   for n, _ in SERIAL if n.startswith("IMRPhenomXP")]
         values["xp_grid_text"] = (
             f"Their grid paths are {factor(min(speeds))}–{factor(max(speeds))} faster than the "
-            "per-call paths. The Euler angles are evaluated once per frequency and m′; the SpinTaylor "
-            "versions also pay for the PN integration and the γ grid, which depend on the binary "
-            "and not on the frequencies."
+            "per-call paths. They work in passes over the grid. The Euler angles are computed for "
+            "each m′, the NNLO angles from the stored powers without transcendental functions, and "
+            "the MSA angles in blocks of 32 frequencies. An MSA angle already computed for another "
+            "m′ at a bit-identical argument is reused, which skips 29% of the evaluations for "
+            "IMRPhenomXPHM. The ε phase is folded into each mode's phase before one vectorised "
+            "conversion, and the twist-up keeps its sums in registers. What remains is the MSA "
+            "angles, whose spin-cubic roots and corrections must use the C library to stay stable "
+            "for nearly aligned spins; the SpinTaylor PN integration, about 0.5 ms; and the "
+            "IMRPhenomXHM mode evaluations."
         )
     else:
         values["xp_grid_text"] = (
