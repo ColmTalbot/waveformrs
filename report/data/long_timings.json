@@ -7,12 +7,12 @@
  "rounds": 5,
  "rust_repeats_per_round": 2,
  "load_average": [
-  6.1806640625,
-  6.98681640625,
-  4.65625,
-  6.5791015625,
-  11.037109375,
-  10.48828125
+  2.8251953125,
+  2.41943359375,
+  2.0751953125,
+  1.81982421875,
+  1.4189453125,
+  1.43603515625
  ],
  "grids": {
   "1 kHz": {
@@ -79,13 +79,13 @@
    "version": null,
    "grid": "1 kHz",
    "lal": {
-    "sequence": 0.0046744998544454575
+    "sequence": 0.0042940001003444195
    },
    "rust": {
     "n_frequencies": 128513,
-    "per_call": 0.002413916,
-    "grid": 0.000877084,
-    "grid_setup": 0.001225833
+    "per_call": 0.003408875,
+    "grid": 0.000982208,
+    "grid_setup": 0.003126959
    }
   },
   {
@@ -94,13 +94,13 @@
    "version": null,
    "grid": "1 kHz",
    "lal": {
-    "sequence": 0.007463416084647179
+    "sequence": 0.007086083758622408
    },
    "rust": {
     "n_frequencies": 128513,
-    "per_call": 0.003031542,
-    "grid": 0.001276416,
-    "grid_setup": 0.000844959
+    "per_call": 0.004143458,
+    "grid": 0.001685709,
+    "grid_setup": 0.001377042
    }
   },
   {
@@ -109,13 +109,13 @@
    "version": null,
    "grid": "1 kHz",
    "lal": {
-    "sequence": 0.007454332895576954
+    "sequence": 0.007078499998897314
    },
    "rust": {
     "n_frequencies": 128513,
-    "per_call": 0.003054208,
-    "grid": 0.001314417,
-    "grid_setup": 0.00083525
+    "per_call": 0.003679583,
+    "grid": 0.001571375,
+    "grid_setup": 0.001055875
    }
   },
   {
@@ -124,15 +124,15 @@
    "version": null,
    "grid": "1 kHz",
    "lal": {
-    "sequence": 0.03303508320823312,
-    "uniform": 0.030831833835691214,
-    "uniform_multibanding": 0.019240709021687508
+    "sequence": 0.030152166727930307,
+    "uniform": 0.028982083313167095,
+    "uniform_multibanding": 0.017030665650963783
    },
    "rust": {
     "n_frequencies": 128513,
-    "per_call": 0.01923175,
-    "grid": 0.01257725,
-    "grid_setup": 0.000887875
+    "per_call": 0.020137875,
+    "grid": 0.012607916,
+    "grid_setup": 0.000946083
    }
   },
   {
@@ -141,15 +141,15 @@
    "version": 102,
    "grid": "1 kHz",
    "lal": {
-    "sequence": 0.02275037532672286,
-    "uniform": 0.02315350016579032
+    "sequence": 0.022235999815165997,
+    "uniform": 0.022249167319387197
    },
    "rust": {
     "n_frequencies": 128513,
-    "per_call": 0.011568583,
-    "grid": 0.002904834,
-    "uniform": 0.011731917,
-    "grid_setup": 0.000853291
+    "per_call": 0.011585791,
+    "grid": 0.002902458,
+    "uniform": 0.011740334,
+    "grid_setup": 0.000803291
    }
   },
   {
@@ -158,15 +158,15 @@
    "version": 223,
    "grid": "1 kHz",
    "lal": {
-    "sequence": 0.0528594171628356,
-    "uniform": 0.05252970801666379
+    "sequence": 0.04984649969264865,
+    "uniform": 0.049945415928959846
    },
    "rust": {
     "n_frequencies": 128513,
-    "per_call": 0.034577667,
-    "grid": 0.018836834,
-    "uniform": 0.034734042,
-    "grid_setup": 0.000872792
+    "per_call": 0.034583917,
+    "grid": 0.018892917,
+    "uniform": 0.034797833,
+    "grid_setup": 0.000816584
    }
   },
   {
@@ -175,15 +175,15 @@
    "version": 320,
    "grid": "1 kHz",
    "lal": {
-    "sequence": 0.1465246668085456,
-    "uniform": 0.13667908310890198
+    "sequence": 0.13200679095461965,
+    "uniform": 0.12339470908045769
    },
    "rust": {
     "n_frequencies": 128513,
-    "per_call": 0.044898875,
-    "grid": 0.039281208,
-    "uniform": 0.0438225,
-    "grid_setup": 0.000858334
+    "per_call": 0.044789375,
+    "grid": 0.039315083,
+    "uniform": 0.043801208,
+    "grid_setup": 0.000807209
    }
   },
   {
@@ -192,16 +192,16 @@
    "version": 102,
    "grid": "1 kHz",
    "lal": {
-    "sequence": 0.12011800007894635,
-    "uniform": 0.12386179156601429,
-    "uniform_multibanding": 0.09602175001055002
+    "sequence": 0.11713370773941278,
+    "uniform": 0.11868616612628102,
+    "uniform_multibanding": 0.09241174999624491
    },
    "rust": {
     "n_frequencies": 128513,
-    "per_call": 0.056909708,
-    "grid": 0.01673525,
-    "uniform": 0.057074,
-    "grid_setup": 0.000838667
+    "per_call": 0.05779525,
+    "grid": 0.018239916,
+    "uniform": 0.057971292,
+    "grid_setup": 0.00079475
    }
   },
   {
@@ -210,16 +210,16 @@
    "version": 223,
    "grid": "1 kHz",
    "lal": {
-    "sequence": 0.2625262080691755,
-    "uniform": 0.2620904999785125,
-    "uniform_multibanding": 0.10750362509861588
+    "sequence": 0.25180466612800956,
+    "uniform": 0.2526887906715274,
+    "uniform_multibanding": 0.09998362511396408
    },
    "rust": {
     "n_frequencies": 128513,
-    "per_call": 0.146962125,
-    "grid": 0.063086792,
-    "uniform": 0.147286917,
-    "grid_setup": 0.000856166
+    "per_call": 0.149254666,
+    "grid": 0.064579875,
+    "uniform": 0.1493895,
+    "grid_setup": 0.000806917
    }
   },
   {
@@ -228,16 +228,16 @@
    "version": 320,
    "grid": "1 kHz",
    "lal": {
-    "sequence": 1.055175124667585,
-    "uniform": 0.9929651659913361,
-    "uniform_multibanding": 0.756927833892405
+    "sequence": 0.9720389577560127,
+    "uniform": 0.9261327907443047,
+    "uniform_multibanding": 0.7270678337663412
    },
    "rust": {
     "n_frequencies": 128513,
-    "per_call": 0.212246416,
-    "grid": 0.186829959,
-    "uniform": 0.204100584,
-    "grid_setup": 0.000863
+    "per_call": 0.212400542,
+    "grid": 0.187928459,
+    "uniform": 0.204254541,
+    "grid_setup": 0.000823291
    }
   },
   {
@@ -246,13 +246,13 @@
    "version": null,
    "grid": "2 kHz",
    "lal": {
-    "sequence": 0.008239666931331158
+    "sequence": 0.007796541787683964
    },
    "rust": {
     "n_frequencies": 259585,
-    "per_call": 0.004815708,
-    "grid": 0.001774542,
-    "grid_setup": 0.002239083
+    "per_call": 0.004815042,
+    "grid": 0.001769292,
+    "grid_setup": 0.002023125
    }
   },
   {
@@ -261,13 +261,13 @@
    "version": null,
    "grid": "2 kHz",
    "lal": {
-    "sequence": 0.01241924986243248
+    "sequence": 0.0117850829847157
    },
    "rust": {
     "n_frequencies": 259585,
-    "per_call": 0.005432417,
-    "grid": 0.002164166,
-    "grid_setup": 0.0017955
+    "per_call": 0.005427417,
+    "grid": 0.002149792,
+    "grid_setup": 0.001565666
    }
   },
   {
@@ -276,13 +276,13 @@
    "version": null,
    "grid": "2 kHz",
    "lal": {
-    "sequence": 0.014435125049203634
+    "sequence": 0.013605250045657158
    },
    "rust": {
     "n_frequencies": 259585,
-    "per_call": 0.006447709,
-    "grid": 0.003071125,
-    "grid_setup": 0.001720542
+    "per_call": 0.0064375,
+    "grid": 0.003070083,
+    "grid_setup": 0.001640167
    }
   },
   {
@@ -291,15 +291,15 @@
    "version": null,
    "grid": "2 kHz",
    "lal": {
-    "sequence": 0.06046999990940094,
-    "uniform": 0.0594823332503438,
-    "uniform_multibanding": 0.02971925027668476
+    "sequence": 0.05893716588616371,
+    "uniform": 0.05821570800617337,
+    "uniform_multibanding": 0.025637249927967787
    },
    "rust": {
     "n_frequencies": 259585,
-    "per_call": 0.037984292,
-    "grid": 0.025626792,
-    "grid_setup": 0.001763083
+    "per_call": 0.039707875,
+    "grid": 0.025870166,
+    "grid_setup": 0.001567
    }
   },
   {
@@ -308,15 +308,15 @@
    "version": 102,
    "grid": "2 kHz",
    "lal": {
-    "sequence": 0.04459979198873043,
-    "uniform": 0.04458529222756624
+    "sequence": 0.04386683413758874,
+    "uniform": 0.04370537493377924
    },
    "rust": {
     "n_frequencies": 259585,
-    "per_call": 0.023085208,
-    "grid": 0.006445417,
-    "uniform": 0.023307791,
-    "grid_setup": 0.001627458
+    "per_call": 0.022953541,
+    "grid": 0.006429791,
+    "uniform": 0.023177709,
+    "grid_setup": 0.001619375
    }
   },
   {
@@ -325,15 +325,15 @@
    "version": 223,
    "grid": "2 kHz",
    "lal": {
-    "sequence": 0.1048058751039207,
-    "uniform": 0.10598220815882087
+    "sequence": 0.10077999997884035,
+    "uniform": 0.10042920801788568
    },
    "rust": {
     "n_frequencies": 259585,
-    "per_call": 0.070487708,
-    "grid": 0.038705708,
-    "uniform": 0.071016167,
-    "grid_setup": 0.001590208
+    "per_call": 0.0702795,
+    "grid": 0.038557959,
+    "uniform": 0.070616375,
+    "grid_setup": 0.001678291
    }
   },
   {
@@ -342,15 +342,15 @@
    "version": 320,
    "grid": "2 kHz",
    "lal": {
-    "sequence": 0.17776395799592137,
-    "uniform": 0.1653635841794312
+    "sequence": 0.16796433320268989,
+    "uniform": 0.16154841659590602
    },
    "rust": {
     "n_frequencies": 259585,
-    "per_call": 0.072856083,
-    "grid": 0.061292292,
-    "uniform": 0.072174542,
-    "grid_setup": 0.001731042
+    "per_call": 0.069545459,
+    "grid": 0.0584535,
+    "uniform": 0.068619083,
+    "grid_setup": 0.001740541
    }
   },
   {
@@ -359,16 +359,16 @@
    "version": 102,
    "grid": "2 kHz",
    "lal": {
-    "sequence": 0.24563350016251206,
-    "uniform": 0.24865687498822808,
-    "uniform_multibanding": 0.17826533410698175
+    "sequence": 0.2337889578193426,
+    "uniform": 0.23651991598308086,
+    "uniform_multibanding": 0.17099558329209685
    },
    "rust": {
     "n_frequencies": 259585,
-    "per_call": 0.118509916,
-    "grid": 0.036163833,
-    "uniform": 0.119074958,
-    "grid_setup": 0.001735167
+    "per_call": 0.115506083,
+    "grid": 0.037486791,
+    "uniform": 0.115866833,
+    "grid_setup": 0.001600083
    }
   },
   {
@@ -377,16 +377,16 @@
    "version": 223,
    "grid": "2 kHz",
    "lal": {
-    "sequence": 0.5317247076891363,
-    "uniform": 0.5293536246754229,
-    "uniform_multibanding": 0.18801687518134713
+    "sequence": 0.5110212499275804,
+    "uniform": 0.5142539157532156,
+    "uniform_multibanding": 0.18133241683244705
    },
    "rust": {
     "n_frequencies": 259585,
-    "per_call": 0.311706708,
-    "grid": 0.133376291,
-    "uniform": 0.311495833,
-    "grid_setup": 0.001733125
+    "per_call": 0.303270708,
+    "grid": 0.131171042,
+    "uniform": 0.303784292,
+    "grid_setup": 0.001626458
    }
   },
   {
@@ -395,16 +395,16 @@
    "version": 320,
    "grid": "2 kHz",
    "lal": {
-    "sequence": 1.151368792168796,
-    "uniform": 1.1148149170912802,
-    "uniform_multibanding": 0.8363598752766848
+    "sequence": 1.105890582781285,
+    "uniform": 1.0700866668485105,
+    "uniform_multibanding": 0.8125076657161117
    },
    "rust": {
     "n_frequencies": 259585,
-    "per_call": 0.299232666,
-    "grid": 0.231419833,
-    "uniform": 0.279899042,
-    "grid_setup": 0.001818833
+    "per_call": 0.281194833,
+    "grid": 0.222743541,
+    "uniform": 0.273157125,
+    "grid_setup": 0.00178525
    }
   },
   {
@@ -413,13 +413,13 @@
    "version": null,
    "grid": "4 kHz",
    "lal": {
-    "sequence": 0.01711724977940321
+    "sequence": 0.01678904192522168
    },
    "rust": {
     "n_frequencies": 521729,
-    "per_call": 0.009658125,
-    "grid": 0.003586,
-    "grid_setup": 0.003552791
+    "per_call": 0.009623083,
+    "grid": 0.003572417,
+    "grid_setup": 0.003217333
    }
   },
   {
@@ -428,13 +428,13 @@
    "version": null,
    "grid": "4 kHz",
    "lal": {
-    "sequence": 0.024149708915501833
+    "sequence": 0.023124209139496088
    },
    "rust": {
     "n_frequencies": 521729,
-    "per_call": 0.010782,
-    "grid": 0.004866459,
-    "grid_setup": 0.003416459
+    "per_call": 0.010750334,
+    "grid": 0.004831833,
+    "grid_setup": 0.003234292
    }
   },
   {
@@ -443,13 +443,13 @@
    "version": null,
    "grid": "4 kHz",
    "lal": {
-    "sequence": 0.02846674993634224
+    "sequence": 0.02700108289718628
    },
    "rust": {
     "n_frequencies": 521729,
-    "per_call": 0.012729709,
-    "grid": 0.0065075,
-    "grid_setup": 0.003363
+    "per_call": 0.012730041,
+    "grid": 0.006505334,
+    "grid_setup": 0.003202459
    }
   },
   {
@@ -458,15 +458,15 @@
    "version": null,
    "grid": "4 kHz",
    "lal": {
-    "sequence": 0.13178420811891556,
-    "uniform": 0.12007229076698422,
-    "uniform_multibanding": 0.05225549964234233
+    "sequence": 0.125882166903466,
+    "uniform": 0.11727687483653426,
+    "uniform_multibanding": 0.04913795879110694
    },
    "rust": {
     "n_frequencies": 521729,
-    "per_call": 0.074123541,
-    "grid": 0.052201709,
-    "grid_setup": 0.003383125
+    "per_call": 0.07624975,
+    "grid": 0.051099875,
+    "grid_setup": 0.003243792
    }
   },
   {
@@ -475,15 +475,15 @@
    "version": 102,
    "grid": "4 kHz",
    "lal": {
-    "sequence": 0.08616529079154134,
-    "uniform": 0.08594045881181955
+    "sequence": 0.08572112489491701,
+    "uniform": 0.08505841717123985
    },
    "rust": {
     "n_frequencies": 521729,
-    "per_call": 0.045021708,
-    "grid": 0.01307975,
-    "uniform": 0.045864042,
-    "grid_setup": 0.003404083
+    "per_call": 0.044702417,
+    "grid": 0.013040958,
+    "uniform": 0.045361084,
+    "grid_setup": 0.003209375
    }
   },
   {
@@ -492,15 +492,15 @@
    "version": 223,
    "grid": "4 kHz",
    "lal": {
-    "sequence": 0.20903629204258323,
-    "uniform": 0.20848420821130276
+    "sequence": 0.19928195793181658,
+    "uniform": 0.19942475017160177
    },
    "rust": {
     "n_frequencies": 521729,
-    "per_call": 0.14159775,
-    "grid": 0.077434333,
-    "uniform": 0.142303708,
-    "grid_setup": 0.003255333
+    "per_call": 0.141384417,
+    "grid": 0.077478791,
+    "uniform": 0.142322375,
+    "grid_setup": 0.003231791
    }
   },
   {
@@ -509,15 +509,15 @@
    "version": 320,
    "grid": "4 kHz",
    "lal": {
-    "sequence": 0.2617894997820258,
-    "uniform": 0.2551349173299968
+    "sequence": 0.25611279206350446,
+    "uniform": 0.2521535409614444
    },
    "rust": {
     "n_frequencies": 521729,
-    "per_call": 0.103161417,
-    "grid": 0.078421292,
-    "uniform": 0.102747,
-    "grid_setup": 0.003444084
+    "per_call": 0.103103916,
+    "grid": 0.078374292,
+    "uniform": 0.102558583,
+    "grid_setup": 0.003251459
    }
   },
   {
@@ -526,16 +526,16 @@
    "version": 102,
    "grid": "4 kHz",
    "lal": {
-    "sequence": 0.49437549989670515,
-    "uniform": 0.4862894997932017,
-    "uniform_multibanding": 0.34194150008261204
+    "sequence": 0.4744834997691214,
+    "uniform": 0.47660133382305503,
+    "uniform_multibanding": 0.3399724578484893
    },
    "rust": {
     "n_frequencies": 521729,
-    "per_call": 0.224176584,
-    "grid": 0.0685555,
-    "uniform": 0.226617042,
-    "grid_setup": 0.003266833
+    "per_call": 0.228611375,
+    "grid": 0.075703667,
+    "uniform": 0.229668375,
+    "grid_setup": 0.003231708
    }
   },
   {
@@ -544,16 +544,16 @@
    "version": 223,
    "grid": "4 kHz",
    "lal": {
-    "sequence": 1.0402374998666346,
-    "uniform": 1.0403690417297184,
-    "uniform_multibanding": 0.3550574998371303
+    "sequence": 1.0321649578399956,
+    "uniform": 1.0340430829674006,
+    "uniform_multibanding": 0.3529887921176851
    },
    "rust": {
     "n_frequencies": 521729,
-    "per_call": 0.600605709,
-    "grid": 0.257070458,
-    "uniform": 0.612104209,
-    "grid_setup": 0.003384583
+    "per_call": 0.60812825,
+    "grid": 0.262084041,
+    "uniform": 0.6102125,
+    "grid_setup": 0.003501208
    }
   },
   {
@@ -562,78 +562,78 @@
    "version": 320,
    "grid": "4 kHz",
    "lal": {
-    "sequence": 1.4286313746124506,
-    "uniform": 1.373771458864212,
-    "uniform_multibanding": 1.0053684171289206
+    "sequence": 1.3737846659496427,
+    "uniform": 1.3412838326767087,
+    "uniform_multibanding": 0.9778982498683035
    },
    "rust": {
     "n_frequencies": 521729,
-    "per_call": 0.464751208,
-    "grid": 0.304435334,
-    "uniform": 0.436934959,
-    "grid_setup": 0.003410334
+    "per_call": 0.427802375,
+    "grid": 0.297540291,
+    "uniform": 0.420138917,
+    "grid_setup": 0.003235958
    }
   }
  ],
  "memory_bytes": {
   "baseline": {
    "rust": 6160384,
-   "lal": 38305792
+   "lal": 36978688
   },
   "TaylorF2, 1 kHz": {
    "rust_all_paths": 21856256,
-   "lal_sequence": 48463872
+   "lal_sequence": 48824320
   },
   "IMRPhenomD, 1 kHz": {
    "rust_all_paths": 21987328,
-   "lal_sequence": 49758208
+   "lal_sequence": 48316416
   },
   "IMRPhenomXAS, 1 kHz": {
-   "rust_all_paths": 21905408,
-   "lal_sequence": 48349184
+   "rust_all_paths": 21921792,
+   "lal_sequence": 48250880
   },
   "IMRPhenomXHM, 1 kHz": {
    "rust_all_paths": 22085632,
-   "lal_sequence": 88080384,
-   "lal_uniform": 88195072,
-   "lal_uniform_multibanding": 63176704
+   "lal_sequence": 87867392,
+   "lal_uniform": 88440832,
+   "lal_uniform_multibanding": 62439424
   },
   "IMRPhenomXP (102), 1 kHz": {
-   "rust_all_paths": 32423936,
-   "lal_sequence": 48529408,
-   "lal_uniform": 48758784
+   "rust_all_paths": 32456704,
+   "lal_sequence": 48611328,
+   "lal_uniform": 52396032
   },
   "IMRPhenomXP (223), 1 kHz": {
-   "rust_all_paths": 32423936,
-   "lal_sequence": 48578560,
-   "lal_uniform": 51888128
+   "rust_all_paths": 32473088,
+   "lal_sequence": 48594944,
+   "lal_uniform": 48824320
   },
   "IMRPhenomXP (320), 1 kHz": {
-   "rust_all_paths": 64815104,
-   "lal_sequence": 284999680,
-   "lal_uniform": 273285120
+   "rust_all_paths": 64847872,
+   "lal_sequence": 284868608,
+   "lal_uniform": 318914560
   },
   "IMRPhenomXPHM (102), 1 kHz": {
-   "rust_all_paths": 53280768,
-   "lal_sequence": 55050240,
-   "lal_uniform": 52051968,
-   "lal_uniform_multibanding": 85245952
+   "rust_all_paths": 53297152,
+   "lal_sequence": 55066624,
+   "lal_uniform": 52215808,
+   "lal_uniform_multibanding": 65372160
   },
   "IMRPhenomXPHM (223), 1 kHz": {
-   "rust_all_paths": 58703872,
-   "lal_sequence": 58294272,
-   "lal_uniform": 62865408,
+   "rust_all_paths": 55230464,
+   "lal_sequence": 55214080,
+   "lal_uniform": 55508992,
    "lal_uniform_multibanding": 65421312
   },
   "IMRPhenomXPHM (320), 1 kHz": {
    "rust_all_paths": 214777856,
-   "lal_sequence": 2050162688,
-   "lal_uniform": 2256076800,
-   "lal_uniform_multibanding": 1850851328
+   "lal_sequence": 2079375360,
+   "lal_uniform": 2263515136,
+   "lal_uniform_multibanding": 1844936704
   },
   "TaylorF2, 2 kHz": {
    "rust_all_paths": 37617664,
-   "lal_sequence": 58474496
+   "lal_sequence": 54198272
   },
   "IMRPhenomD, 2 kHz": {
    "rust_all_paths": 37748736,
@@ -641,97 +641,97 @@
   },
   "IMRPhenomXAS, 2 kHz": {
    "rust_all_paths": 37683200,
-   "lal_sequence": 59654144
+   "lal_sequence": 54706176
   },
   "IMRPhenomXHM, 2 kHz": {
-   "rust_all_paths": 37863424,
-   "lal_sequence": 134447104,
-   "lal_uniform": 135315456,
-   "lal_uniform_multibanding": 88031232
+   "rust_all_paths": 37847040,
+   "lal_sequence": 134004736,
+   "lal_uniform": 134348800,
+   "lal_uniform_multibanding": 87261184
   },
   "IMRPhenomXP (102), 2 kHz": {
-   "rust_all_paths": 56623104,
-   "lal_sequence": 54886400,
-   "lal_uniform": 56033280
+   "rust_all_paths": 56655872,
+   "lal_sequence": 54837248,
+   "lal_uniform": 55066624
   },
   "IMRPhenomXP (223), 2 kHz": {
-   "rust_all_paths": 58703872,
-   "lal_sequence": 54870016,
-   "lal_uniform": 55705600
+   "rust_all_paths": 58753024,
+   "lal_sequence": 54886400,
+   "lal_uniform": 55115776
   },
   "IMRPhenomXP (320), 2 kHz": {
-   "rust_all_paths": 118407168,
-   "lal_sequence": 318144512,
-   "lal_uniform": 301187072
+   "rust_all_paths": 103776256,
+   "lal_sequence": 293732352,
+   "lal_uniform": 290947072
   },
   "IMRPhenomXPHM (102), 2 kHz": {
-   "rust_all_paths": 100646912,
-   "lal_sequence": 80609280,
-   "lal_uniform": 69369856,
-   "lal_uniform_multibanding": 107528192
+   "rust_all_paths": 100630528,
+   "lal_sequence": 61472768,
+   "lal_uniform": 61652992,
+   "lal_uniform_multibanding": 93585408
   },
   "IMRPhenomXPHM (223), 2 kHz": {
    "rust_all_paths": 111460352,
-   "lal_sequence": 68796416,
-   "lal_uniform": 68681728,
-   "lal_uniform_multibanding": 169787392
+   "lal_sequence": 67698688,
+   "lal_uniform": 61702144,
+   "lal_uniform_multibanding": 94568448
   },
   "IMRPhenomXPHM (320), 2 kHz": {
    "rust_all_paths": 271482880,
-   "lal_sequence": 2093760512,
-   "lal_uniform": 2280194048,
-   "lal_uniform_multibanding": 1868218368
+   "lal_sequence": 2053767168,
+   "lal_uniform": 2247507968,
+   "lal_uniform_multibanding": 1847033856
   },
   "TaylorF2, 4 kHz": {
    "rust_all_paths": 69091328,
-   "lal_sequence": 69025792
+   "lal_sequence": 67698688
   },
   "IMRPhenomD, 4 kHz": {
-   "rust_all_paths": 69238784,
-   "lal_sequence": 67616768
+   "rust_all_paths": 69255168,
+   "lal_sequence": 67190784
   },
   "IMRPhenomXAS, 4 kHz": {
-   "rust_all_paths": 69140480,
-   "lal_sequence": 68386816
+   "rust_all_paths": 69156864,
+   "lal_sequence": 68059136
   },
   "IMRPhenomXHM, 4 kHz": {
-   "rust_all_paths": 69369856,
-   "lal_sequence": 227540992,
-   "lal_uniform": 227983360,
-   "lal_uniform_multibanding": 130285568
+   "rust_all_paths": 69320704,
+   "lal_sequence": 226131968,
+   "lal_uniform": 226623488,
+   "lal_uniform_multibanding": 125108224
   },
   "IMRPhenomXP (102), 4 kHz": {
-   "rust_all_paths": 106987520,
-   "lal_sequence": 74661888,
-   "lal_uniform": 75431936
+   "rust_all_paths": 107020288,
+   "lal_sequence": 67420160,
+   "lal_uniform": 67665920
   },
   "IMRPhenomXP (223), 4 kHz": {
-   "rust_all_paths": 111181824,
-   "lal_sequence": 74514432,
-   "lal_uniform": 70057984
+   "rust_all_paths": 111230976,
+   "lal_sequence": 68894720,
+   "lal_uniform": 67715072
   },
   "IMRPhenomXP (320), 4 kHz": {
-   "rust_all_paths": 165101568,
-   "lal_sequence": 460210176,
-   "lal_uniform": 406716416
+   "rust_all_paths": 161431552,
+   "lal_sequence": 366952448,
+   "lal_uniform": 360218624
   },
   "IMRPhenomXPHM (102), 4 kHz": {
-   "rust_all_paths": 195149824,
-   "lal_sequence": 93765632,
-   "lal_uniform": 93831168,
-   "lal_uniform_multibanding": 235732992
+   "rust_all_paths": 195117056,
+   "lal_sequence": 92815360,
+   "lal_uniform": 80543744,
+   "lal_uniform_multibanding": 146014208
   },
   "IMRPhenomXPHM (223), 4 kHz": {
-   "rust_all_paths": 216727552,
-   "lal_sequence": 108183552,
-   "lal_uniform": 94928896,
-   "lal_uniform_multibanding": 214073344
+   "rust_all_paths": 216776704,
+   "lal_sequence": 80330752,
+   "lal_uniform": 84770816,
+   "lal_uniform_multibanding": 146063360
   },
   "IMRPhenomXPHM (320), 4 kHz": {
-   "rust_all_paths": 392888320,
-   "lal_sequence": 2152005632,
-   "lal_uniform": 2277146624,
-   "lal_uniform_multibanding": 1936359424
+   "rust_all_paths": 392937472,
+   "lal_sequence": 2096889856,
+   "lal_uniform": 2294906880,
+   "lal_uniform_multibanding": 1884831744
   }
  }
 }

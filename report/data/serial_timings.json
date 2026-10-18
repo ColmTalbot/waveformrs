@@ -7,107 +7,107 @@
   "f_max": 1024.0,
   "delta_f": 0.125
  },
- "lal_python_call_overhead": 1.7459737136960029e-06,
+ "lal_python_call_overhead": 1.7313907543818155e-06,
  "rust": {
   "TaylorF2": {
-   "seconds": 0.00022770138666666667,
+   "seconds": 0.00023121291666666668,
    "failures": 0,
-   "grid_seconds": 6.003944333333334e-05
+   "grid_seconds": 5.9812916666666675e-05
   },
   "IMRPhenomD": {
-   "seconds": 0.00018965986,
+   "seconds": 0.0001887825,
    "failures": 0,
-   "grid_seconds": 0.00011462041666666666
+   "grid_seconds": 0.00011527750000000001
   },
   "IMRPhenomXAS": {
-   "seconds": 0.00017464805666666665,
+   "seconds": 0.00017140263666666668,
    "failures": 0,
-   "grid_seconds": 9.979625e-05
+   "grid_seconds": 9.991694666666666e-05
   },
   "IMRPhenomXHM": {
-   "seconds": 0.0013789690266666668,
+   "seconds": 0.0013931980533333332,
    "failures": 0,
-   "grid_seconds": 0.0009818672233333334
+   "grid_seconds": 0.00100537861
   },
   "IMRPhenomXP (102)": {
-   "seconds": 0.0005977331933333333,
+   "seconds": 0.00059340972,
    "failures": 0,
-   "grid_seconds": 0.00017717180666666668
+   "grid_seconds": 0.00017738680666666665
   },
   "IMRPhenomXP (223)": {
-   "seconds": 0.0018268422233333333,
+   "seconds": 0.0018297343033333332,
    "failures": 0,
-   "grid_seconds": 0.0010104894433333334
+   "grid_seconds": 0.0010133234733333333
   },
   "IMRPhenomXP (320)": {
-   "seconds": 0.0012328076366666667,
+   "seconds": 0.0011769541666666666,
    "failures": 0,
-   "grid_seconds": 0.0007888323599999999
+   "grid_seconds": 0.0008017559733333333
   },
   "IMRPhenomXPHM (102)": {
-   "seconds": 0.0033031393066666665,
+   "seconds": 0.0033345584733333335,
    "failures": 0,
-   "grid_seconds": 0.0009450231933333333
+   "grid_seconds": 0.0010429443066666665
   },
   "IMRPhenomXPHM (223)": {
-   "seconds": 0.008069049166666667,
+   "seconds": 0.008185412363333333,
    "failures": 0,
-   "grid_seconds": 0.00337679764
+   "grid_seconds": 0.003470763333333333
   },
   "IMRPhenomXPHM (320)": {
-   "seconds": 0.0050142686133333335,
+   "seconds": 0.00465034278,
    "failures": 0,
-   "grid_seconds": 0.002627103056666667
+   "grid_seconds": 0.00252506736
   },
   "NRSur7dq4": {
-   "seconds": 0.00102444153,
+   "seconds": 0.0010095725,
    "failures": 0,
-   "grid_seconds": 0.00099525528
+   "grid_seconds": 0.0009890683333333332
   }
  },
  "lal": {
   "TaylorF2": {
-   "seconds": 0.00023533930691579979,
+   "seconds": 0.0002348520839586854,
    "failures": 0
   },
   "IMRPhenomD": {
-   "seconds": 0.0003902772224197785,
+   "seconds": 0.00039148777723312377,
    "failures": 0
   },
   "IMRPhenomXAS": {
-   "seconds": 0.0003486729164918264,
+   "seconds": 0.0003427173600842555,
    "failures": 0
   },
   "IMRPhenomXHM": {
-   "seconds": 0.0023220573629563054,
+   "seconds": 0.002336111526625852,
    "failures": 0
   },
   "IMRPhenomXP (102)": {
-   "seconds": 0.0011093531968072057,
+   "seconds": 0.0011099949991330504,
    "failures": 0
   },
   "IMRPhenomXP (223)": {
-   "seconds": 0.002559810552435617,
+   "seconds": 0.0025608616679285963,
    "failures": 0
   },
   "IMRPhenomXP (320)": {
-   "seconds": 0.0033625587495043872,
+   "seconds": 0.0033772933343425393,
    "failures": 0
   },
   "IMRPhenomXPHM (102)": {
-   "seconds": 0.0077787643065676095,
+   "seconds": 0.0074783473601564765,
    "failures": 0
   },
   "IMRPhenomXPHM (223)": {
-   "seconds": 0.014756461110276481,
+   "seconds": 0.014481664722164472,
    "failures": 0
   },
   "IMRPhenomXPHM (320)": {
-   "seconds": 0.012324190416062872,
+   "seconds": 0.01264895721959571,
    "failures": 0
   },
   "NRSur7dq4": {
-   "seconds": 0.005606101943800847,
+   "seconds": 0.005609767780018349,
    "failures": 0
   }
  }
