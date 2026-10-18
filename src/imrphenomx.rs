@@ -25,6 +25,10 @@
 //! | `wigner`       | Wigner-d matrices and twisting up, spherical harmonics |
 //! | `xhm`          | `LALSimIMRPhenomXHM.c` (IMRPhenomXHM driver, mode sum) |
 //! | `xphm`         | `LALSimIMRPhenomXPHM.c` (IMRPhenomXPHM driver, twisting up) |
+//! | `xpnr`         | the IMRPhenomXPNR flags of `LALSimInspiralGeneratorLegacy.c` on top of `LALSimIMRPhenomXPHM.c` |
+//! | `pnr`          | `LALSimIMRPhenomX_PNR*.c`, `LALSimIMRPhenomX_AntisymmetricWaveform.c` (PNR set-up and angles) |
+//! | `pnr_angles`   | `LALSimIMRPhenomX_PNR_alpha.c`, `_beta.c`, `_internals.c` (model-independent PNR helpers) |
+//! | `pnr_fits`     | `LALSimIMRPhenomX_PNR_coefficients.c`, `_deviations.c`  |
 //! | `hm_internals` | `LALSimIMRPhenomXHM_internals.c` (mode struct, coefficients) |
 //! | `hm_inspiral`  | `LALSimIMRPhenomXHM_inspiral.c`                        |
 //! | `hm_intermediate` | `LALSimIMRPhenomXHM_intermediate.c`                 |
@@ -52,6 +56,9 @@ pub(crate) mod libm;
 mod linalg;
 mod msa;
 mod phase;
+mod pnr;
+mod pnr_angles;
+mod pnr_fits;
 mod poly_roots;
 mod precessing_grid;
 mod precession;
@@ -65,6 +72,7 @@ mod xas;
 mod xhm;
 mod xp;
 mod xphm;
+mod xpnr;
 
 pub use internals::IMRPhenomXError;
 pub use precession::{PrecessingBinary, PrecessionVersion};
@@ -75,3 +83,4 @@ pub use xp::{IMRPhenomXP, Polarizations};
 pub use xphm::IMRPhenomXPHM;
 
 pub(crate) use xhm::spin_weighted_spherical_harmonic;
+pub use xpnr::IMRPhenomXPNR;

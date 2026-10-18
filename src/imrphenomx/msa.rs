@@ -45,6 +45,7 @@ use std::f64::consts::{PI, TAU};
 
 use crate::cmath::LibmCbrt;
 use crate::fastmath;
+use crate::imrphenomx::precession::OrbitalAngularMomentum;
 use crate::spintaylor::fp::{fma, fms, fnms};
 
 /// `GSL_DBL_EPSILON`.
@@ -218,6 +219,8 @@ pub(crate) struct MsaSystem {
     /// Integration constants of `phi_z` and `zeta`.
     phiz_0: f64,
     zeta_0: f64,
+    /// `MSA_ERROR`: `|Omega_z^(5)| > 1000` (the system is complete anyway).
+    msa_error: bool,
 }
 
 /// Inputs of `IMRPhenomX_Initialize_MSA_System` taken from the waveform
@@ -248,6 +251,14 @@ impl MsaSystem {
     /// Returns `None` when LAL sets `MSA_ERROR` (`|Omega_z^(5)| > 1000`),
     /// in which case LAL falls back to the NNLO angles (version 102).
     pub(crate) fn new(input: &MsaInputs) -> Option<Self> {
+        let system = Self::new_unchecked(input);
+        (!system.msa_error).then_some(system)
+    }
+
+    /// `IMRPhenomX_Initialize_MSA_System` without the check of `MSA_ERROR`:
+    /// like LAL, the system is completed even when it sets `MSA_ERROR`
+    /// (which IMRPhenomXPNR ignores in some of its uses).
+    pub(crate) fn new_unchecked(input: &MsaInputs) -> Self {
         let eta = input.eta;
         let eta2 = eta * eta;
         let eta3 = eta * eta2;
@@ -414,6 +425,7 @@ impl MsaSystem {
             omegazeta_coeff: [0.0; 6],
             phiz_0: 0.0,
             zeta_0: 0.0,
+            msa_error: false,
         };
 
         let roots = system.roots(l_0_norm, j_0_norm);
@@ -560,11 +572,9 @@ impl MsaSystem {
                 fnms(2.0, addfdd, cdd + addhdd_2) * hdd_2 * (seff + hdd),
             ),
         );
-        if omegaz5.abs() > 1000.0 {
-            // MSA_ERROR: "|Omegaz5| is larger than expected and may be
-            // pathological. Triggering MSA failure."
-            return None;
-        }
+        // MSA_ERROR: "|Omegaz5| is larger than expected and may be
+        // pathological. Triggering MSA failure."
+        system.msa_error = omegaz5.abs() > 1000.0;
 
         // Eqs. D16 - D21; ExpansionOrder 5 drops the n = 5 terms.
         system.omegaz_coeff = [
@@ -636,7 +646,34 @@ impl MsaSystem {
         let zeta_0 = system.zeta(&v0);
         system.phiz_0 = -phiz_0 - corrections[0];
         system.zeta_0 = -zeta_0 - corrections[1];
-        Some(system)
+        system
+    }
+
+    /// `cos(theta_L)` of [`Self::phi_zeta_costhetal`] as LAL evaluates it
+    /// when the precession struct does not carry version 222 or 223 (as in
+    /// the PNR angles): the 3PN orbital angular momentum is
+    /// `XLALSimIMRPhenomXLPNAnsatz` with the coefficients `l` instead of the
+    /// MSA expansion.
+    pub(crate) fn cos_theta_l_with(&self, v: f64, l: &OrbitalAngularMomentum) -> f64 {
+        let powers = VPowers::new(v);
+        let l_norm = self.eta / v;
+        let j_norm = self.j_norm(l_norm);
+        let l_norm_3pn = l.ansatz(v, l_norm);
+        let j_norm_3pn = self.j_norm(l_norm_3pn);
+        let roots = self.roots(l_norm, j_norm);
+        let s_norm = self.s_norm(&powers, &roots);
+        cos_theta_lj(l_norm_3pn, j_norm_3pn, s_norm)
+    }
+
+    /// `MSA_ERROR` of `IMRPhenomX_Initialize_MSA_System`.
+    pub(crate) fn msa_error(&self) -> bool {
+        self.msa_error
+    }
+
+    /// `g0`, `delta_qq`, `psi1` and `psi2` of the precession struct (used by
+    /// the PNR angles to estimate the period of the two-spin oscillations).
+    pub(crate) fn psi_terms(&self) -> (f64, f64, f64, f64) {
+        (self.g0, self.delta_qq, self.psi1, self.psi2)
     }
 
     /// `IMRPhenomX_psiofv`

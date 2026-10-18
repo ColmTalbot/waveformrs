@@ -92,12 +92,15 @@ impl AmpCoefficients {
         // gamma3 = sigma in arXiv:2001.11412.
         let gamma2 = ringdown::amp_22_gamma2(eta, wf.s_tot_r, wf.dchi, wf.delta);
         let gamma3 = ringdown::amp_22_gamma3(eta, wf.s_tot_r, wf.dchi, wf.delta);
+        // IMRPhenomXPNR co-precessing deviation (zero otherwise)
+        let gamma3 = fma(wf.coprec.dev, wf.coprec.mu2, gamma3);
 
         // Peak ringdown frequency, Eq. 5.14 in arXiv:2001.11412.
         let f_amp_rd_min = ringdown::amp_22_peak_frequency(gamma2, gamma3, f_ring, f_damp);
 
         // Value of v1RD at fAmpRDMin is used to calculate gamma1.
         let v1_rd = ringdown::amp_22_v1(eta, wf.s_tot_r, wf.dchi, wf.delta);
+        let v1_rd = fma(wf.coprec.dev, wf.coprec.mu1, v1_rd);
         let f1 = f_amp_rd_min;
 
         // Solving linear equation: ansatzRD(F1) == v1
@@ -317,6 +320,7 @@ impl AmpCoefficients {
         let f3 = 0.0;
         let v1 = 1.0 / (powers_of_f1.m_seven_sixths * insp_f1);
         let v2 = 1.0 / intermediate::amp_22_va(eta, wf.s_tot_r, wf.dchi, wf.delta);
+        let v2 = fma(wf.coprec.dev, wf.coprec.mu3, v2);
         let v3 = 0.0;
         let v4 = 1.0 / (powers_of_f4.m_seven_sixths * rd_f4);
 

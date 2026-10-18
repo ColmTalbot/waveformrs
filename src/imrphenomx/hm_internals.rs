@@ -128,6 +128,21 @@ impl HMWaveformStruct {
             [Complex::new(0.0, 0.0); 4]
         };
         let psi4tostrain = psi4_to_strain(wf.eta, wf.s_tot_r, wf.dchi);
+        let (f_ring, f_damp) = if wf.coprec.tuned {
+            // IMRPhenomXPNR: the precessing final spin and the effective
+            // ringdown frequency (`IMRPhenomXPNRUseTunedCoprec`)
+            let f_ring = fring(wf.a_final_prec) / wf.m_final;
+            let shift = wf.coprec.f_ring_eff_shift_divided_by_emm;
+            (
+                crate::spintaylor::fp::fnms(emm as f64, shift, f_ring),
+                fdamp(wf.a_final_prec) / wf.m_final,
+            )
+        } else {
+            (
+                fring(wf.a_final) / wf.m_final,
+                fdamp(wf.a_final) / wf.m_final,
+            )
+        };
         Self {
             ell,
             emm,
@@ -142,8 +157,8 @@ impl HMWaveformStruct {
             chi_s: (wf.chi1l + wf.chi2l) * 0.5,
             chi_a: (wf.chi1l - wf.chi2l) * 0.5,
             f_meco_lm: wf.f_meco * emm as f64 * 0.5,
-            f_ring: fring(wf.a_final) / wf.m_final,
-            f_damp: fdamp(wf.a_final) / wf.m_final,
+            f_ring,
+            f_damp,
             timeshift: 0.0,
             phaseshift: 0.0,
             phiref22: 0.0,

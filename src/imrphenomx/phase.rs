@@ -218,6 +218,8 @@ impl PhaseCoefficients {
         }
         let [c0, c1, c2, c4, c_rd] = lu_solve(matrix, values_rd);
         let c_l = -(dphase0 * c_rd);
+        // IMRPhenomXPNR co-precessing deviation (zero otherwise)
+        let c_l = fma(wf.coprec.dev, wf.coprec.nu4, c_l);
 
         /* ---------------------------- Inspiral ---------------------------- */
         let deltax = f_phase_ins_max - f_phase_ins_min;
@@ -518,6 +520,9 @@ impl PhaseCoefficients {
         let b2 = x[2] * f_ring * f_ring;
         let b3 = x[3] * f_ring * f_ring * f_ring;
         let b4 = x[4] * f_ring * f_ring * f_ring * f_ring;
+        // IMRPhenomXPNR co-precessing deviations (zero otherwise)
+        let b1 = fma(wf.coprec.dev, wf.coprec.zeta2, b1);
+        let b4 = fma(wf.coprec.dev, wf.coprec.zeta1, b4);
 
         let c_l_gr = c_l;
 

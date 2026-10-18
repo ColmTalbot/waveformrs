@@ -209,7 +209,7 @@ pub(crate) struct OrbitalAngularMomentum {
 impl OrbitalAngularMomentum {
     /// The 3PN orbital angular momentum with linear-in-spin terms used by
     /// PrecVersions 102 and 3xx.
-    fn three_pn(eta: f64, delta: f64, chi1l: f64, chi2l: f64) -> Self {
+    pub(crate) fn three_pn(eta: f64, delta: f64, chi1l: f64, chi2l: f64) -> Self {
         Self {
             l0: 1.0,
             l1: 0.0,
@@ -255,7 +255,7 @@ impl OrbitalAngularMomentum {
 
     /// The 3PN orbital angular momentum of versions 222 and 223, with the
     /// spin-orbit terms of `LALSimInspiralFDPrecAngles`.
-    fn three_pn_msa(eta: f64, delta: f64, chi1l: f64, chi2l: f64) -> Self {
+    pub(crate) fn three_pn_msa(eta: f64, delta: f64, chi1l: f64, chi2l: f64) -> Self {
         let eta2 = eta * eta;
         // chi1L + chi2L + chi1L delta - chi2L delta
         let a = fnms(chi2l, delta, fma(chi1l, delta, chi1l + chi2l));
@@ -829,7 +829,13 @@ impl NnloCoefficients {
     /// same for epsilon) before the offsets, with the products contracted
     /// into fused multiply-adds as in LAL's arm64 build.
     #[inline]
-    fn evaluate(&self, omega: f64, logomega: f64, omega_cbrt: f64, omega_cbrt2: f64) -> (f64, f64) {
+    pub(crate) fn evaluate(
+        &self,
+        omega: f64,
+        logomega: f64,
+        omega_cbrt: f64,
+        omega_cbrt2: f64,
+    ) -> (f64, f64) {
         let alpha = fma(
             self.alpha5,
             omega_cbrt,
@@ -855,7 +861,7 @@ impl NnloCoefficients {
 /// NNLO Euler angle coefficients of `IMRPhenomXGetAndSetPrecessionVariables`
 /// (versions 101-104), written exactly as in LAL.
 #[allow(clippy::too_many_arguments)]
-fn nnlo_coefficients(
+pub(crate) fn nnlo_coefficients(
     eta: f64,
     delta: f64,
     q: f64,

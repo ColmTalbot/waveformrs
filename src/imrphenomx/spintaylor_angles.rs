@@ -316,6 +316,27 @@ pub(crate) fn inspiral_angles_spintaylor(
     prec: &PrecessionStruct,
     f_min: f64,
 ) -> Result<PnArrays, IMRPhenomXError> {
+    inspiral_angles_spintaylor_with(
+        wf,
+        prec.chi1,
+        prec.chi2,
+        prec.version,
+        prec.f_ring_aligned + 8. * prec.f_damp_aligned,
+        f_min,
+    )
+}
+
+/// [`inspiral_angles_spintaylor`] for the spins `chi1`, `chi2`, the
+/// precession version and `fRING + 8 fDAMP` of the waveform struct when it
+/// is called (which sets the end of the integration).
+pub(crate) fn inspiral_angles_spintaylor_with(
+    wf: &WaveformStruct,
+    chi1: [f64; 3],
+    chi2: [f64; 3],
+    version: u32,
+    mf_end: f64,
+    f_min: f64,
+) -> Result<PnArrays, IMRPhenomXError> {
     let fallback = IMRPhenomXError::SpinTaylorFallbackToMsa;
     let f_ref = wf.f_ref;
     if f_min <= 0.0 {
@@ -326,15 +347,15 @@ pub(crate) fn inspiral_angles_spintaylor(
     }
     let (m1_si, m2_si) = (wf.m1_si, wf.m2_si);
     let pi_gm = PI * (m1_si + m2_si) * (G_SI / C_SI) / (C_SI * C_SI);
-    let binary = SpinTaylorT4::new(m1_si, m2_si, prec.chi1, prec.chi2);
+    let binary = SpinTaylorT4::new(m1_si, m2_si, chi1, chi2);
 
     // For versions 32* to work, the integration must start in the inspiral.
     let f_meco_hz = mf_to_hz(wf.f_meco, wf.m_tot);
     let mut f_min = f_min;
-    if f_min > f_meco_hz && (prec.version == 320 || prec.version == 321) {
+    if f_min > f_meco_hz && (version == 320 || version == 321) {
         f_min = f_meco_hz;
     }
-    let f_cut = mf_to_hz(prec.f_ring_aligned + 8. * prec.f_damp_aligned, wf.m_tot);
+    let f_cut = mf_to_hz(mf_end, wf.m_tot);
     // PhenomXPSpinTaylorCoarseFactor, read as a float.
     let coarse_fac = 10.0f32 as f64;
     let delta_t_coarse = 0.5 * coarse_fac / f_cut;
@@ -442,7 +463,7 @@ pub(crate) struct AlphaMrd {
 impl AlphaMrd {
     /// `alphaMRD_coeff`: match `-(a + b / Mf^4 + c / Mf^2)` to the spline
     /// (value and derivative at `0.97 fmaxPN`, value at `0.99 fmaxPN`).
-    fn new(spline: &CubicSpline, fmax_pn: f64) -> Result<Self, IMRPhenomXError> {
+    pub(crate) fn new(spline: &CubicSpline, fmax_pn: f64) -> Result<Self, IMRPhenomXError> {
         let ftrans = fmax_pn;
         let f1 = 0.97 * ftrans;
         let f2 = 0.99 * ftrans;

@@ -56,6 +56,9 @@ pub enum IMRPhenomXError {
         fallback: u32,
         reason: &'static str,
     },
+    /// The PNR angles of IMRPhenomXPNR could not be computed where
+    /// LALSimulation raises an error.
+    PnrAngles(&'static str),
 }
 
 impl fmt::Display for IMRPhenomXError {
@@ -99,6 +102,7 @@ impl fmt::Display for IMRPhenomXError {
                 "PhenomXPrecVersion {requested} cannot be used ({reason}); LALSimulation would \
                  switch to {fallback}, but version fallbacks are disabled"
             ),
+            Self::PnrAngles(why) => write!(f, "PNR angles: {why}"),
         }
     }
 }
@@ -414,6 +418,11 @@ pub(crate) struct WaveformStruct {
     pub(crate) amp_norm: f64,
     /// Phase normalisation 5 / (128 pi^(5/3)).
     pub(crate) dphase0: f64,
+
+    // --- IMRPhenomXPNR hook (see `crate::imrphenomx::pnr`) ---
+    /// PhenomXCP co-precessing deviations of IMRPhenomXPNR
+    /// (`PNR_DEV_PARAMETER`, `MU1`, ...); zero for the other models.
+    pub(crate) coprec: crate::imrphenomx::pnr::CoprecDeviations,
 }
 
 impl WaveformStruct {
@@ -609,6 +618,7 @@ impl WaveformStruct {
             amp0: m_tot * MRSUN_SI * m_tot * MTSUN_SI / distance,
             amp_norm: (2.0f64 / 3.0).sqrt() * eta.sqrt() * POWERS_OF_LALPI.m_one_sixth,
             dphase0: 5.0 / (128.0 * PI.powf(5.0 / 3.0)),
+            coprec: Default::default(),
         };
         wf.set_final_state()?;
         Ok(wf)
