@@ -1,0 +1,949 @@
+//! The NRSur7dq4 waveform: `PrecessingNRSur_core` and the LAL drivers
+//! `XLALSimInspiralPrecessingNRSurPolarizations`,
+//! `XLALSimInspiralPrecessingNRSurModes` and `XLALPrecessingNRSurDynamics`.
+
+use std::f64::consts::{FRAC_PI_2, PI};
+
+use num_complex::Complex;
+
+use crate::constants::{C_SI, MSUN_SI, MTSUN_SI, PC_SI};
+use crate::imrphenomx::libm::cexp_i;
+use crate::imrphenomx::PrecessingBinary;
+use crate::nrsur::data::{mode_index, DataPiece, NRSur7dq4Data, LMAX, N_MODES};
+use crate::nrsur::dynamics::{Dynamics, State, N_STATE};
+use crate::nrsur::fit::MassRatioParameters;
+use crate::nrsur::frames::coorbital_to_inertial;
+use crate::nrsur::spline::{cubic, FixedKnots};
+use crate::nrsur::trig::{separate_cos, separate_sin, sincos};
+use crate::nrsur::NRSurError;
+use crate::spintaylor::fp::{fma, fms, fnms};
+
+/// `h_+` and `h_x` sampled uniformly in time, as the `REAL8TimeSeries` of
+/// `SimInspiralChooseTDWaveform`.
+#[derive(Clone, Debug, Default)]
+pub struct TimeSeriesPolarizations {
+    /// GPS time of the first sample relative to the peak of the waveform
+    /// (`(*hplus)->epoch`, rounded to nanoseconds as LAL's `LIGOTimeGPS`).
+    pub epoch: f64,
+    /// Sampling interval in seconds.
+    pub delta_t: f64,
+    pub hplus: Vec<f64>,
+    pub hcross: Vec<f64>,
+}
+
+/// One inertial-frame mode `h_{ell m}`.
+#[derive(Clone, Debug, Default)]
+pub struct Mode {
+    pub ell: u32,
+    pub m: i32,
+    pub data: Vec<Complex<f64>>,
+}
+
+/// The modes `h_{ell m}` sampled uniformly in time, as the
+/// `SphHarmTimeSeries` of `SimInspiralChooseTDModes`.
+#[derive(Clone, Debug, Default)]
+pub struct TimeSeriesModes {
+    /// GPS time of the first sample (as for [`TimeSeriesPolarizations`]).
+    pub epoch: f64,
+    /// Sampling interval in seconds.
+    pub delta_t: f64,
+    /// The modes, ordered by `ell` then `m`.
+    pub modes: Vec<Mode>,
+}
+
+impl TimeSeriesModes {
+    /// The mode `(ell, m)`, if present.
+    pub fn mode(&self, ell: u32, m: i32) -> Option<&[Complex<f64>]> {
+        self.modes
+            .iter()
+            .find(|mode| mode.ell == ell && mode.m == m)
+            .map(|mode| mode.data.as_slice())
+    }
+}
+
+/// The surrogate dynamics on the dynamics nodes (`XLALPrecessingNRSurDynamics`).
+#[derive(Clone, Debug, Default)]
+pub struct NRSurDynamics {
+    /// The dynamics node times in units of the total mass.
+    pub t: Vec<f64>,
+    /// The coprecessing-frame quaternion.
+    pub quaternion: [Vec<f64>; 4],
+    /// The orbital phase in the coprecessing frame.
+    pub orbital_phase: Vec<f64>,
+    /// The spin of the heavier black hole in the coprecessing frame.
+    pub chi_a: [Vec<f64>; 3],
+    /// The spin of the lighter black hole in the coprecessing frame.
+    pub chi_b: [Vec<f64>; 3],
+}
+
+/// Reusable buffers for evaluating NRSur7dq4 many times without
+/// allocating. Create one per thread with [`NRSurWorkspace::new`] and pass it
+/// to [`NRSur7dq4::polarizations_with`] or [`NRSur7dq4::modes_with`]; it is
+/// sized on first use.
+#[derive(Clone, Debug, Default)]
+pub struct NRSurWorkspace {
+    n_coorb: usize,
+    /// ODE state at the dynamics nodes.
+    dynamics: Vec<State>,
+    /// The orbital frequency fit at the nodes for the reference state.
+    omega_cache: Vec<f64>,
+    /// The dynamics on the coorbital times: quaternion (4), orbital phase,
+    /// chiA (3) and chiB (3) in the coorbital frame, `[component][time]`.
+    series: Vec<f64>,
+    /// cos(m phi), sin(m phi) for m = 1..=4.
+    cos_mphi: Vec<[f64; LMAX]>,
+    sin_mphi: Vec<[f64; LMAX]>,
+    /// Spline scratch (values, second derivatives, substitution).
+    spline_y: Vec<f64>,
+    spline_c: Vec<f64>,
+    spline_z: Vec<f64>,
+    /// Data piece evaluation: fits at the empirical nodes and the result.
+    nodes: Vec<f64>,
+    piece: Vec<f64>,
+    /// Coorbital and inertial modes, `[mode][time]`.
+    h_coorb_re: Vec<f64>,
+    h_coorb_im: Vec<f64>,
+    h_re: Vec<f64>,
+    h_im: Vec<f64>,
+    /// `h_+`, `h_x` on the coorbital times and their spline coefficients.
+    hp_model: Vec<f64>,
+    hc_model: Vec<f64>,
+    c_plus: Vec<f64>,
+    c_cross: Vec<f64>,
+}
+
+impl NRSurWorkspace {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    fn prepare(&mut self, data: &NRSur7dq4Data) {
+        let n_ds = data.t_ds.len();
+        let n = data.t_coorb.len();
+        if self.n_coorb == n && self.dynamics.len() == n_ds {
+            return;
+        }
+        self.n_coorb = n;
+        self.dynamics = vec![[0.0; N_STATE]; n_ds];
+        self.omega_cache = vec![f64::NAN; n_ds];
+        self.series = vec![0.0; N_STATE * n];
+        self.cos_mphi = vec![[0.0; LMAX]; n];
+        self.sin_mphi = vec![[0.0; LMAX]; n];
+        let m = n.max(n_ds);
+        self.spline_y = vec![0.0; m];
+        self.spline_c = vec![0.0; m];
+        self.spline_z = vec![0.0; m];
+        self.piece = vec![0.0; n];
+        for buffer in [
+            &mut self.h_coorb_re,
+            &mut self.h_coorb_im,
+            &mut self.h_re,
+            &mut self.h_im,
+        ] {
+            *buffer = vec![0.0; N_MODES * n];
+        }
+        for buffer in [
+            &mut self.hp_model,
+            &mut self.hc_model,
+            &mut self.c_plus,
+            &mut self.c_cross,
+        ] {
+            *buffer = vec![0.0; n];
+        }
+    }
+}
+
+/// The NRSur7dq4 surrogate for one binary.
+///
+/// # Conventions
+///
+/// [`NRSur7dq4::polarizations`] reproduces `SimInspiralChooseTDWaveform(m1,
+/// m2, *spin_1, *spin_2, distance, inclination, phi_ref, 0, 0, 0, delta_t,
+/// f_min, f_ref, None, NRSur7dq4)` and [`NRSur7dq4::modes`]
+/// `SimInspiralChooseTDModes(0, delta_t, m1, m2, *spin_1, *spin_2, f_min,
+/// f_ref, distance, None, 4, NRSur7dq4)`, with masses in solar masses (LAL
+/// receives `m * MSUN_SI`), the distance in Mpc (`d * 1e6 * PC_SI`) and the
+/// dimensionless spins in the LAL source frame at the reference frequency.
+///
+/// * The binary is set up where the orbital frequency of the coprecessing
+///   frame waveform is `pi f_ref` (`f_ref = 0` uses `f_min`, `f_min = 0`
+///   too selects the start of the surrogate). There the spins are given in
+///   the coorbital frame: `z` along the principal axis of the radiation,
+///   `x` from the lighter to the heavier black hole.
+/// * If `mass_1 < mass_2` the labels are swapped (with the in-plane spins
+///   rotated by pi) and the odd-`m` modes negated, as in LAL.
+/// * The waveform starts where the orbital frequency (of the reference
+///   spins) is `pi f_min`, or at the start of the surrogate for `f_min = 0`;
+///   a non-zero `f_min` below the surrogate's starting frequency
+///   ([`NRSur7dq4::start_frequency`]) is an error. The epoch is the time of
+///   the first sample relative to the peak.
+/// * The polarizations are evaluated at `(inclination, pi/2 - phi_ref)`.
+#[derive(Clone, Debug)]
+pub struct NRSur7dq4<'a> {
+    data: &'a NRSur7dq4Data,
+    binary: PrecessingBinary,
+    unlimited_extrapolation: bool,
+    /// The active coorbital modes, by [`mode_index`].
+    active: [bool; N_MODES],
+}
+
+/// The masses and spins after `PrecessingNRSur_switch_labels_if_needed`.
+#[derive(Clone, Copy, Debug)]
+struct Labelled {
+    switched: bool,
+    m1_si: f64,
+    m2_si: f64,
+    chi_a: [f64; 3],
+    chi_b: [f64; 3],
+    q: f64,
+    m_tot_sec: f64,
+}
+
+/// The result of the core evaluation: the inertial modes are in the
+/// workspace.
+struct Core {
+    labels: Labelled,
+    /// Start of the output in units of the total mass.
+    t0: f64,
+}
+
+/// `XLALGPSAdd(&zero, t)` followed by `XLALGPSGetREAL8`: `t` rounded to
+/// nanoseconds.
+fn gps_epoch(t: f64) -> f64 {
+    let seconds = t.floor() as i32;
+    let nanoseconds = ((t - seconds as f64) * 1e9).round_ties_even() as i32;
+    let total = 1_000_000_000i64 * seconds as i64 + nanoseconds as i64;
+    let (s, ns) = (total / 1_000_000_000, total % 1_000_000_000);
+    s as f64 + ns as f64 / 1e9
+}
+
+/// `XLALSpinWeightedSphericalHarmonic(theta, phi, -2, ell, m)` for `ell <=
+/// 4`, with the expressions contracted as in LAL's arm64 build.
+pub(crate) fn spin_weighted_spherical_harmonic(
+    theta: f64,
+    phi: f64,
+    ell: usize,
+    m: i32,
+) -> Complex<f64> {
+    let c = theta.cos();
+    let s = theta.sin();
+    let ch = (theta / 2.0).cos();
+    let sh = (theta / 2.0).sin();
+    let s2 = (2.0 * theta).sin();
+    let s3 = (3.0 * theta).sin();
+    let s4 = (4.0 * theta).sin();
+    let c2 = (2.0 * theta).cos();
+    let fac = match (ell, m) {
+        (2, -2) => (5.0 / (64.0 * PI)).sqrt() * (1.0 - c) * (1.0 - c),
+        (2, -1) => (5.0 / (16.0 * PI)).sqrt() * s * (1.0 - c),
+        (2, 0) => (15.0 / (32.0 * PI)).sqrt() * s * s,
+        (2, 1) => (5.0 / (16.0 * PI)).sqrt() * s * (1.0 + c),
+        (2, 2) => (5.0 / (64.0 * PI)).sqrt() * (1.0 + c) * (1.0 + c),
+        (3, -3) => (21.0 / (2.0 * PI)).sqrt() * ch * sh.powf(5.0),
+        (3, -2) => (7.0 / (4.0 * PI)).sqrt() * fma(3.0, c, 2.0) * sh.powf(4.0),
+        (3, -1) => (35.0 / (2.0 * PI)).sqrt() * fma(-3.0, s3, fma(4.0, s2, s)) / 32.0,
+        (3, 0) => ((105.0 / (2.0 * PI)).sqrt() * c * (s * s)) / 4.0,
+        (3, 1) => -(35.0 / (2.0 * PI)).sqrt() * fma(-3.0, s3, fma(-4.0, s2, s)) / 32.0,
+        (3, 2) => (7.0 / PI).sqrt() * ch.powf(4.0) * fma(3.0, c, -2.0) / 2.0,
+        (3, 3) => -(21.0 / (2.0 * PI)).sqrt() * ch.powf(5.0) * sh,
+        (4, -4) => 3.0 * (7.0 / PI).sqrt() * (ch * ch) * sh.powf(6.0),
+        (4, -3) => 3.0 * (7.0 / (2.0 * PI)).sqrt() * ch * fma(2.0, c, 1.0) * sh.powf(5.0),
+        (4, -2) => (3.0 * fma(7.0, c2, fma(14.0, c, 9.0)) * sh.powf(4.0)) / (4.0 * PI.sqrt()),
+        (4, -1) => {
+            (3.0 * fma(-7.0, s4, fma(7.0, s3, fma(3.0, s, 2.0 * s2)))) / (32.0 * (2.0 * PI).sqrt())
+        }
+        (4, 0) => (3.0 * (5.0 / (2.0 * PI)).sqrt() * fma(7.0, c2, 5.0) * (s * s)) / 16.0,
+        (4, 1) => {
+            (3.0 * fma(7.0, s4, fma(7.0, s3, fms(3.0, s, 2.0 * s2)))) / (32.0 * (2.0 * PI).sqrt())
+        }
+        (4, 2) => (3.0 * ch.powf(4.0) * fma(7.0, c2, fma(-14.0, c, 9.0))) / (4.0 * PI.sqrt()),
+        (4, 3) => -3.0 * (7.0 / (2.0 * PI)).sqrt() * ch.powf(5.0) * fma(2.0, c, -1.0) * sh,
+        (4, 4) => 3.0 * (7.0 / PI).sqrt() * ch.powf(6.0) * (sh * sh),
+        _ => panic!("spin-weighted spherical harmonic ({ell}, {m}) not implemented"),
+    };
+    if m != 0 {
+        let z = cexp_i(m as f64 * phi);
+        Complex::new(z.re * fac, z.im * fac)
+    } else {
+        Complex::new(fac, 0.0)
+    }
+}
+
+impl<'a> NRSur7dq4<'a> {
+    /// The surrogate for `binary` (masses in solar masses, distance in Mpc,
+    /// spins at `binary.f_ref`).
+    pub fn new(data: &'a NRSur7dq4Data, binary: &PrecessingBinary) -> Result<Self, NRSurError> {
+        for m in [binary.mass_1, binary.mass_2] {
+            if !(m > 0.0 && m.is_finite()) {
+                return Err(NRSurError::InvalidMass);
+            }
+        }
+        Ok(Self {
+            data,
+            binary: *binary,
+            unlimited_extrapolation: false,
+            active: [true; N_MODES],
+        })
+    }
+
+    /// Allow extrapolation beyond `q = 6.01` and `|chi| = 1`
+    /// (`unlimited_extrapolation` in the LALDict). Use at your own risk.
+    pub fn with_unlimited_extrapolation(mut self, unlimited: bool) -> Self {
+        self.unlimited_extrapolation = unlimited;
+        self
+    }
+
+    /// Evaluate only the given coorbital-frame modes `(ell, m)` (LAL's
+    /// `ModeArray`; both `m` and `-m` must be given to include a pair).
+    pub fn with_mode_array(mut self, modes: &[(u32, i32)]) -> Result<Self, NRSurError> {
+        let mut active = [false; N_MODES];
+        for &(ell, m) in modes {
+            if !(2..=LMAX as u32).contains(&ell) || m.unsigned_abs() > ell {
+                return Err(NRSurError::InvalidModeArray);
+            }
+            active[mode_index(ell as usize, m)] = true;
+        }
+        self.active = active;
+        Ok(self)
+    }
+
+    pub fn binary(&self) -> &PrecessingBinary {
+        &self.binary
+    }
+
+    pub fn data(&self) -> &'a NRSur7dq4Data {
+        self.data
+    }
+
+    fn labelled(&self) -> Labelled {
+        let b = &self.binary;
+        let (mut m1, mut m2) = (b.mass_1 * MSUN_SI, b.mass_2 * MSUN_SI);
+        let (mut s1, mut s2) = (b.spin_1, b.spin_2);
+        let switched = m1 < m2;
+        if switched {
+            std::mem::swap(&mut m1, &mut m2);
+            let (a, c) = (s1, s2);
+            s1 = [-c[0], -c[1], c[2]];
+            s2 = [-a[0], -a[1], a[2]];
+        }
+        let mass_a = m1 / MSUN_SI;
+        let mass_b = m2 / MSUN_SI;
+        let m_tot = mass_a + mass_b;
+        Labelled {
+            switched,
+            m1_si: m1,
+            m2_si: m2,
+            chi_a: s1,
+            chi_b: s2,
+            q: mass_a / mass_b,
+            m_tot_sec: m_tot * MTSUN_SI,
+        }
+    }
+
+    /// `PrecessingNRSur_StartFrequency`: the lowest `f_min` (in Hz) for this
+    /// binary, where the orbital frequency of the first dynamics node (with
+    /// the reference spins) is reached. `f_min` must be zero or at least this.
+    pub fn start_frequency(&self) -> f64 {
+        let l = self.labelled();
+        self.start_frequency_of(&l)
+    }
+
+    fn start_frequency_of(&self, l: &Labelled) -> f64 {
+        let m_tot = (l.m1_si + l.m2_si) / MSUN_SI;
+        let m_tot_sec = m_tot * MTSUN_SI;
+        let q = l.m1_si / l.m2_si;
+        let y0 = reference_state(&l.chi_a, &l.chi_b, &[1.0, 0.0, 0.0, 0.0], 0.0);
+        let omega = Dynamics::new(self.data, q).omega(0, &y0);
+        omega / (PI * m_tot_sec)
+    }
+
+    /// `PrecessingNRSur_core` up to the inertial modes (in `ws.h_re`,
+    /// `ws.h_im`) and the start of the output (`t0`), with LAL's checks in
+    /// LAL's order.
+    fn core(&self, ws: &mut NRSurWorkspace, f_min: f64, delta_t: f64) -> Result<Core, NRSurError> {
+        if !(delta_t > 0.0 && delta_t.is_finite()) {
+            return Err(NRSurError::InvalidTimeStep(delta_t));
+        }
+        ws.prepare(self.data);
+        let data = self.data;
+        let l = self.labelled();
+        // get_dimless_omega
+        let omega_min = (l.m_tot_sec * f_min) * PI;
+        let f_ref = self.binary.f_ref;
+        let omega_ref = if f_ref == 0.0 {
+            omega_min
+        } else {
+            (l.m_tot_sec * f_ref) * PI
+        };
+        if omega_ref + 1e-13 < omega_min {
+            return Err(NRSurError::ReferenceBelowMinimum { f_ref, f_min });
+        }
+
+        // The inertial frame is aligned with the coorbital frame at the
+        // reference point.
+        let init_quat = [1.0, 0.0, 0.0, 0.0];
+        let dynamics = Dynamics::new(data, l.q);
+        ws.omega_cache.fill(f64::NAN);
+        dynamics.integrate(
+            &l.chi_a,
+            &l.chi_b,
+            omega_ref,
+            0.0,
+            &init_quat,
+            self.unlimited_extrapolation,
+            &mut ws.omega_cache,
+            &mut ws.dynamics,
+        )?;
+
+        // The start of the output: checked after the modes in LAL, which
+        // cannot fail once the dynamics are integrated.
+        let start_freq = self.start_frequency_of(&l);
+        let t0 = if f_min >= start_freq {
+            let y0 = reference_state(&l.chi_a, &l.chi_b, &init_quat, 0.0);
+            dynamics.t_ref(omega_min, &y0, &mut ws.omega_cache)?
+        } else if f_min > 0.0 {
+            return Err(NRSurError::StartFrequency {
+                f_min,
+                f_start: start_freq,
+            });
+        } else {
+            data.t_coorb.x[0]
+        };
+
+        self.coorbital_dynamics(ws, &l);
+        self.coorbital_modes(ws, l.q);
+        let n = ws.n_coorb;
+        let quat = {
+            let s = &ws.series;
+            [&s[0..n], &s[n..2 * n], &s[2 * n..3 * n], &s[3 * n..4 * n]]
+        };
+        coorbital_to_inertial(
+            &data.wigner,
+            n,
+            quat,
+            &ws.cos_mphi,
+            &ws.sin_mphi,
+            &ws.h_coorb_re,
+            &ws.h_coorb_im,
+            &mut ws.h_re,
+            &mut ws.h_im,
+        );
+        Ok(Core { labels: l, t0 })
+    }
+
+    /// Interpolate the dynamics onto the coorbital times, normalise, and
+    /// rotate the spins into the coorbital frame.
+    fn coorbital_dynamics(&self, ws: &mut NRSurWorkspace, l: &Labelled) {
+        let data = self.data;
+        let knots = &data.t_ds;
+        let n_ds = knots.len();
+        let n = ws.n_coorb;
+        let points = &data.coorb_in_ds;
+        for comp in 0..N_STATE {
+            let y = &mut ws.spline_y[..n_ds];
+            for (y, state) in y.iter_mut().zip(&ws.dynamics) {
+                *y = state[comp];
+            }
+            let c = &mut ws.spline_c[..n_ds];
+            knots.second_derivatives(y, c, &mut ws.spline_z);
+            let out = &mut ws.series[comp * n..(comp + 1) * n];
+            // coefficients of each interval, computed when first needed
+            let mut current = usize::MAX;
+            let (mut b, mut d) = (0.0, 0.0);
+            for (k, out) in out.iter_mut().enumerate() {
+                let i = points.index[k];
+                if i != current {
+                    (b, d) = knots.interval(i, y, c);
+                    current = i;
+                }
+                *out = cubic(y[i], b, c[i], d, points.delx[k]);
+            }
+        }
+
+        // PrecessingNRSur_normalize_results
+        let norm = |v: &[f64; 3]| fma(v[2], v[2], fma(v[0], v[0], v[1] * v[1])).sqrt();
+        let (norm_a, norm_b) = (norm(&l.chi_a), norm(&l.chi_b));
+        let (quat, rest) = ws.series.split_at_mut(4 * n);
+        let (phi, spins) = rest.split_at_mut(n);
+        let (chi_a, chi_b) = spins.split_at_mut(3 * n);
+        for (chi, norm) in [(&mut *chi_a, norm_a), (&mut *chi_b, norm_b)] {
+            if norm > 0.0 {
+                let (x, rest) = chi.split_at_mut(n);
+                let (y, z) = rest.split_at_mut(n);
+                for ((x, y), z) in x.iter_mut().zip(y.iter_mut()).zip(z.iter_mut()) {
+                    let n_chi = fma(*z, *z, fma(*x, *x, *y * *y)).sqrt();
+                    *x *= norm / n_chi;
+                    *y *= norm / n_chi;
+                    *z *= norm / n_chi;
+                }
+            }
+        }
+        {
+            let (q0, rest) = quat.split_at_mut(n);
+            let (qx, rest) = rest.split_at_mut(n);
+            let (qy, qz) = rest.split_at_mut(n);
+            for t in 0..n {
+                let n_q = fma(
+                    qz[t],
+                    qz[t],
+                    fma(qy[t], qy[t], fma(q0[t], q0[t], qx[t] * qx[t])),
+                )
+                .sqrt();
+                q0[t] /= n_q;
+                qx[t] /= n_q;
+                qy[t] /= n_q;
+                qz[t] /= n_q;
+            }
+        }
+
+        // PrecessingNRSur_rotate_spins, and cos(m phi), sin(m phi) for the
+        // transformation to the coprecessing frame.
+        for t in 0..n {
+            // separate calls in TransformModesCoorbitalToInertial
+            let mut cos_m = [0.0; LMAX];
+            let mut sin_m = [0.0; LMAX];
+            for (k, (c, s)) in cos_m.iter_mut().zip(sin_m.iter_mut()).enumerate() {
+                let arg = (k + 1) as f64 * phi[t];
+                *c = separate_cos(arg);
+                *s = separate_sin(arg);
+            }
+            // __sincos_stret in PrecessingNRSur_rotate_spins
+            let (sp, cp) = sincos(phi[t]);
+            for chi in [&mut *chi_a, &mut *chi_b] {
+                let tmp = chi[t];
+                let y = chi[n + t];
+                chi[t] = fma(tmp, cp, y * sp);
+                chi[n + t] = fma(-tmp, sp, y * cp);
+            }
+            ws.cos_mphi[t] = cos_m;
+            ws.sin_mphi[t] = sin_m;
+        }
+    }
+
+    /// Evaluate the coorbital modes (the empirical interpolants) into
+    /// `ws.h_coorb_re`, `ws.h_coorb_im`.
+    fn coorbital_modes(&self, ws: &mut NRSurWorkspace, q: f64) {
+        let n = ws.n_coorb;
+        let params = MassRatioParameters::nrsur7dq4(q);
+        ws.h_coorb_re.fill(0.0);
+        ws.h_coorb_im.fill(0.0);
+        let NRSurWorkspace {
+            series,
+            nodes,
+            piece,
+            h_coorb_re,
+            h_coorb_im,
+            ..
+        } = ws;
+        let spins = &series[5 * n..11 * n];
+        let eval = |data: &DataPiece, nodes: &mut Vec<f64>, piece: &mut [f64]| {
+            eval_data_piece(data, &params, q, spins, n, nodes, piece);
+        };
+        for (ell_index, ell_data) in self.data.modes.iter().enumerate() {
+            let ell = ell_index + 2;
+            let i0 = mode_index(ell, 0);
+            if self.active[i0] {
+                eval(&ell_data.m0_real, nodes, piece);
+                h_coorb_re[i0 * n..(i0 + 1) * n].copy_from_slice(&piece[..n]);
+                eval(&ell_data.m0_imag, nodes, piece);
+                h_coorb_im[i0 * n..(i0 + 1) * n].copy_from_slice(&piece[..n]);
+            }
+            for m in 1..=ell {
+                let (ip, im) = (mode_index(ell, m as i32), mode_index(ell, -(m as i32)));
+                if !self.active[ip] && !self.active[im] {
+                    continue;
+                }
+                // h^{l,m} = X_+ + X_-, h^{l,-m} = (X_+ - X_-)^*
+                let (re_p, re_m) = two_rows(h_coorb_re, ip, im, n);
+                eval(&ell_data.x_real_plus[m - 1], nodes, piece);
+                re_p.copy_from_slice(&piece[..n]);
+                re_m.copy_from_slice(&piece[..n]);
+                eval(&ell_data.x_real_minus[m - 1], nodes, piece);
+                for t in 0..n {
+                    re_p[t] += piece[t];
+                    re_m[t] -= piece[t];
+                }
+                let (im_p, im_m) = two_rows(h_coorb_im, ip, im, n);
+                eval(&ell_data.x_imag_plus[m - 1], nodes, piece);
+                for t in 0..n {
+                    im_p[t] = piece[t];
+                    im_m[t] = -piece[t];
+                }
+                eval(&ell_data.x_imag_minus[m - 1], nodes, piece);
+                for t in 0..n {
+                    im_p[t] += piece[t];
+                    im_m[t] += piece[t];
+                }
+            }
+        }
+    }
+
+    /// Whether any coorbital mode of `ell` is active (otherwise LAL skips
+    /// all inertial modes of that `ell`).
+    fn ell_active(&self, ell: usize) -> bool {
+        (-(ell as i32)..=ell as i32).any(|m| self.active[mode_index(ell, m)])
+    }
+
+    /// The output grid: `(t0 in units of M, delta_t in units of M, nt)`.
+    fn output_grid(&self, core: &Core, delta_t: f64) -> (f64, usize) {
+        let dt = delta_t / core.labels.m_tot_sec;
+        let tf = self.data.t_coorb.x[self.data.t_coorb.len() - 1];
+        let nt = ((tf - core.t0) / dt).ceil();
+        (dt, if nt > 0.0 { nt as usize } else { 0 })
+    }
+
+    /// `h_+` and `h_x` (`XLALSimInspiralPrecessingNRSurPolarizations`).
+    pub fn polarizations(
+        &self,
+        delta_t: f64,
+        f_min: f64,
+    ) -> Result<TimeSeriesPolarizations, NRSurError> {
+        let mut out = TimeSeriesPolarizations::default();
+        self.polarizations_with(&mut NRSurWorkspace::new(), delta_t, f_min, &mut out)?;
+        Ok(out)
+    }
+
+    /// [`Self::polarizations`] reusing the buffers of `ws` and `out`.
+    pub fn polarizations_with(
+        &self,
+        ws: &mut NRSurWorkspace,
+        delta_t: f64,
+        f_min: f64,
+        out: &mut TimeSeriesPolarizations,
+    ) -> Result<(), NRSurError> {
+        let core = self.core(ws, f_min, delta_t)?;
+        let n = ws.n_coorb;
+        let l = &core.labels;
+        ws.hp_model.fill(0.0);
+        ws.hc_model.fill(0.0);
+        let phi = FRAC_PI_2 - self.binary.phi_ref;
+        for ell in 2..=LMAX {
+            if !self.ell_active(ell) {
+                continue;
+            }
+            for m in -(ell as i32)..=ell as i32 {
+                let y = spin_weighted_spherical_harmonic(self.binary.inclination, phi, ell, m);
+                let (c_re, c_im) = (y.re, y.im);
+                let prefactor = if m % 2 != 0 && l.switched { -1.0 } else { 1.0 };
+                let i = mode_index(ell, m);
+                let (re, im) = (&ws.h_re[i * n..(i + 1) * n], &ws.h_im[i * n..(i + 1) * n]);
+                for t in 0..n {
+                    let (hre, him) = (re[t], im[t]);
+                    ws.hp_model[t] = fma(prefactor, fms(c_re, hre, c_im * him), ws.hp_model[t]);
+                    ws.hc_model[t] = fnms(prefactor, fma(c_im, hre, c_re * him), ws.hc_model[t]);
+                }
+            }
+        }
+        let distance = self.binary.luminosity_distance * 1e6 * PC_SI;
+        let a0 = l.m_tot_sec * C_SI / distance;
+        for h in ws.hp_model.iter_mut().chain(ws.hc_model.iter_mut()) {
+            *h *= a0;
+        }
+
+        let (dt, nt) = self.output_grid(&core, delta_t);
+        out.epoch = gps_epoch(l.m_tot_sec * core.t0);
+        out.delta_t = delta_t;
+        let knots = &self.data.t_coorb;
+        knots.second_derivatives(&ws.hp_model, &mut ws.c_plus, &mut ws.spline_z);
+        knots.second_derivatives(&ws.hc_model, &mut ws.c_cross, &mut ws.spline_z);
+        resample(
+            knots,
+            [
+                (ws.hp_model.as_slice(), ws.c_plus.as_slice()),
+                (ws.hc_model.as_slice(), ws.c_cross.as_slice()),
+            ],
+            core.t0,
+            dt,
+            nt,
+            [&mut out.hplus, &mut out.hcross],
+        );
+        Ok(())
+    }
+
+    /// The inertial-frame modes `h_{ell m}`, `ell <= 4`
+    /// (`XLALSimInspiralPrecessingNRSurModes`).
+    pub fn modes(&self, delta_t: f64, f_min: f64) -> Result<TimeSeriesModes, NRSurError> {
+        let mut out = TimeSeriesModes::default();
+        self.modes_with(&mut NRSurWorkspace::new(), delta_t, f_min, &mut out)?;
+        Ok(out)
+    }
+
+    /// [`Self::modes`] reusing the buffers of `ws` and `out`.
+    pub fn modes_with(
+        &self,
+        ws: &mut NRSurWorkspace,
+        delta_t: f64,
+        f_min: f64,
+        out: &mut TimeSeriesModes,
+    ) -> Result<(), NRSurError> {
+        let core = self.core(ws, f_min, delta_t)?;
+        let n = ws.n_coorb;
+        let l = &core.labels;
+        let distance = self.binary.luminosity_distance * 1e6 * PC_SI;
+        let a0 = l.m_tot_sec * C_SI / distance;
+        let (dt, nt) = self.output_grid(&core, delta_t);
+        out.epoch = gps_epoch(l.m_tot_sec * core.t0);
+        out.delta_t = delta_t;
+        let knots = &self.data.t_coorb;
+        let mut count = 0;
+        for ell in 2..=LMAX {
+            if !self.ell_active(ell) {
+                continue;
+            }
+            for m in -(ell as i32)..=ell as i32 {
+                let prefactor = if m % 2 != 0 && l.switched { -1.0 } else { 1.0 };
+                let scale = prefactor * a0;
+                let i = mode_index(ell, m);
+                let re = &mut ws.h_re[i * n..(i + 1) * n];
+                let im = &mut ws.h_im[i * n..(i + 1) * n];
+                re.iter_mut().chain(im.iter_mut()).for_each(|h| *h *= scale);
+                knots.second_derivatives(re, &mut ws.c_plus, &mut ws.spline_z);
+                knots.second_derivatives(im, &mut ws.c_cross, &mut ws.spline_z);
+                if out.modes.len() <= count {
+                    out.modes.push(Mode::default());
+                }
+                let mode = &mut out.modes[count];
+                mode.ell = ell as u32;
+                mode.m = m;
+                resample_complex(
+                    knots,
+                    (re, &ws.c_plus),
+                    (im, &ws.c_cross),
+                    core.t0,
+                    dt,
+                    nt,
+                    &mut mode.data,
+                );
+                count += 1;
+            }
+        }
+        out.modes.truncate(count);
+        Ok(())
+    }
+
+    /// The dynamics of this binary on the dynamics nodes, as
+    /// `XLALPrecessingNRSurDynamics` with LAL's waveform conventions
+    /// (identity quaternion and zero orbital phase at the reference
+    /// frequency `f_ref`, or `f_min` if `f_ref` is zero). The spins are
+    /// those after the label switch (heavier black hole first).
+    pub fn dynamics(&self, f_min: f64) -> Result<NRSurDynamics, NRSurError> {
+        let l = self.labelled();
+        let f_ref = if self.binary.f_ref == 0.0 {
+            f_min
+        } else {
+            self.binary.f_ref
+        };
+        let omega_ref = (l.m_tot_sec * f_ref) * PI;
+        self.data.dynamics(
+            l.q,
+            l.chi_a,
+            l.chi_b,
+            omega_ref,
+            [1.0, 0.0, 0.0, 0.0],
+            0.0,
+            self.unlimited_extrapolation,
+        )
+    }
+}
+
+impl NRSur7dq4Data {
+    /// `XLALPrecessingNRSurDynamics`: the coprecessing-frame quaternion,
+    /// orbital phase and spins at the dynamics nodes for mass ratio `q >= 1`,
+    /// spins `chi_a0`, `chi_b0` in the coorbital frame at the dimensionless
+    /// orbital frequency `omega_ref` (rad / M), where the coprecessing
+    /// quaternion is `init_quat` and the orbital phase `init_orbphase`.
+    #[allow(clippy::too_many_arguments)]
+    pub fn dynamics(
+        &self,
+        q: f64,
+        chi_a0: [f64; 3],
+        chi_b0: [f64; 3],
+        omega_ref: f64,
+        init_quat: [f64; 4],
+        init_orbphase: f64,
+        unlimited_extrapolation: bool,
+    ) -> Result<NRSurDynamics, NRSurError> {
+        // coorbital -> coprecessing frame
+        let (s, c) = (init_orbphase.sin(), init_orbphase.cos());
+        let rotate = |v: [f64; 3]| [fms(v[0], c, v[1] * s), fma(v[1], c, v[0] * s), v[2]];
+        let (chi_a, chi_b) = (rotate(chi_a0), rotate(chi_b0));
+        let n = self.t_ds.len();
+        let mut states = vec![[0.0; N_STATE]; n];
+        let mut omega_cache = vec![f64::NAN; n];
+        Dynamics::new(self, q).integrate(
+            &chi_a,
+            &chi_b,
+            omega_ref,
+            init_orbphase,
+            &init_quat,
+            unlimited_extrapolation,
+            &mut omega_cache,
+            &mut states,
+        )?;
+        let column = |j: usize| states.iter().map(|s| s[j]).collect::<Vec<f64>>();
+        Ok(NRSurDynamics {
+            t: self.t_ds.x.clone(),
+            quaternion: [column(0), column(1), column(2), column(3)],
+            orbital_phase: column(4),
+            chi_a: [column(5), column(6), column(7)],
+            chi_b: [column(8), column(9), column(10)],
+        })
+    }
+}
+
+/// The ODE state at the reference point.
+fn reference_state(chi_a: &[f64; 3], chi_b: &[f64; 3], quat: &[f64; 4], orbphase: f64) -> State {
+    let mut y = [0.0; N_STATE];
+    y[..4].copy_from_slice(quat);
+    y[4] = orbphase;
+    y[5..8].copy_from_slice(chi_a);
+    y[8..11].copy_from_slice(chi_b);
+    y
+}
+
+/// Mutable rows `a` and `b` (distinct) of a `[row][n]` buffer.
+fn two_rows(buffer: &mut [f64], a: usize, b: usize, n: usize) -> (&mut [f64], &mut [f64]) {
+    assert_ne!(a, b);
+    if a < b {
+        let (lo, hi) = buffer.split_at_mut(b * n);
+        (&mut lo[a * n..(a + 1) * n], &mut hi[..n])
+    } else {
+        let (lo, hi) = buffer.split_at_mut(a * n);
+        (&mut hi[..n], &mut lo[b * n..(b + 1) * n])
+    }
+}
+
+/// `PrecessingNRSur_eval_data_piece`: the fits at the empirical nodes
+/// (with the coorbital spins at the node times) and the empirical
+/// interpolant `basis^T nodes` (`gsl_blas_dgemv` with OpenBLAS's fused
+/// column-by-column accumulation), written to `out`.
+fn eval_data_piece(
+    data: &DataPiece,
+    params: &MassRatioParameters,
+    q: f64,
+    spins: &[f64],
+    n: usize,
+    nodes: &mut Vec<f64>,
+    out: &mut [f64],
+) {
+    nodes.clear();
+    for (fit, &t) in data.fits.iter().zip(&data.node_indices) {
+        let x = [
+            q,
+            spins[t],
+            spins[n + t],
+            spins[2 * n + t],
+            spins[3 * n + t],
+            spins[4 * n + t],
+            spins[5 * n + t],
+        ];
+        nodes.push(fit.eval(&params.table(&x)));
+    }
+    let out = &mut out[..n];
+    out.fill(0.0);
+    for (&a, row) in nodes.iter().zip(data.basis.chunks_exact(n)) {
+        for (o, &b) in out.iter_mut().zip(row) {
+            *o = fma(a, b, *o);
+        }
+    }
+}
+
+/// Evaluate natural splines on `knots` at `t0 + dt j`, `j < nt`
+/// (`gsl_spline_eval`, NaN outside the knots as GSL's error value).
+fn resample<const K: usize>(
+    knots: &FixedKnots,
+    splines: [(&[f64], &[f64]); K],
+    t0: f64,
+    dt: f64,
+    nt: usize,
+    out: [&mut Vec<f64>; K],
+) {
+    let mut out = out;
+    for o in out.iter_mut() {
+        o.clear();
+        o.reserve(nt);
+    }
+    let mut index = 0;
+    let mut current = usize::MAX;
+    let mut coefs = [(0.0, 0.0); K];
+    for j in 0..nt {
+        let t = fma(dt, j as f64, t0);
+        if !knots.contains(t) {
+            for o in out.iter_mut() {
+                o.push(f64::NAN);
+            }
+            continue;
+        }
+        index = knots.locate_from(t, index);
+        if index != current {
+            for (k, (y, c)) in splines.iter().enumerate() {
+                coefs[k] = knots.interval(index, y, c);
+            }
+            current = index;
+        }
+        let delx = t - knots.x[index];
+        for (k, (y, c)) in splines.iter().enumerate() {
+            out[k].push(cubic(y[index], coefs[k].0, c[index], coefs[k].1, delx));
+        }
+    }
+}
+
+fn resample_complex(
+    knots: &FixedKnots,
+    re: (&[f64], &[f64]),
+    im: (&[f64], &[f64]),
+    t0: f64,
+    dt: f64,
+    nt: usize,
+    out: &mut Vec<Complex<f64>>,
+) {
+    out.clear();
+    out.reserve(nt);
+    let mut index = 0;
+    let mut current = usize::MAX;
+    let (mut c_re, mut c_im) = ((0.0, 0.0), (0.0, 0.0));
+    for j in 0..nt {
+        let t = fma(dt, j as f64, t0);
+        if !knots.contains(t) {
+            out.push(Complex::new(f64::NAN, f64::NAN));
+            continue;
+        }
+        index = knots.locate_from(t, index);
+        if index != current {
+            c_re = knots.interval(index, re.0, re.1);
+            c_im = knots.interval(index, im.0, im.1);
+            current = index;
+        }
+        let delx = t - knots.x[index];
+        out.push(Complex::new(
+            cubic(re.0[index], c_re.0, re.1[index], c_re.1, delx),
+            cubic(im.0[index], c_im.0, im.1[index], c_im.1, delx),
+        ));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn gps_epoch_rounds_like_lal() {
+        assert_eq!(gps_epoch(-0.9586624661), -0.958662466);
+        assert_eq!(gps_epoch(1.25), 1.25);
+        assert_eq!(gps_epoch(-2.0000000004), -2.0);
+    }
+
+    #[test]
+    fn harmonics_satisfy_the_addition_theorem() {
+        // sum_m |_{-2}Y_{lm}|^2 = (2l + 1) / (4 pi)
+        for theta in [0.0, 0.3, 1.2, 2.9] {
+            for ell in 2..=4usize {
+                let sum: f64 = (-(ell as i32)..=ell as i32)
+                    .map(|m| spin_weighted_spherical_harmonic(theta, 0.7, ell, m).norm_sqr())
+                    .sum();
+                let expected = (2 * ell + 1) as f64 / (4.0 * PI);
+                assert!((sum - expected).abs() < 1e-14, "{ell} {theta}");
+            }
+        }
+    }
+}

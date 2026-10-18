@@ -40,7 +40,7 @@ mod hm_ringdown;
 mod inspiral;
 mod intermediate;
 mod internals;
-mod libm;
+pub(crate) mod libm;
 mod linalg;
 mod msa;
 mod phase;

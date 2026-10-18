@@ -5,6 +5,7 @@ pub mod hdf5;
 pub mod imrphenomd;
 pub mod imrphenomx;
 pub mod interpolate;
+pub mod nrsur;
 pub mod pn;
 pub mod spintaylor;
 pub mod taylor;
