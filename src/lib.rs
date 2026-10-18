@@ -1,6 +1,7 @@
 pub(crate) mod constants;
 pub(crate) mod fastmath;
 pub mod grid;
+pub mod hdf5;
 pub mod imrphenomd;
 pub mod imrphenomx;
 pub mod interpolate;
