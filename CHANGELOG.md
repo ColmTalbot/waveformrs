@@ -132,4 +132,16 @@ All notable changes to `waveformrs` are recorded here.
   while computing; `Error` maps to `waveformrs.WaveformError` subclasses
   that also derive from `ValueError`, `RuntimeError` or `OSError`. Tested
   against lalsimulation's Python API (`python/tests`); see
-  `python/README.md`.
+  `python/README.md`. `pnr_parity_fix` is one of the options.
+
+### Fixed
+
+- **IMRPhenomXHM returns an error instead of panicking** through
+  `FrequencyDomainModel` when `f_ref = 0` and the first frequency is
+  negative (it becomes the reference frequency, which LAL refuses). The
+  inherent `IMRPhenomXHM::polarizations` and `polarizations_on_grid` still
+  panic, as documented. No model panics on frequencies LAL would refuse
+  (`tests/model.rs`).
+- **The crate package leaves out** `tests/data`, `report/`, `scripts/` and
+  `lal_data/`, which made the source distribution of the Python bindings
+  14.6 MB instead of 0.5 MB.
