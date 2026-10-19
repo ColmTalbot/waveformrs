@@ -135,7 +135,7 @@ pub fn mirrored_build() -> bool {
 /// the osx-arm64 or the Linux lalsimulation, which are themselves of the
 /// size of the differences between lalsimulation's own builds
 /// (report/data/linux_reference_comparison.json).
-const CROSS_BUILD_TOLERANCES: [(&str, (f64, f64)); 26] = [
+const CROSS_BUILD_TOLERANCES: [(&str, (f64, f64)); 28] = [
     ("imrphenomxhm", (1e-3, 1e-6)),
     // the (3,+-2) modes, and the others (up to 2e-9 at mass ratio 30)
     ("imrphenomxhm_modes_32", (2e-2, 4e-5)),
@@ -154,6 +154,9 @@ const CROSS_BUILD_TOLERANCES: [(&str, (f64, f64)); 26] = [
     ("imrphenomxhm_122019", (1e-3, 1e-6)),
     ("imrphenomxpnr", (1e-3, 1e-6)),
     ("imrphenomxpnr_uniform", (1e-3, 1e-6)),
+    // (the same cases with the fix of lalsuite !2593, tests/xpnr.rs)
+    ("imrphenomxpnr_parityfix", (1e-3, 1e-6)),
+    ("imrphenomxpnr_parityfix_uniform", (1e-3, 1e-6)),
     ("imrphenomxpnr_modes", (1e-3, 1e-6)),
     ("imrphenomxpnr_modes_l3", (2e-2, 4e-5)),
     ("imrphenomxp_msa", (1e-7, 1e-12)),

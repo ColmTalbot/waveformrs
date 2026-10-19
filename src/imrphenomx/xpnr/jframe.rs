@@ -188,6 +188,7 @@ impl IMRPhenomXPNR {
                 f_min,
                 f_max,
                 Caller::SingleMode,
+                self.parity_fix,
             )?;
             if !self.version_fallback {
                 check_prescription(&setup.prec)?;

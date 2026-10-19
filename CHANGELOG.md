@@ -89,6 +89,22 @@ All notable changes to `waveformrs` are recorded here.
   functions (`FrequencyDomainModel::modes`), `simulate_td`, and
   `with_version_fallback(false)`. Tested against LALSimulation 6.2.0
   (`tests/xpnr.rs`, worst relative difference ~1e-15).
+- **The IMRPhenomXPNR parity fix of lalsuite master** (merge request
+  !2593, merged after lalsimulation 6.2.1), on by default:
+  `IMRPhenomXPNR::with_parity_fix(false)` and
+  `WaveformOptions::pnr_parity_fix = false` (`with_pnr_parity_fix`, also
+  set by `WaveformOptions::lalsimulation_defaults()`) reproduce
+  lalsimulation 6.2.0 and 6.2.1. The phase of the antisymmetric (2,2)
+  co-precessing mode is referred to `-alpha(f_ref) - pi / 2` and the
+  azimuth of `J` instead of `alpha_offset` and the polarization angle,
+  which depend on the line of sight, and the spins at the end of the
+  SpinTaylor integration are rotated with the components of `L`. The
+  waveforms change by up to a few per cent; the mirror image of a binary
+  now gives `(h_+, -h_x)` from the mirrored direction, as reflection
+  symmetry requires (violated at 2e-3 to 1e-1 before). Tested against
+  lalsimulation 6.2.0 built with the patch
+  (`scripts/build_patched_lalsimulation.sh`, suites
+  `imrphenomxpnr_parityfix*`, ~1e-15) and LAL's own unit test.
 - **IMRPhenomXHM release 122019** (`with_release_version(122019)`), the
   original higher-mode amplitudes used by IMRPhenomXPNR.
 - **Python bindings** (`python/`, the package `waveformrs` built with

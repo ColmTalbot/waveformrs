@@ -82,7 +82,8 @@ impl Parameters {
     }
 
     /// The `LALDict` of the case: the Euler angles (multibanding is always
-    /// off in the reference data).
+    /// off in the reference data), and IMRPhenomXPNR as in LALSimulation
+    /// 6.2.0 (without the fix of lalsuite !2593).
     fn options(&self) -> WaveformOptions {
         let version = match self.lal_flags.get("PhenomXPrecVersion").map(|&v| v as u32) {
             Some(102) => PrecessionVersion::Nnlo,
@@ -90,7 +91,9 @@ impl Parameters {
             Some(320) | None => PrecessionVersion::SpinTaylor,
             Some(other) => panic!("PhenomXPrecVersion {other}"),
         };
-        WaveformOptions::default().with_precession_version(version)
+        WaveformOptions::default()
+            .with_precession_version(version)
+            .with_pnr_parity_fix(false)
     }
 
     fn label(&self) -> String {

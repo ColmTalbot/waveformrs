@@ -15,7 +15,8 @@
 //! Precessing approximants are `IMRPhenomXP` (SpinTaylor angles,
 //! `PhenomXPrecVersion` 320), `IMRPhenomXP_NNLO` (102) and
 //! `IMRPhenomXP_MSA` (223), and the same for `IMRPhenomXPHM` (multibanding
-//! off), and `IMRPhenomXPNR`.
+//! off), and `IMRPhenomXPNR` (as LALSimulation 6.2.0, without the fix of
+//! lalsuite !2593) and `IMRPhenomXPNR_parityfix` (with it).
 use std::io::Read;
 use std::time::Instant;
 
@@ -137,8 +138,13 @@ fn generate(case: &Case) -> Result<Polarizations, String> {
         "IMRPhenomXPHM" => precessing_hm(case, PrecessionVersion::SpinTaylor)?,
         "IMRPhenomXPHM_NNLO" => precessing_hm(case, PrecessionVersion::Nnlo)?,
         "IMRPhenomXPHM_MSA" => precessing_hm(case, PrecessionVersion::Msa)?,
-        "IMRPhenomXPNR" => IMRPhenomXPNR::new(&binary(case))
-            .and_then(|model| model.polarizations(&case.frequencies))
+        // LALSimulation 6.2.0, and 6.2.0 with the fix of lalsuite !2593
+        "IMRPhenomXPNR" | "IMRPhenomXPNR_parityfix" => IMRPhenomXPNR::new(&binary(case))
+            .and_then(|model| {
+                model
+                    .with_parity_fix(case.approximant == "IMRPhenomXPNR_parityfix")
+                    .polarizations(&case.frequencies)
+            })
             .map_err(|err| err.to_string())?,
         other => panic!("unsupported approximant {other}"),
     })

@@ -26,6 +26,14 @@ waveform drivers fall back to the MSA angles and return success, but leave
 failed". For such cases (identified by lalsimulation's fallback warning) the
 reference is the PrecVersion 223 waveform, which the C-level fallback
 reproduces bit for bit; they are counted as ``n_lal_errno_fallback``.
+
+``IMRPhenomXPNR`` compares the model without the fix of lalsuite merge
+request !2593 (``with_parity_fix(false)``) with lalsimulation 6.2.0.
+``IMRPhenomXPNR_parityfix`` compares the model with the fix (its default)
+with a liblalsimulation built with the fix
+(``scripts/build_patched_lalsimulation.sh``), given with
+``--lalsimulation-library`` and called through ctypes
+(``scripts/lalsimulation_ctypes.py``).
 """
 import argparse
 import contextlib
@@ -49,7 +57,11 @@ PRECESSING = {
     "IMRPhenomXPHM_NNLO",
     "IMRPhenomXPHM_MSA",
     "IMRPhenomXPNR",
+    "IMRPhenomXPNR_parityfix",
 }
+
+# approximants that need a patched lalsimulation (--lalsimulation-library)
+PATCHED = {"IMRPhenomXPNR_parityfix"}
 
 # Approximant -> (dimensionless cutoff frequency, extra lal flags, max mass
 # ratio, optionally the lalsimulation approximant if the name differs)
@@ -106,6 +118,9 @@ SETTINGS = dict(
     ),
     # SimInspiralChooseFDWaveformSequence switches multibanding off
     IMRPhenomXPNR=dict(mf_max=0.3, flags=dict(), q_min=1 / 20),
+    IMRPhenomXPNR_parityfix=dict(
+        mf_max=0.3, flags=dict(), q_min=1 / 20, lal_approximant="IMRPhenomXPNR"
+    ),
 )
 
 
@@ -281,11 +296,30 @@ def main():
     parser.add_argument("--f-high", type=float, default=2048.0)
     parser.add_argument("--seed", type=int, default=170817)
     parser.add_argument("--outdir", default=str(ROOT / "report" / "data"))
+    parser.add_argument(
+        "--lalsimulation-library",
+        help="a liblalsimulation with the fix of lalsuite !2593 for IMRPhenomXPNR_parityfix",
+    )
     args = parser.parse_args()
     outdir = Path(args.outdir)
     outdir.mkdir(parents=True, exist_ok=True)
+    global lalsim
+    swig_lalsim = lalsim
+    patched = None
+    if args.lalsimulation_library is not None:
+        from lalsimulation_ctypes import Library, Overlay
+
+        library = Library(args.lalsimulation_library)
+        patched = Overlay(swig_lalsim, library)
+        patched_build = dict(library=Path(library.path).name, **library.vcs_info)
 
     for approximant in args.approximants:
+        if approximant in PATCHED:
+            if patched is None:
+                raise SystemExit(f"{approximant} needs --lalsimulation-library")
+            lalsim = patched
+        else:
+            lalsim = swig_lalsim
         rng = np.random.default_rng(args.seed)
         cases = [
             draw(approximant, rng, args.delta_f, args.f_high)
@@ -351,6 +385,8 @@ def main():
             median_speedup=float(np.median(speedup)),
             records=records,
         )
+        if approximant in PATCHED:
+            summary["lalsimulation_build"] = patched_build
         with open(outdir / f"validation_{approximant}.json", "w") as ff:
             json.dump(summary, ff)
         print(

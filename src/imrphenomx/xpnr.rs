@@ -1,4 +1,5 @@
-//! The precessing higher-mode model IMRPhenomXPNR of lalsimulation 6.2.0.
+//! The precessing higher-mode model IMRPhenomXPNR of lalsimulation 6.2.0,
+//! with the parity fix of lalsuite master.
 //!
 //! In LALSimulation, `IMRPhenomXPNR` is IMRPhenomXPHM (`XLALSimIMRPhenomXPHM`,
 //! `XLALSimIMRPhenomXPHMFrequencySequence`) with the LALDict flags
@@ -41,6 +42,12 @@
 //!
 //! With [`IMRPhenomXPNR::with_version_fallback`]`(false)` the model fails
 //! instead of leaving the PNR angles with the SpinTaylor angles (330).
+//!
+//! By default the model includes the fix of lalsuite merge request !2593
+//! (in lalsuite master after lalsimulation 6.2.1) to the phase of the
+//! antisymmetric (2,2) mode, which restores the reflection symmetry of the
+//! waveform; [`IMRPhenomXPNR::with_parity_fix`]`(false)` reproduces
+//! lalsimulation 6.2.0 and 6.2.1.
 
 mod jframe;
 
@@ -60,10 +67,11 @@ use crate::imrphenomx::xhm::{ModeGenerator, IMRPHENOMXHM_MODES};
 use crate::imrphenomx::xp::{frequency_bounds, Polarizations};
 use crate::imrphenomx::xphm::wigner_d;
 
-/// IMRPhenomXPNR (lalsimulation 6.2.0): IMRPhenomXPHM with the PNR angles,
-/// the tuned co-precessing (2,2) mode, the antisymmetric (2,|2|) modes and
-/// the 122019 release of the higher modes (see the module documentation),
-/// without multibanding.
+/// IMRPhenomXPNR (lalsimulation 6.2.0 with the parity fix of lalsuite
+/// master, see [`IMRPhenomXPNR::with_parity_fix`]): IMRPhenomXPHM with the
+/// PNR angles, the tuned co-precessing (2,2) mode, the antisymmetric (2,|2|)
+/// modes and the 122019 release of the higher modes (see the module
+/// documentation), without multibanding.
 ///
 /// # Conventions
 ///
@@ -118,6 +126,9 @@ pub struct IMRPhenomXPNR {
     /// Whether the precession prescription may leave the PNR angles with
     /// the SpinTaylor angles as in LAL.
     version_fallback: bool,
+    /// The fix of lalsuite !2593 (LALSimulation master), see
+    /// [`IMRPhenomXPNR::with_parity_fix`].
+    parity_fix: bool,
 }
 
 /// The co-precessing modes `(l, m' > 0)` among `modes` in the order of
@@ -358,6 +369,7 @@ impl Setup {
     /// `IMRPhenomXSetWaveformVariables` and
     /// `IMRPhenomXGetAndSetPrecessionVariables` as called by `caller`, with
     /// the angles covering the modes of `range`.
+    #[allow(clippy::too_many_arguments)]
     fn new(
         binary: &PrecessingBinary,
         range: ModeRange,
@@ -365,6 +377,7 @@ impl Setup {
         f_min: f64,
         f_max: f64,
         caller: Caller,
+        parity_fix: bool,
     ) -> Result<Self, IMRPhenomXError> {
         let (m1, m2, chi1, chi2) = binary.ordered();
         let (wf_m1, wf_m2, wf_chi1, wf_chi2) = if delta_f > 0.0 && caller == Caller::Polarizations {
@@ -399,7 +412,15 @@ impl Setup {
                 "f_min <= f_ref <= f_max is required when using tuned angles",
             ));
         }
-        let prec = PnrPrecession::new(&mut wf, m1 * MSUN_SI, m2 * MSUN_SI, chi1, chi2, range)?;
+        let prec = PnrPrecession::new(
+            &mut wf,
+            m1 * MSUN_SI,
+            m2 * MSUN_SI,
+            chi1,
+            chi2,
+            range,
+            parity_fix,
+        )?;
         Ok(Self { wf, prec })
     }
 
@@ -547,6 +568,37 @@ impl IMRPhenomXPNR {
         self.version_fallback
     }
 
+    /// Whether to apply the fix of lalsuite merge request !2593 (`true`, the
+    /// default), merged into LALSimulation master after 6.2.1, or to
+    /// reproduce LALSimulation 6.2.0 and 6.2.1 (`false`).
+    ///
+    /// The fix refers the phase of the antisymmetric part of the
+    /// co-precessing (2,2) mode to the frame of the binary: LAL 6.2.0 adds
+    /// `alpha_offset` (the PNR `alpha` at `f_ref` minus `alpha0 = pi -
+    /// kappa`, where `kappa` is the azimuth of the line of sight about `J`)
+    /// and the polarization angle `zeta`; the fix uses `-alpha(f_ref) - pi /
+    /// 2` and the azimuth `phiJ_Sf` of `J` in the L frame. It also rotates
+    /// the spins at the end of the SpinTaylor integration into the frame of
+    /// `L` with the components of `L` instead of `atan2` and `acos` (the
+    /// same rotation up to rounding). With the fix, the waveform of the
+    /// mirror image of a binary (in-plane spins reversed) seen from the
+    /// mirrored direction (`inclination -> pi - inclination`) is `(h_+,
+    /// -h_x)` of the binary, as reflection symmetry requires; in LAL 6.2.0
+    /// the antisymmetric part breaks this relation. The waveforms change by
+    /// up to a few per cent.
+    pub fn with_parity_fix(self, fix: bool) -> Self {
+        Self {
+            parity_fix: fix,
+            ..self
+        }
+    }
+
+    /// Whether the fix of lalsuite !2593 is applied (see
+    /// [`IMRPhenomXPNR::with_parity_fix`]).
+    pub fn parity_fix(&self) -> bool {
+        self.parity_fix
+    }
+
     /// The waveform and precession structs of the polarizations.
     fn polarization_setup(
         &self,
@@ -561,6 +613,7 @@ impl IMRPhenomXPNR {
             f_min,
             f_max,
             Caller::Polarizations,
+            self.parity_fix,
         )?;
         if !self.version_fallback {
             check_prescription(&setup.prec)?;
@@ -584,6 +637,7 @@ impl IMRPhenomXPNR {
             modes,
             custom_mode_array,
             version_fallback: true,
+            parity_fix: true,
         })
     }
 

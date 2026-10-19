@@ -6,7 +6,8 @@
 //! `LALSimIMRPhenomX_precession.c` (`IMRPhenomXGetAndSetPrecessionVariables`
 //! and `IMRPhenomX_SetPrecessingRemnantParams` with `PhenomXPrecVersion`
 //! 330 and `PhenomXPFinalSpinMod` 7, and the SpinTaylor angles of version
-//! 330):
+//! 330), optionally with the changes of lalsuite merge request !2593 to
+//! the last two files (`parity_fix`):
 //!
 //! - [`PnrPrecession::new`] sets up the precession struct of XPNR: the
 //!   SpinTaylor integration starting at the frequency the PNR angle
@@ -387,6 +388,12 @@ pub(crate) struct PnrPrecession {
     pub(crate) ylm: SphericalHarmonics,
     /// `pWF->betaRD`.
     beta_rd: f64,
+    /// The code of lalsuite !2593 (LALSimulation master, not 6.2.0 or
+    /// 6.2.1): the phase of the antisymmetric (2,2) mode referred to
+    /// `alpha(f_ref)` and the azimuth of `J` rather than to `alpha_offset`
+    /// and the polarization angle, and the evolved spins rotated into the
+    /// L frame with the components of `L` rather than `atan2` and `acos`.
+    parity_fix: bool,
 }
 
 /// The effective single-spin binary of the two-spin map
@@ -433,6 +440,41 @@ fn chi_in_plane(chi1: [f64; 3], chi2: [f64; 3]) -> f64 {
     .sqrt()
 }
 
+/// The spins `s1`, `s2` in the frame of `L = (lx, ly, lz)` along `z`, as
+/// lalsuite !2593 rotates the evolved spins of version 330: by `-phi` about
+/// `z` and `-theta` about `y`, with the cosines and sines taken from the
+/// components of `L` (`phi = 0` for `L` along `z`). Unlike `atan2`, this
+/// commutes exactly with the reflection `(x, y) -> (-x, -y)` of `L` and the
+/// spins.
+fn rotate_to_l_frame(
+    lx: f64,
+    ly: f64,
+    lz: f64,
+    s1: [f64; 3],
+    s2: [f64; 3],
+) -> ([f64; 3], [f64; 3]) {
+    let lperp_sq = fma(lx, lx, ly * ly);
+    let lperp = lperp_sq.sqrt();
+    let lnorm = fma(lz, lz, lperp_sq).sqrt();
+    let (cos_theta, sin_theta) = (lz / lnorm, lperp / lnorm);
+    let (cos_phi, sin_phi) = if lperp > 0.0 {
+        (lx / lperp, ly / lperp)
+    } else {
+        (1.0, 0.0)
+    };
+    let rotate = |s: [f64; 3]| {
+        let xp = fma(s[0], cos_phi, s[1] * sin_phi);
+        let yp = fnms(s[0], sin_phi, s[1] * cos_phi);
+        let zp = s[2];
+        [
+            fma(xp, cos_theta, -(zp * sin_theta)),
+            yp,
+            fma(xp, sin_theta, cos_theta * zp),
+        ]
+    };
+    (rotate(s1), rotate(s2))
+}
+
 fn pnr_error(why: &'static str) -> IMRPhenomXError {
     IMRPhenomXError::PnrAngles(why)
 }
@@ -447,7 +489,9 @@ impl PnrPrecession {
     /// final spin and the (2,2) ringdown frequencies).
     ///
     /// `m1_si`, `m2_si` (kg) and the spins must be ordered with the heavier
-    /// body first (`XLALIMRPhenomXPCheckMassesAndSpins`).
+    /// body first (`XLALIMRPhenomXPCheckMassesAndSpins`). `parity_fix`
+    /// selects the code of lalsuite !2593 (LALSimulation master) over that
+    /// of LALSimulation 6.2.0.
     pub(crate) fn new(
         wf: &mut WaveformStruct,
         m1_si: f64,
@@ -455,6 +499,7 @@ impl PnrPrecession {
         chi1: [f64; 3],
         chi2: [f64; 3],
         range: ModeRange,
+        parity_fix: bool,
     ) -> Result<Self, IMRPhenomXError> {
         let [chi1x, chi1y, chi1z] = chi1;
         let [chi2x, chi2y, chi2z] = chi2;
@@ -573,6 +618,7 @@ impl PnrPrecession {
             epsilon_offset: 0.0,
             ylm: SphericalHarmonics::default(),
             beta_rd: 0.0,
+            parity_fix,
         };
 
         // ---- SpinTaylor set-up (version 330) ----
@@ -819,11 +865,14 @@ impl PnrPrecession {
                     arrays.lnhat[1][last],
                     arrays.lnhat[2][last],
                 );
-                let phi = ly.atan2(lx);
-                let theta = (lz / fma(lz, lz, fma(lx, lx, ly * ly)).sqrt()).acos();
-                let evolve = |s: [f64; 3]| rotate_y(-theta, rotate_z(-phi, s));
-                self.chi1_evolved = evolve(arrays.s1_end);
-                self.chi2_evolved = evolve(arrays.s2_end);
+                (self.chi1_evolved, self.chi2_evolved) = if self.parity_fix {
+                    rotate_to_l_frame(lx, ly, lz, arrays.s1_end, arrays.s2_end)
+                } else {
+                    let phi = ly.atan2(lx);
+                    let theta = (lz / fma(lz, lz, fma(lx, lx, ly * ly)).sqrt()).acos();
+                    let evolve = |s: [f64; 3]| rotate_y(-theta, rotate_z(-phi, s));
+                    (evolve(arrays.s1_end), evolve(arrays.s2_end))
+                };
                 self.pn_arrays = Some(arrays);
             }
             Err(_) => {
@@ -2141,6 +2190,17 @@ impl PnrPrecession {
     /// `IMRPhenomX_PNR_GenerateAntisymmetricWaveform`: amplitude and phase
     /// of the antisymmetric (2,2) co-precessing mode at `frequencies` (Hz),
     /// `h = amp exp(i phase)`.
+    ///
+    /// Below `Mf_T = 0.85 fRING` the phase is `phi_22 / 2 + alpha + A0 Mf +
+    /// phi_A0`, above it follows `phi_22`. In LALSimulation 6.2.0 `phi_A0`
+    /// is `alpha_offset = alpha(f_ref) - alpha0` and the polarization angle
+    /// `zeta` is added; both depend on the direction of the line of sight
+    /// (`alpha0 = pi - kappa`), and neither changes sign under the mirror
+    /// reflection of the binary. With the fix of lalsuite !2593
+    /// (`parity_fix`) the phase is referred to the frame of the binary:
+    /// `phi_A0 = -alpha(f_ref) - pi / 2` and the azimuth `phiJ_Sf` of `J` is
+    /// added, which moves by `pi` (a sign flip of the antisymmetric mode)
+    /// when the in-plane spins are reversed.
     pub(crate) fn antisymmetric_waveform(
         &self,
         wf: &WaveformStruct,
@@ -2209,9 +2269,23 @@ impl PnrPrecession {
             let dphi = dphi * inveta + linb;
             let phi = phi * inveta + (fma(linb, mf_t, lina) + phiref22);
             let a0 = dphi / 2.0 - alpha_der_mf_t;
-            let phi_a0 = self.alpha_offset;
+            let phi_a0 = if self.parity_fix {
+                // alpha at the reference frequency (in the region of
+                // alpha_MfT) instead of the offset, which includes the
+                // azimuth of the line of sight
+                let alpha_ref = self.region_alpha_at(wf, wf.mf_ref, &ap)?;
+                -alpha_ref - FRAC_PI_2
+            } else {
+                self.alpha_offset
+            };
             let phi_b0 = fma(a0, mf_t, alpha_mf_t - phi / 2.0) + phi_a0;
             (a0, phi_a0, phi_b0)
+        };
+        // the azimuth of J in the L frame instead of the polarization angle
+        let phase_offset = if self.parity_fix {
+            self.phi_j_sf
+        } else {
+            self.zeta_polarization
         };
 
         let alpha_pnr = self.alpha_for_antisymmetry(wf, frequencies)?;
@@ -2233,7 +2307,7 @@ impl PnrPrecession {
                 phi + phi_b0
             };
             amp.push(amp_prefactor * powers.m_seven_sixths * amp_as);
-            phase.push(self.zeta_polarization + phi_as);
+            phase.push(phase_offset + phi_as);
         }
         Ok((amp, phase))
     }

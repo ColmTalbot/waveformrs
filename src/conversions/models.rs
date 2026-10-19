@@ -176,8 +176,9 @@ impl FdWaveform {
             Approximant::IMRPhenomXPNR => {
                 // XLALSimIMRPhenomXPHM with the flags of IMRPhenomXPNR
                 let binary = Binary { f_ref, ..*b };
-                let mut model =
-                    IMRPhenomXPNR::new(&binary)?.with_version_fallback(options.version_fallback);
+                let mut model = IMRPhenomXPNR::new(&binary)?
+                    .with_version_fallback(options.version_fallback)
+                    .with_parity_fix(options.pnr_parity_fix);
                 if let Some(modes) = &options.mode_array {
                     // as crate::choose_fd_model: both signs of m' are twisted up
                     let mut positive: Vec<(u32, u32)> = modes

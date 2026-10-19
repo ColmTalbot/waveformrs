@@ -267,6 +267,13 @@ pub struct WaveformOptions {
     /// SpinTaylor angles (see
     /// [`IMRPhenomXPNR::with_version_fallback`](crate::imrphenomx::IMRPhenomXPNR::with_version_fallback)).
     pub version_fallback: bool,
+    /// IMRPhenomXPNR: whether to apply the fix of lalsuite merge request
+    /// !2593 to the phase of the antisymmetric (2,2) mode (`true`, the
+    /// default, as LALSimulation master after 6.2.1), or to reproduce
+    /// LALSimulation 6.2.0 and 6.2.1 (`false`; see
+    /// [`IMRPhenomXPNR::with_parity_fix`](crate::imrphenomx::IMRPhenomXPNR::with_parity_fix)).
+    /// Ignored by the other models.
+    pub pnr_parity_fix: bool,
 }
 
 impl Default for WaveformOptions {
@@ -275,6 +282,7 @@ impl Default for WaveformOptions {
             precession_version: PrecessionVersion::default(),
             mode_array: None,
             version_fallback: true,
+            pnr_parity_fix: true,
         }
     }
 }
@@ -282,12 +290,15 @@ impl Default for WaveformOptions {
 impl WaveformOptions {
     /// The defaults of LALSimulation 6.2.0 when the `LALDict` is empty:
     /// the MSA Euler angles ([`PrecessionVersion::Msa`], LAL's default
-    /// `PhenomXPrecVersion` 300 → 223) and all modes. (LAL's multibanding,
-    /// on by default, is not implemented: the models reproduce LAL with
-    /// `PhenomXHMThresholdMband = PhenomXPHMThresholdMband = 0`.)
+    /// `PhenomXPrecVersion` 300 → 223), all modes and IMRPhenomXPNR without
+    /// the fix of lalsuite !2593 ([`WaveformOptions::pnr_parity_fix`]).
+    /// (LAL's multibanding, on by default, is not implemented: the models
+    /// reproduce LAL with `PhenomXHMThresholdMband = PhenomXPHMThresholdMband
+    /// = 0`.)
     pub fn lalsimulation_defaults() -> Self {
         Self {
             precession_version: PrecessionVersion::Msa,
+            pnr_parity_fix: false,
             ..Self::default()
         }
     }
@@ -307,6 +318,12 @@ impl WaveformOptions {
     /// Set [`WaveformOptions::version_fallback`].
     pub fn with_version_fallback(mut self, allow: bool) -> Self {
         self.version_fallback = allow;
+        self
+    }
+
+    /// Set [`WaveformOptions::pnr_parity_fix`].
+    pub fn with_pnr_parity_fix(mut self, fix: bool) -> Self {
+        self.pnr_parity_fix = fix;
         self
     }
 }
