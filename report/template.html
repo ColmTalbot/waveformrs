@@ -17,7 +17,7 @@
     <div><dt>Platform</dt><dd>Apple M2 Ultra, macOS 26.6, {{rustc}}</dd></div>
     <div><dt>Generated</dt><dd>{{date}}</dd></div>
   </dl>
-  <p class="links"><a href="waveformrs-report.pdf">PDF copy</a><a href="#summary">Summary</a><a href="#testing">How the models are tested</a><a href="#serial">Many waveforms in sequence</a><a href="#xphm">IMRPhenomXPHM with SpinTaylor angles</a><a href="#nrsur">NRSur7dq4</a><a href="#api">API review</a></p>
+  <p class="links"><a href="waveformrs-report.pdf">PDF copy</a><a href="#summary">Summary</a><a href="#testing">How the models are tested</a><a href="#serial">Many waveforms in sequence</a><a href="#xphm">IMRPhenomXPHM with SpinTaylor angles</a><a href="#nrsur">NRSur7dq4</a><a href="#xpnr">IMRPhenomXPNR</a><a href="#python">Python bindings</a><a href="#api">API review</a></p>
 </header>
 
 <nav class="toc" aria-label="Contents">
@@ -36,6 +36,7 @@
     <li><a href="#nrsur">NRSur7dq4</a></li>
     <li><a href="#xpnr">IMRPhenomXPNR</a></li>
     <li><a href="#interfaces">Using the crate</a></li>
+    <li><a href="#python">Python bindings</a></li>
     <li><a href="#platforms">Other platforms</a></li>
     <li><a href="#lal">Issues found in LALSimulation</a></li>
     <li><a href="#api">API review and suggested changes</a></li>
@@ -49,7 +50,7 @@
 
 <section id="summary">
   <h2>Summary</h2>
-  <p class="lede">The crate started with two models, TaylorF2 and IMRPhenomD. It had no tests, and both models disagreed with LALSimulation by mismatches of up to 0.14. Both now agree with LALSimulation at rounding level and run about twice as fast as before. Eight more model configurations were ported, ending with IMRPhenomXPHM using the numerical SpinTaylor precession angles, followed by the time-domain NR surrogate NRSur7dq4 and IMRPhenomXPNR. All models share one interface with LAL's conventions, can be batched over threads, convert between the time and frequency domains, and have been tested on Linux as well as macOS. Every model is checked against LALSimulation by <code>cargo test</code> and by {{n_draws_total}} random parameter draws. For samplers, which evaluate many waveforms on one frequency grid, a grid path removes the remaining per-frequency transcendental functions.</p>
+  <p class="lede">The crate started with two models, TaylorF2 and IMRPhenomD. It had no tests, and both models disagreed with LALSimulation by mismatches of up to 0.14. Both now agree with LALSimulation at rounding level and run about twice as fast as before. Eight more model configurations were ported, ending with IMRPhenomXPHM using the numerical SpinTaylor precession angles, followed by the time-domain NR surrogate NRSur7dq4 and IMRPhenomXPNR. XPNR includes, by default, a fix from lalsuite master that restores its mirror symmetry. All models share one interface with LAL's conventions, which is also available from Python. They can be batched over threads, convert between the time and frequency domains, and have been tested on Linux as well as macOS. Every model is checked against LALSimulation by <code>cargo test</code> and by {{n_draws_total}} random parameter draws. For samplers, which evaluate many waveforms on one frequency grid, a grid path removes the remaining per-frequency transcendental functions.</p>
   <div class="cards">
     <div class="card"><span class="label">Agreement with LALSimulation</span><span class="value">≤ {{max_rel_all}}</span><span class="note">Largest relative error, |h − h<sub>LAL</sub>| / max |h<sub>LAL</sub>|, over all {{n_draws_total}} random draws. The largest mismatch is {{max_mm_all}}.</span></div>
     <div class="card"><span class="label">Reference cases in <code>cargo test</code></span><span class="value">{{n_ref_cases}}</span><span class="note">In {{n_ref_files}} files generated with lalsimulation {{lalsim_version}}, checked to ≤ 1e-9 relative error.</span></div>
@@ -465,8 +466,29 @@ let (h_plus, h_cross) = model.polarizations_uniform(0.25, 20.0, 1024.0)?; // lik
   </ul>
   <p>LAL's PNR angles are among those affected by the OpenMP race (<a href="#lal">section {{sec:lal}}</a>), so every reference was generated single-threaded.</p>
   <p>The reference suites contain {{xpnr_cases}} cases covering every switch above, uniform grids, restricted mode arrays and m<sub>1</sub> &lt; m<sub>2</sub>. They also include the J-frame modes of <code>SimInspiralChooseFDModes</code>, which supports XPNR. All agree with LAL to ≲1.3e-15 relative. So do all 200 random draws in the accuracy table (<a href="#accuracy">section {{sec:accuracy}}</a>). It takes {{xpnr_rust}} against {{xpnr_lal}} for LAL on the benchmark binary, and {{xpnr_lal_mb}} for LAL with multibanding on a uniform grid.</p>
-  <p><strong>The parity fix of lalsuite master.</strong> Merge request !2593, merged into lalsuite master after lalsimulation 6.2.1, changes the phase of the antisymmetric (2,2) mode. In 6.2.0 that phase is offset by <code>alpha_offset</code> (which contains the azimuth of the line of sight about J) and by the polarization angle. Neither changes sign when the binary is reflected in its orbital plane, so the mirror image of a binary seen from the mirrored direction does not give (h<sub>+</sub>, −h<sub>×</sub>) as it should; the violation is 2e-3 to 1e-1 of the signal. The fix uses −α(f<sub>ref</sub>) − π/2 and the azimuth of J instead, and computes the rotation of the evolved spins from the components of L. It is on by default; <code>with_parity_fix(false)</code> or <code>WaveformOptions::pnr_parity_fix = false</code> reproduce 6.2.0, and the 6.2.0 references above are checked that way. With the fix the model agrees to ~1e-15 with lalsimulation 6.2.0 built with the patch (<code>scripts/build_patched_lalsimulation.sh</code>, which reproduces the conda-forge library bit for bit without the patch), on the same suites and on 200 random draws, and the mirror relation holds to 1e-12. Nothing else in lalsuite master changes XPNR: a build of master is bit-identical to 6.2.0 with the patch on these suites.</p>
-  <p>The grid path (<code>polarizations_on_grid</code>) keeps the set-up of the sequence path and evaluates each co-precessing mode in passes over the grid: its PNR angles (which depend on the mode through the frequency map), the twisting-up factors, the mode from the powers of the grid and the antisymmetric part. It agrees with the sequence path to ~1e-13 and is about twice as fast on the benchmark grid. Most of its remaining time goes to the SpinTaylor integration, the PNR angle interpolants and LAL's O(N·80) moving average in the antisymmetric amplitude. The moving average keeps LAL's operations but skips windows whose inputs repeat those of the previous window, which above the ringdown frequency is most of them.</p>
+  <h3>The parity fix of lalsuite master</h3>
+  <p>Merge request !2593 (“Fixing inconsistency in antisymmetric phase for XO4a/XPNR that affects parity symmetry”) was merged into lalsuite master on 22 September 2026, after lalsimulation 6.2.1. Neither 6.2.0, which this crate reproduces, nor 6.2.1 has it. The fix changes the phase of the antisymmetric (2,2) mode in two places:</p>
+  <ul>
+    <li>Below the transition frequency Mf<sub>T</sub>, the phase is φ<sub>22</sub>/2 + α + A<sub>0</sub>Mf + φ<sub>A0</sub>. In 6.2.0, φ<sub>A0</sub> is <code>alpha_offset</code> = α(f<sub>ref</sub>) − α<sub>0</sub>, and α<sub>0</sub> = π − κ is the azimuth of the line of sight about J. The fix uses φ<sub>A0</sub> = −α(f<sub>ref</sub>) − π/2, with α at f<sub>ref</sub> evaluated in the same regime as at Mf<sub>T</sub> (calibration region, transition or PN).</li>
+    <li>The polarization angle ζ added to the whole phase becomes the azimuth <code>phiJ_Sf</code> of J in the L frame.</li>
+  </ul>
+  <p>Both 6.2.0 offsets depend on where the observer is, and neither changes sign when the binary is reflected in its orbital plane. Under that reflection, the in-plane spins reverse and the line of sight goes from inclination ι to π − ι. Physically the waveform should then become (h<sub>+</sub>, −h<sub>×</sub>). In 6.2.0 it doesn't, by 2e-3 to 1e-1 of the peak amplitude, because the antisymmetric mode keeps its sign. The azimuth of J shifts by π under the reflection, which flips the sign of the antisymmetric mode as required. The patch also builds the rotation of the evolved spins into the L frame from L's components rather than from <code>atan2</code> and <code>acos</code>. That is the same rotation mathematically, but it commutes exactly with the reflection in floating point. It moves the ill-conditioned (3,2) mode by up to ~1e-7.</p>
+  <p>The crate applies the fix by default. <code>IMRPhenomXPNR::with_parity_fix(false)</code> or <code>WaveformOptions::pnr_parity_fix = false</code> reproduce lalsimulation 6.2.0 and 6.2.1, and so does <code>WaveformOptions::lalsimulation_defaults()</code>. The 6.2.0 reference suites above are run that way. The fixed model is validated three ways:</p>
+  <ul>
+    <li><strong>Against a patched LAL.</strong> <code>scripts/build_patched_lalsimulation.sh</code> builds lalsimulation 6.2.0 with the patch and the flags of the conda-forge build. Built with conda-forge's clang 19 and without the patch, it reproduces the conda-forge library bit for bit. The four reference suites from the patched build (<code>tests/data/imrphenomxpnr_parityfix*.json</code>) agree with the crate to ≲1.2e-15. So do {{xpnr_fix_n}} random draws: largest relative error {{xpnr_fix_rel}}, largest mismatch {{xpnr_fix_mm}}. The JSON files record the build, “{{xpnr_fix_build}}”.</li>
+    <li><strong>Against LAL's own unit test.</strong> <code>test_phenomX.py</code> on lalsuite master stores amplitude and phase statistics of the fixed model, with tolerances of 1e-3 and 3e-3. The crate's values are within 3.1e-4 (main modes) and 4.6e-4 ((3,2) mode) of them. The difference has two sources. The test leaves LAL's multibanding on, which moves its statistics by up to 2.4e-4 and 4.6e-4. Also, one h<sub>+</sub> phase statistic depends on a small last sample that sits at the ±π branch of <code>np.unwrap</code>. With multibanding off, the patched LAL and the crate agree to ~1e-15 (<code>lal_unit_test_of_lalsuite_master</code> in <code>tests/xpnr.rs</code>).</li>
+    <li><strong>The mirror symmetry itself.</strong> The test covers seven binaries spanning the calibration, transition, PN and MSA-fallback regions, plus a uniform grid. The fixed model satisfies the mirror relation to 2e-15–6e-13; without the fix it is violated by 2e-3–1e-1. LAL behaves the same way: violations at that level in 6.2.0, ~1e-14 with the patch.</li>
+  </ul>
+  <p>Nothing else in lalsuite master changes XPNR's default output. The other changes since 6.2.0 are testing-GR terms that are zero by default, licence headers, conversions of polar spins, and small changes to tolerances and the integrator in the eccentric and SpinTaylor code. None of these alter XPNR's output: a build of upstream master (6d2217a745, with master's lal) is bit-identical to 6.2.0 plus the patch on all four suites and on the unit-test statistics.</p>
+  <h3>Grid path</h3>
+  <p><code>polarizations_on_grid</code> keeps the set-up of the sequence path. It then evaluates each co-precessing mode in passes over the grid:</p>
+  <ol>
+    <li>the PNR angles, which depend on the mode through the frequency map;</li>
+    <li>the twisting-up factors;</li>
+    <li>the mode itself, from the stored powers of the grid;</li>
+    <li>the antisymmetric part.</li>
+  </ol>
+  <p>Amplitude and phase are converted in one vectorised pass. Over {{serial_n}} random binaries on the 8033-point grid, it takes {{xpnr_grid_time}} per waveform against {{xpnr_seq_time}} for the sequence path ({{xpnr_grid_speedup}}) and {{xpnr_lal_time}} for LAL. It agrees with the sequence path to ~1e-13, with and without the fix. Most of the remaining time goes to the SpinTaylor integration and the PNR angle interpolants (~0.9 ms), and to LAL's O(N·80) moving average in the antisymmetric amplitude (~0.3 ms). The moving average keeps LAL's operations but skips windows whose inputs are bit-identical to the previous window's. Above the ringdown frequency, that is most of them. Both paths share this, so their output is unchanged.</p>
 </section>
 
 <section id="interfaces">
@@ -550,6 +572,61 @@ let modes = model.modes(&amp;frequencies)?;              // h_lm without the sph
       <caption>Single thread. <code>examples/conversions.rs</code> and <code>scripts/time_conversions_lal.py</code>; data in <code>report/data/conversion_timings.json</code>.</caption>
     </table>
   </div>
+</section>
+
+<section id="python">
+  <h2>Python bindings</h2>
+  <p class="lede">The Python package <code>waveformrs</code>, in <code>python/</code>, exposes the common interface to Python with numpy arrays in and out. It is built with PyO3 and maturin as a separate crate that depends on the main one. One abi3 wheel serves CPython 3.9 and later, with numpy 1.21 or later.</p>
+<pre class="code"><code>import numpy as np
+import waveformrs as wf
+
+frequencies = np.arange(20.0, 1024.0, 0.125)
+hp, hc = wf.polarizations("IMRPhenomXPHM", frequencies, mass_1=36.0, mass_2=29.0,
+                          spin_1=(0.4, 0.2, 0.3), f_ref=20.0, precession_version=223)
+
+grid = wf.FrequencyGrid.uniform(20.0, 1024.0, 0.125)    # powers precomputed once
+parameters = dict(mass_1=m1, mass_2=m2, spin_1=s1, spin_2=s2)   # arrays, one row per binary
+result = wf.batch_polarizations("IMRPhenomXPNR", grid, parameters, threads=8)
+hplus, hcross = result                                  # (n_binaries, n_frequencies)
+result.ok, result.errors                                # per-binary failures
+
+h = wf.td_polarizations("NRSur7dq4", 1 / 4096, 20.0, mass_1=40.0, mass_2=20.0)</code></pre>
+  <ul>
+    <li><strong>Parameters.</strong> Binaries are given as keyword arguments with the crate's names and LAL's units: <code>mass_1</code>, <code>mass_2</code>, <code>spin_1</code>, <code>spin_2</code>, <code>luminosity_distance</code> (Mpc), <code>inclination</code>, <code>phi_ref</code>, <code>f_ref</code>. Options are given in the same keywords or as a <code>WaveformOptions</code> object: <code>precession_version</code>, <code>mode_array</code>, <code>version_fallback</code>, <code>pnr_parity_fix</code>. Approximants use LAL's names.</li>
+    <li><strong>Frequency domain.</strong> <code>polarizations</code> corresponds to <code>SimInspiralChooseFDWaveformSequence</code>. <code>FrequencyGrid</code> and <code>polarizations_on_grid</code> give the grid paths. <code>modes</code> and <code>choose_fd_modes</code> give the modes in LAL's two-sided layout.</li>
+    <li><strong>Time domain.</strong> <code>td_polarizations</code> and <code>td_modes</code> cover NRSur7dq4, with one workspace per thread, and the frequency-domain models through <code>SimInspiralTD</code>. <code>simulate_td</code> and <code>simulate_fd</code> are the conversions. Results carry their epoch and sampling.</li>
+    <li><strong>Batches.</strong> <code>batch_polarizations</code> and <code>batch_td_polarizations</code> take a dict of arrays, a structured array or an (n, 12) table. They run on <code>threads</code> threads with the GIL released and write straight into numpy-owned arrays. A binary that fails, even by a panic, is reported in <code>ok</code> and <code>errors</code> without stopping the batch, unless <code>strict=True</code>. <code>exact=True</code> uses the sequence path, so each row is bit-identical to <code>polarizations</code>.</li>
+    <li><strong>Errors.</strong> The crate's <code>Error</code> becomes a hierarchy under <code>WaveformError</code>. Its classes also derive from <code>ValueError</code>, <code>RuntimeError</code> or <code>OSError</code>, so generic handlers still work. The package has docstrings and a <code>.pyi</code> stub.</li>
+  </ul>
+  <p>The {{py_n_tests}} pytest tests check several things. TaylorF2, IMRPhenomD, XAS, XHM, XP and XPHM (each precession version) and XPNR (without the parity fix) agree with lalsimulation's Python API at the crate's tolerances; NRSur7dq4 agrees bit for bit. Batches are bit-identical for every thread count and equal to single calls. Each error class is raised where it should be. Python threads keep running while a call is in progress. The XPNR parity fix restores the mirror symmetry. The tests found a crate bug: IMRPhenomXHM panicked, rather than returning an error, when <code>f_ref = 0</code> and the first frequency was negative. It is fixed, and a crate test now checks that no model panics on frequencies LAL would refuse.</p>
+  <div class="table-wrap">
+    <table>
+      <thead><tr><th>Model</th><th class="num">waveformrs</th><th class="num">lalsimulation</th></tr></thead>
+      <tbody>
+{{py_overhead_rows}}
+      </tbody>
+      <caption>Cost of one Python call on 4 frequencies, where the call, argument conversion and model set-up dominate.</caption>
+    </table>
+  </div>
+  <div class="table-wrap wide">
+    <table>
+      <thead><tr><th>Model</th><th class="num"><code>polarizations</code></th><th class="num"><code>on_grid</code></th><th class="num">lalsimulation</th><th class="num">Speed-up</th></tr></thead>
+      <tbody>
+{{py_throughput_rows}}
+      </tbody>
+      <caption>One waveform per call from Python, on 8033 frequencies (20–1024 Hz, Δf = 1/8 Hz) and one thread. NRSur7dq4 is time domain at 4096 Hz from 20 Hz. LAL uses <code>SimInspiralChooseFDWaveformSequence</code> with multibanding off, converting its arguments as a Python user would. The speed-up uses the faster waveformrs path. {{py_machine}}; medians of 7 repeats; <code>python/benchmarks/benchmark.py</code>.</caption>
+    </table>
+  </div>
+  <div class="table-wrap wide">
+    <table>
+      <thead><tr><th>Model</th><th class="num">LAL loop</th>{{py_batch_header}}</tr></thead>
+      <tbody>
+{{py_batch_rows}}
+      </tbody>
+      <caption>Waveforms per second for batches of 64 binaries from Python, against a Python loop over lalsimulation (one thread).</caption>
+    </table>
+  </div>
+  <p><strong>Packaging.</strong> <code>maturin develop --release</code> in <code>python/</code> installs the package into the active environment, and <code>maturin build --release</code> builds a wheel of ~1.2 MB. The wheel was also tested with the system Python 3.9 and numpy 1.26 and 2.0. The source distribution bundles the crate as cargo packages it, which now leaves out the reference data, report and scripts (0.5 MB instead of 14.6 MB). Nothing is on PyPI, and the bindings have only run on macOS arm64.</p>
 </section>
 
 <section id="platforms">
@@ -660,12 +737,14 @@ let modes = model.modes(&amp;frequencies)?;              // h_lm without the sph
     <li><strong>Multibanding is not implemented.</strong> Rust reproduces LALSimulation with <code>PhenomXHMThresholdMband = PhenomXPHMThresholdMband = 0</code>. Comparisons with LAL's defaults on uniform grids will differ at the level of the multibanding tolerance.</li>
     <li><strong>Only the default model versions are ported.</strong> Other <code>PhenomXPrecVersion</code> values (101, 103, 104, 220–222, 224) and the NRTidal variants are not ported. The PNR angles and antisymmetric modes exist only as part of IMRPhenomXPNR, not as options for IMRPhenomXP or XPHM. For the MSA family, 222 differs from 223 only by raising an error instead of falling back to NNLO; 220, 221 and 224 use different expressions.</li>
     <li><strong>Platforms.</strong> The tests pass on macOS arm64 and in Linux arm64 and amd64 containers (<a href="#platforms">section {{sec:platforms}}</a>). Bit-for-bit agreement holds only against the macOS clang builds of LAL. Matching GCC's broader contraction of multiply-adds is not attempted. Nothing has run on real x86-64 hardware or with AVX enabled.</li>
-    <li><strong>Only one LAL version was tested.</strong> All reference data comes from lalsimulation 6.2.0. Future LAL changes would show up as test failures, which is intended.</li>
+    <li><strong>Only one LAL release was tested.</strong> All reference data comes from lalsimulation 6.2.0. The exception is IMRPhenomXPNR with the parity fix, whose references come from 6.2.0 with the patch of lalsuite !2593, checked against a build of lalsuite master. When a lalsimulation release includes the fix, its references should be regenerated from that release, and the fix-off option kept only for older releases. Future LAL changes would show up as test failures, which is intended.</li>
     <li><strong>Grid paths are not bit-exact.</strong> The <code>*_on_grid</code> methods agree with LALSimulation and with the per-frequency paths to about 1e-13, not bit for bit, because products of stored powers are rounded differently from direct powers. Use the per-frequency methods where bit-for-bit agreement matters.</li>
     <li><strong>NRSur7dq4 extras.</strong> The polarisation rotation by <code>longAscNodes</code> isn't exposed; it is zero in the default <code>ChooseTDWaveform</code> call. NRSur7dq2 isn't ported, but the data layer is versioned to allow it. The HDF5 reader only handles the subset that the surrogate files use.</li>
     <li><strong>Modes and XPNR.</strong> XP has no modes in LAL, so its J-frame modes are checked only against its own polarizations. A co-precessing mode array that leaves out some ℓ drops those J-frame modes, whereas LAL needs <code>ModeArrayJframe</code>. The <code>precession_version</code> option doesn't apply to XPNR.</li>
     <li><strong>Conversions.</strong> Agreement with LAL in the time domain is limited to ~1e-12 by LAL's high-pass filter amplifying the last-bit differences between <code>rustfft</code> and FFTW.</li>
     <li><strong>MSA speed.</strong> The MSA angles are only 1.4–1.8× faster than LAL, because the ported elliptic functions dominate.</li>
+    <li><strong>Python bindings.</strong> They are built and tested only on macOS arm64, and not published on PyPI. Wheels for Linux and Windows would need a CI matrix. With <code>strict=True</code>, a batch is computed in full before its first error is raised.</li>
+    <li><strong>IMRPhenomXO4a.</strong> The parity fix also applies to LAL's IMRPhenomXO4a, which is not ported.</li>
   </ul>
 </section>
 
@@ -703,7 +782,16 @@ OMP_NUM_THREADS=1 python report/nrsur_benchmark.py
 OMP_NUM_THREADS=1 python report/serial_benchmark.py --n-draws 300
 
 # the OpenMP race in LALSimulation
-python scripts/reproduce_lal_openmp_race.py</code></pre>
+python scripts/reproduce_lal_openmp_race.py
+
+# IMRPhenomXPNR with the parity fix: lalsimulation 6.2.0 + lalsuite !2593
+CC=/path/to/conda-forge/clang-19 bash scripts/build_patched_lalsimulation.sh ../lalsuite build/lal-2593
+OMP_NUM_THREADS=1 python scripts/validate_against_lalsimulation.py --approximants IMRPhenomXPNR_parityfix \
+    --lalsimulation-library build/lal-2593/liblalsimulation.37.dylib --n-draws 200 --outdir report/data
+
+# Python bindings
+cd python &amp;&amp; maturin develop --release &amp;&amp; python -m pytest
+OMP_NUM_THREADS=1 python benchmarks/benchmark.py --json ../report/data/python_timings.json</code></pre>
 </section>
 
 <section id="history">

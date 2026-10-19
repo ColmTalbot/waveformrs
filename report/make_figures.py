@@ -46,6 +46,7 @@ ORDER = [
     "IMRPhenomXPHM_MSA",
     "IMRPhenomXPHM",
     "IMRPhenomXPNR",
+    "IMRPhenomXPNR_parityfix",
     "NRSur7dq4",
 ]
 LABELS = {
@@ -55,6 +56,8 @@ LABELS = {
     "IMRPhenomXPHM_NNLO": "IMRPhenomXPHM (102)",
     "IMRPhenomXPHM_MSA": "IMRPhenomXPHM (223)",
     "IMRPhenomXPHM": "IMRPhenomXPHM (320)",
+    "IMRPhenomXPNR": "IMRPhenomXPNR (6.2.0)",
+    "IMRPhenomXPNR_parityfix": "IMRPhenomXPNR (parity fix)",
     "NRSur7dq4": "NRSur7dq4 (bit-identical)",
 }
 # Mid-tone colours that read on both light and dark backgrounds.

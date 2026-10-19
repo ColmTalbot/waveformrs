@@ -49,7 +49,8 @@ MODELS = [
     ("IMRPhenomXPHM_NNLO", "IMRPhenomXPHM (102)", "IMRPhenomXPHM, NNLO (102)", "new"),
     ("IMRPhenomXPHM_MSA", "IMRPhenomXPHM (223)", "IMRPhenomXPHM, MSA (223)", "new"),
     ("IMRPhenomXPHM", "IMRPhenomXPHM (320)", "IMRPhenomXPHM, SpinTaylor (320)", "new"),
-    ("IMRPhenomXPNR", "IMRPhenomXPNR", "IMRPhenomXPNR", "new"),
+    ("IMRPhenomXPNR", "IMRPhenomXPNR", "IMRPhenomXPNR (6.2.0, no parity fix)", "new"),
+    ("IMRPhenomXPNR_parityfix", "IMRPhenomXPNR", "IMRPhenomXPNR with the parity fix (patched LAL)", "new"),
     ("NRSur7dq4", "NRSur7dq4", "NRSur7dq4 (time domain)", "new"),
 ]
 # Rows of the serial-evaluation table: (serial benchmark name, label)
@@ -64,6 +65,7 @@ SERIAL = [
     ("IMRPhenomXPHM (102)", "IMRPhenomXPHM, NNLO (102)"),
     ("IMRPhenomXPHM (223)", "IMRPhenomXPHM, MSA (223)"),
     ("IMRPhenomXPHM (320)", "IMRPhenomXPHM, SpinTaylor (320)"),
+    ("IMRPhenomXPNR", "IMRPhenomXPNR"),
     ("NRSur7dq4", "NRSur7dq4 (time domain)"),
 ]
 STATUS = {
@@ -97,7 +99,8 @@ TEST_LABELS = {
     "imrphenomxhm_122019_matches_lalsimulation": "IMRPhenomXHM release 122019 polarizations",
     "imrphenomxhm_122019_modes_match_lalsimulation": "IMRPhenomXHM release 122019 modes",
     "imrphenomxpnr_matches_lalsimulation": "IMRPhenomXPNR polarizations (incl. every regime switch)",
-    "imrphenomxpnr_uniform_matches_lalsimulation": "IMRPhenomXPNR, uniform grids",
+    "imrphenomxpnr_parity_fix_matches_patched_lalsimulation": "IMRPhenomXPNR with the parity fix (6.2.0 + lalsuite !2593)",
+    "imrphenomxpnr_uniform_matches_lalsimulation": "IMRPhenomXPNR, uniform grids (with and without the fix)",
     "imrphenomxpnr_choose_fd_modes_matches_lalsimulation": "IMRPhenomXPNR modes (ChooseFDModes)",
     "imrphenomxpnr_sequence_modes_match_lalsimulation": "IMRPhenomXPNR modes on frequency sequences",
     "choose_fd_modes_matches_lalsimulation": "Modes of IMRPhenomXHM/XPHM (ChooseFDModes)",
@@ -195,6 +198,16 @@ def run_tests(output):
                     m = float(mismatch.group(1))
                     suite["mismatch"] = m if suite["mismatch"] is None else max(suite["mismatch"], m)
     return {name: value for name, value in suites.items() if value["n"] > 0}
+
+
+def python_test_count():
+    """Number of tests of the Python bindings (collected by pytest)."""
+    result = subprocess.run(
+        [sys.executable, "-m", "pytest", "--collect-only", "-q"],
+        cwd=ROOT / "python", capture_output=True, text=True, check=True,
+    )
+    match = re.search(r"(\d+) tests? collected", result.stdout)
+    return int(match.group(1))
 
 
 def git_log():
@@ -449,6 +462,52 @@ def build(args):
     values["xpnr_rust"] = duration(rust["IMRPhenomXPNR"])
     values["xpnr_lal"] = duration(lal_seq["IMRPhenomXPNR"])
     values["xpnr_lal_mb"] = duration(lal_uni["IMRPhenomXPNR (uniform, default multibanding)"])
+    fixed = json.loads((DATA / "validation_IMRPhenomXPNR_parityfix.json").read_text())
+    values["xpnr_fix_n"] = str(fixed["n_compared"])
+    values["xpnr_fix_rel"] = sci(fixed["max_relative_error"])
+    values["xpnr_fix_mm"] = sci(fixed["max_mismatch"])
+    build = fixed["lalsimulation_build"]
+    values["xpnr_fix_build"] = html.escape(build.get("vcsStatus", "") or "")
+    xpnr_serial = serial["rust"]["IMRPhenomXPNR"]
+    values["xpnr_seq_time"] = duration(xpnr_serial["seconds"])
+    values["xpnr_grid_time"] = duration(xpnr_serial["grid_seconds"])
+    values["xpnr_lal_time"] = duration(serial["lal"]["IMRPhenomXPNR"]["seconds"])
+    values["xpnr_grid_speedup"] = factor(xpnr_serial["seconds"] / xpnr_serial["grid_seconds"])
+
+    # Python bindings
+    python = json.loads((DATA / "python_timings.json").read_text())
+    values["py_machine"] = html.escape(f"{python['machine']}, {python['cpus']} CPUs")
+    rows = []
+    for label, entry in python["overhead"].items():
+        rows.append(
+            f"<tr><td>{html.escape(label)}</td><td class=\"num\">{duration(entry['waveformrs'])}</td>"
+            f"<td class=\"num\">{duration(entry['lalsimulation'])}</td></tr>"
+        )
+    values["py_overhead_rows"] = "\n".join(rows)
+    rows = []
+    for label, entry in python["throughput"].items():
+        grid = entry.get("on_grid")
+        best = grid or entry["waveformrs"]
+        rows.append(
+            f"<tr><td>{html.escape(label)}</td><td class=\"num\">{duration(entry['waveformrs'])}</td>"
+            f"<td class=\"num\">{duration(grid) if grid else '–'}</td>"
+            f"<td class=\"num\">{duration(entry['lalsimulation'])}</td>"
+            f"<td class=\"num\">{factor(entry['lalsimulation'] / best)}</td></tr>"
+        )
+    values["py_throughput_rows"] = "\n".join(rows)
+    thread_keys = list(next(iter(python["batch"].values()))["waveformrs"].keys())
+    values["py_batch_header"] = "".join(
+        f"<th class=\"num\">{'all threads' if k == '0' else k + (' thread' if k == '1' else ' threads')}</th>"
+        for k in thread_keys
+    )
+    rows = []
+    for label, entry in python["batch"].items():
+        cells = "".join(f"<td class=\"num\">{entry['waveformrs'][k]:,.0f}</td>" for k in thread_keys)
+        rows.append(
+            f"<tr><td>{html.escape(label)}</td><td class=\"num\">{entry['lalsimulation']:,.0f}</td>{cells}</tr>"
+        )
+    values["py_batch_rows"] = "\n".join(rows)
+    values["py_n_tests"] = str(python_test_count())
 
     # batch scaling
     batch = json.loads((DATA / "batch_scaling.json").read_text())

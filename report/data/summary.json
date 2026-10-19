@@ -161,7 +161,7 @@
  },
  {
   "approximant": "IMRPhenomXPNR",
-  "label": "IMRPhenomXPNR",
+  "label": "IMRPhenomXPNR (6.2.0)",
   "n_draws": 200,
   "n_compared": 200,
   "max_mismatch": 4.440892098500626e-16,
@@ -173,6 +173,22 @@
   "max_speedup": 3.8737066298643033,
   "median_time_rust": 0.0088755,
   "median_time_lal": 0.021432145964354277,
+  "failures": []
+ },
+ {
+  "approximant": "IMRPhenomXPNR_parityfix",
+  "label": "IMRPhenomXPNR (parity fix)",
+  "n_draws": 200,
+  "n_compared": 200,
+  "max_mismatch": 2.220446049250313e-16,
+  "median_mismatch": 0.0,
+  "max_relative_error": 3.215607176312149e-15,
+  "median_relative_error": 3.4106626330820567e-16,
+  "median_speedup": 2.4486409356235237,
+  "min_speedup": 0.8440665325844708,
+  "max_speedup": 3.9744662938748765,
+  "median_time_rust": 0.009897646,
+  "median_time_lal": 0.021836229134351015,
   "failures": []
  },
  {
