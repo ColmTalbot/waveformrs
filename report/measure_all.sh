@@ -13,6 +13,12 @@ cargo build --release --examples
 "$PY" scripts/validate_against_lalsimulation.py --n-draws 200 --outdir report/data \
     --approximants TaylorF2 IMRPhenomD IMRPhenomXAS IMRPhenomXHM IMRPhenomXP IMRPhenomXP_NNLO \
     IMRPhenomXP_MSA IMRPhenomXPHM IMRPhenomXPHM_NNLO IMRPhenomXPHM_MSA IMRPhenomXPNR
+# IMRPhenomXPNR with the parity fix against lalsimulation 6.2.0 + lalsuite
+# !2593, if built (scripts/build_patched_lalsimulation.sh)
+if [ -n "${PATCHED_LALSIMULATION:-}" ]; then
+    "$PY" scripts/validate_against_lalsimulation.py --n-draws 200 --outdir report/data \
+        --approximants IMRPhenomXPNR_parityfix --lalsimulation-library "$PATCHED_LALSIMULATION"
+fi
 "$PY" scripts/validate_nrsur7dq4.py --n-draws 200 --outdir report/data
 "$PY" report/lal_benchmark.py
 "$PY" report/nrsur_benchmark.py
@@ -20,4 +26,6 @@ cargo build --release --examples
 "$PY" report/long_benchmark.py --memory
 "$PY" report/conversions_benchmark.py
 cargo run --quiet --release --example batch_benchmark -- --json report/data/batch_scaling.json
+# the Python bindings (installed with `maturin develop --release` in python/)
+"$PY" python/benchmarks/benchmark.py --json report/data/python_timings.json
 "$PY" report/build_report.py

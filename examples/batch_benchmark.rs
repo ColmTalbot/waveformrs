@@ -23,7 +23,9 @@ use num_complex::Complex;
 use waveformrs::{
     batch::Batch,
     grid::FrequencyGrid,
-    imrphenomx::{IMRPhenomXAS, IMRPhenomXHM, IMRPhenomXP, IMRPhenomXPHM, PrecessionVersion},
+    imrphenomx::{
+        IMRPhenomXAS, IMRPhenomXHM, IMRPhenomXP, IMRPhenomXPHM, IMRPhenomXPNR, PrecessionVersion,
+    },
     model::TimeSeriesPolarizations,
     nrsur::{NRSur7dq4, NRSur7dq4Data},
     Binary, FrequencyDomainModel, Result,
@@ -222,6 +224,14 @@ fn main() {
         &grid,
         &threads,
         |b| Ok(IMRPhenomXPHM::with_version(b, PrecessionVersion::Msa)?),
+    );
+    fd(
+        "IMRPhenomXPNR",
+        200 * scale,
+        true,
+        &grid,
+        &threads,
+        IMRPhenomXPNR::from_binary,
     );
 
     match NRSur7dq4Data::global() {

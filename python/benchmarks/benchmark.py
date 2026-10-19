@@ -61,6 +61,8 @@ FD_MODELS = [
     ("IMRPhenomXPHM (102)", "IMRPhenomXPHM", BINARY, dict(precession_version=102)),
     ("IMRPhenomXPHM (223)", "IMRPhenomXPHM", BINARY, dict(precession_version=223)),
     ("IMRPhenomXPHM (320)", "IMRPhenomXPHM", BINARY, dict(precession_version=320)),
+    # without the parity fix, as lalsimulation 6.2.0 (the cost is the same)
+    ("IMRPhenomXPNR", "IMRPhenomXPNR", BINARY, dict(pnr_parity_fix=False)),
 ]
 
 
@@ -250,7 +252,8 @@ def main():
     columns = "".join(f"{f'{t} thr' if t else 'all':>10}" for t in args.threads)
     print(f"{'model':<22}{'lal loop':>10}{columns}")
     batch_models = [m for m in FD_MODELS if m[0] in (
-        "IMRPhenomXAS", "IMRPhenomXHM", "IMRPhenomXPHM (223)", "IMRPhenomXPHM (320)")]
+        "IMRPhenomXAS", "IMRPhenomXHM", "IMRPhenomXPHM (223)", "IMRPhenomXPHM (320)",
+        "IMRPhenomXPNR")]
     for label, approximant, binary, options in batch_models:
         parameters = draws(binary, n_batch)
         calls = [
