@@ -228,6 +228,12 @@ impl IMRPhenomXHM {
     /// `min(last frequency, f_cut)` with `f_cut` at `Mf = 0.3` (0.33 for
     /// `chi_eff > 0.99`), while the higher modes are evaluated at every
     /// frequency of the grid.
+    ///
+    /// # Panics
+    ///
+    /// If LALSimulation would refuse the frequencies (with `f_ref = 0` a
+    /// negative first frequency, which becomes the reference frequency);
+    /// [`crate::FrequencyDomainModel`] returns an error instead.
     pub fn polarizations(
         &self,
         frequencies: &[f64],
@@ -247,7 +253,8 @@ impl IMRPhenomXHM {
             |_, mf| UsefulPowers::new(mf),
             &mut hplus,
             &mut hcross,
-        );
+        )
+        .unwrap_or_else(|e| panic!("IMRPhenomXHM: {e}"));
         (hplus, hcross)
     }
 
@@ -259,6 +266,11 @@ impl IMRPhenomXHM {
     /// `pow` calls, and nothing is allocated per frequency. The result agrees
     /// with [`Self::polarizations`] to rounding (~1e-13 relative, more for
     /// inspirals with phases of order 1e6 rad).
+    ///
+    /// # Panics
+    ///
+    /// As [`Self::polarizations`], and if the outputs do not have the length
+    /// of the grid.
     pub fn polarizations_on_grid(
         &self,
         grid: &FrequencyGrid,
@@ -273,11 +285,24 @@ impl IMRPhenomXHM {
             grid.len(),
             "output length must match the grid"
         );
-        self.fill_polarizations_grid(grid, phi_ref, inclination, hplus, hcross);
+        self.fill_polarizations_grid(grid, phi_ref, inclination, hplus, hcross)
+            .unwrap_or_else(|e| panic!("IMRPhenomXHM: {e}"));
+    }
+
+    /// [`Self::polarizations_on_grid`] returning LAL's errors.
+    pub(crate) fn try_polarizations_on_grid(
+        &self,
+        grid: &FrequencyGrid,
+        phi_ref: f64,
+        inclination: f64,
+        hplus: &mut [Complex<f64>],
+        hcross: &mut [Complex<f64>],
+    ) -> Result<(), IMRPhenomXError> {
+        self.fill_polarizations_grid(grid, phi_ref, inclination, hplus, hcross)
     }
 
     /// [`Self::polarizations`] written into `hplus` and `hcross` (each of the
-    /// length of `frequencies`).
+    /// length of `frequencies`), returning LAL's errors.
     pub(crate) fn polarizations_into(
         &self,
         frequencies: &[f64],
@@ -285,7 +310,7 @@ impl IMRPhenomXHM {
         inclination: f64,
         hplus: &mut [Complex<f64>],
         hcross: &mut [Complex<f64>],
-    ) {
+    ) -> Result<(), IMRPhenomXError> {
         hplus.fill(Complex::new(0.0, 0.0));
         hcross.fill(Complex::new(0.0, 0.0));
         self.fill_polarizations(
@@ -295,15 +320,19 @@ impl IMRPhenomXHM {
             |_, mf| UsefulPowers::new(mf),
             hplus,
             hcross,
-        );
+        )
     }
 
     /// The waveform variables, the (2,2) and higher modes and their
     /// coefficients in the polarizations, for a grid from `f_min` to `f_max`.
-    fn mode_sum(&self, f_min: f64, f_max: f64, phi_ref: f64, inclination: f64) -> ModeSum {
-        let wf = self
-            .waveform_struct(f_min, f_max, phi_ref)
-            .unwrap_or_else(|e| panic!("IMRPhenomXHM: {e}"));
+    fn mode_sum(
+        &self,
+        f_min: f64,
+        f_max: f64,
+        phi_ref: f64,
+        inclination: f64,
+    ) -> Result<ModeSum, IMRPhenomXError> {
+        let wf = self.waveform_struct(f_min, f_max, phi_ref)?;
 
         // The (2,2) mode from XLALSimIMRPhenomXASFrequencySequence, which
         // sets up its own waveform variables from the LAL ones.
@@ -322,8 +351,7 @@ impl IMRPhenomXHM {
                 f_max,
                 wf.distance,
                 0.0,
-            )
-            .unwrap_or_else(|e| panic!("IMRPhenomXHM: {e}"));
+            )?;
             Some(Xas22::new(xas_wf))
         } else {
             None
@@ -351,12 +379,12 @@ impl IMRPhenomXHM {
                 modes.push((mode, amp0, factor_plus, factor_cross));
             }
         }
-        ModeSum {
+        Ok(ModeSum {
             wf,
             xas,
             modes,
             factors22: add_mode_factors(inclination, 2, 2, pos22, neg22),
-        }
+        })
     }
 
     /// The mode sum of `IMRPhenomXHM_MultiMode` on `frequencies`, with the
@@ -369,11 +397,11 @@ impl IMRPhenomXHM {
         powers_at: impl Fn(usize, f64) -> UsefulPowers,
         hplus: &mut [Complex<f64>],
         hcross: &mut [Complex<f64>],
-    ) {
+    ) -> Result<(), IMRPhenomXError> {
         let (Some(&f_min), Some(&f_max)) = (frequencies.first(), frequencies.last()) else {
-            return;
+            return Ok(());
         };
-        let sum = self.mode_sum(f_min, f_max, phi_ref, inclination);
+        let sum = self.mode_sum(f_min, f_max, phi_ref, inclination)?;
         let zero = Complex::new(0.0, 0.0);
         let (factor_plus_22, factor_cross_22) = sum.factors22;
         for (i, &f) in frequencies.iter().enumerate() {
@@ -395,6 +423,7 @@ impl IMRPhenomXHM {
             hplus[i] = hp;
             hcross[i] = hc;
         }
+        Ok(())
     }
 
     /// [`Self::fill_polarizations`] on a grid, one mode at a time so that
@@ -406,12 +435,12 @@ impl IMRPhenomXHM {
         inclination: f64,
         hplus: &mut [Complex<f64>],
         hcross: &mut [Complex<f64>],
-    ) {
+    ) -> Result<(), IMRPhenomXError> {
         let frequencies = grid.frequencies();
         let (Some(&f_min), Some(&f_max)) = (frequencies.first(), frequencies.last()) else {
-            return;
+            return Ok(());
         };
-        let sum = self.mode_sum(f_min, f_max, phi_ref, inclination);
+        let sum = self.mode_sum(f_min, f_max, phi_ref, inclination)?;
         let zero = Complex::new(0.0, 0.0);
         hplus.fill(zero);
         hcross.fill(zero);
@@ -459,6 +488,7 @@ impl IMRPhenomXHM {
             fastmath::polar_to_complex_conj(&mut h);
             accumulate(&h, *factor_plus, *factor_cross, hplus, hcross);
         }
+        Ok(())
     }
 
     /// The mode `h_lm` at `frequencies` (Hz, increasing) for the orbital

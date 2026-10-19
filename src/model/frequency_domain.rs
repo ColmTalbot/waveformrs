@@ -343,7 +343,7 @@ impl FrequencyDomainModel for IMRPhenomXHM {
             inclination,
             phi_ref,
         } = self.extrinsic;
-        IMRPhenomXHM::polarizations_into(self, frequencies, phi_ref, inclination, hplus, hcross);
+        IMRPhenomXHM::polarizations_into(self, frequencies, phi_ref, inclination, hplus, hcross)?;
         Ok(())
     }
 
@@ -358,7 +358,7 @@ impl FrequencyDomainModel for IMRPhenomXHM {
             inclination,
             phi_ref,
         } = self.extrinsic;
-        IMRPhenomXHM::polarizations_on_grid(self, grid, phi_ref, inclination, hplus, hcross);
+        self.try_polarizations_on_grid(grid, phi_ref, inclination, hplus, hcross)?;
         Ok(())
     }
 

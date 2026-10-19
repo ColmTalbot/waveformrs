@@ -351,6 +351,51 @@ fn invalid_parameters_are_errors() {
     assert!(IMRPhenomXHM::from_binary(&spin).is_err());
 }
 
+/// Frequencies LAL would not take (zero, negative or NaN first, decreasing)
+/// give an error or a waveform, never a panic, through every path of the
+/// trait. IMRPhenomXHM with `f_ref = 0` takes a negative first frequency as
+/// its reference frequency, which is an error.
+#[test]
+fn invalid_frequencies_do_not_panic() {
+    let grids: [Vec<f64>; 4] = [
+        vec![0.0, 10.0, 20.0],
+        vec![-5.0, 10.0, 20.0],
+        vec![f64::NAN, 10.0, 20.0],
+        vec![30.0, 20.0, 10.0],
+    ];
+    let zero = Complex::new(0.0, 0.0);
+    for f_ref in [0.0, 20.0] {
+        let (b, p) = (
+            Binary {
+                f_ref,
+                ..test_binary()
+            },
+            Binary {
+                f_ref,
+                ..precessing_binary()
+            },
+        );
+        for model in every_model(&b, &p) {
+            for f in &grids {
+                let approximant = model.approximant();
+                let grid = FrequencyGrid::new(f);
+                let (mut hp, mut hc) = (vec![zero; f.len()], vec![zero; f.len()]);
+                let outcomes = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    [
+                        model.polarizations(f).is_ok(),
+                        model.polarizations_on_grid(&grid, &mut hp, &mut hc).is_ok(),
+                        model.modes(f).is_ok(),
+                    ]
+                }))
+                .unwrap_or_else(|_| panic!("{approximant} panicked at {f:?}, f_ref = {f_ref}"));
+                if approximant == Approximant::IMRPhenomXHM && f_ref == 0.0 && f[0] < 0.0 {
+                    assert_eq!(outcomes[..2], [false, false]);
+                }
+            }
+        }
+    }
+}
+
 #[test]
 fn options_are_checked() {
     let b = test_binary();
