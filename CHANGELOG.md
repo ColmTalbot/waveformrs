@@ -91,3 +91,18 @@ All notable changes to `waveformrs` are recorded here.
   (`tests/xpnr.rs`, worst relative difference ~1e-15).
 - **IMRPhenomXHM release 122019** (`with_release_version(122019)`), the
   original higher-mode amplitudes used by IMRPhenomXPNR.
+- **Python bindings** (`python/`, the package `waveformrs` built with
+  maturin; PyO3 0.29 and rust-numpy 0.29, stable ABI for CPython >= 3.9):
+  the approximants by LAL's names, `WaveformOptions` as keyword arguments
+  or an object, `polarizations` (`SimInspiralChooseFDWaveformSequence`),
+  `FrequencyGrid` and `polarizations_on_grid`, `modes` and
+  `choose_fd_modes` (two-sided, as LAL's `SphHarmFrequencySeries`),
+  `td_polarizations` / `td_modes` (`SimInspiralChooseTDWaveform` /
+  `ChooseTDModes`, NRSur7dq4 with a workspace per thread), `simulate_td`
+  and `simulate_fd`, and batches (`batch_polarizations` into
+  `(n_binaries, n_frequencies)` numpy arrays, `batch_td_polarizations`)
+  with `threads=`, per-binary errors or `strict=True`. The GIL is released
+  while computing; `Error` maps to `waveformrs.WaveformError` subclasses
+  that also derive from `ValueError`, `RuntimeError` or `OSError`. Tested
+  against lalsimulation's Python API (`python/tests`); see
+  `python/README.md`.
