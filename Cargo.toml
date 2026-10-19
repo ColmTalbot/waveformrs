@@ -2,6 +2,10 @@
 name = "waveformrs"
 version = "0.1.0"
 edition = "2021"
+# The reference data, the report and the scripts stay in the repository:
+# without them the package (and the sdist of the Python bindings, which
+# bundles this crate) is ~0.5 MB instead of ~15 MB.
+exclude = ["/tests/data", "/report", "/scripts", "/lal_data"]
 
 [dependencies]
 num-complex = "*"
