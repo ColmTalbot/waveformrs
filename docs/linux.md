@@ -107,7 +107,9 @@ denominators amplify rounding).
 `WAVEFORMRS_REFERENCE_DATA=<dir>` makes the tests read the reference suites
 from `<dir>` instead of `tests/data`. `scripts/linux/reference.sh` generates
 `<dir>` with the container's LAL. The long-waveform and conversion data
-always come from `tests/data`.
+always come from `tests/data`, and so do suites missing from `<dir>`, such
+as the `imrphenomxpnr_parityfix*` suites, which need a lalsimulation built
+with lalsuite !2593 (`scripts/build_patched_lalsimulation.sh`).
 
 `tests/batch.rs` (bit for bit across thread counts) passes unchanged on
 every platform.

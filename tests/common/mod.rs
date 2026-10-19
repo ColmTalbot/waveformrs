@@ -99,14 +99,23 @@ pub fn nrsur7dq4_data() -> Option<&'static waveformrs::nrsur::NRSur7dq4Data> {
 }
 
 /// The reference data `<name>.json`: from the directory in
-/// `WAVEFORMRS_REFERENCE_DATA` if set (data generated with the lalsimulation
-/// of this machine, e.g. by `scripts/linux/reference.sh`), else from the
-/// committed `tests/data` (the conda-forge osx-arm64 build of lalsimulation).
+/// `WAVEFORMRS_REFERENCE_DATA` if set and it has the suite (data generated
+/// with the lalsimulation of this machine, e.g. by
+/// `scripts/linux/reference.sh`), else from the committed `tests/data` (the
+/// conda-forge osx-arm64 build of lalsimulation, and for the
+/// `imrphenomxpnr_parityfix*` suites that build of 6.2.0 with lalsuite
+/// !2593).
 pub fn data_path(name: &str) -> std::path::PathBuf {
-    let dir = std::env::var_os("WAVEFORMRS_REFERENCE_DATA")
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|| std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data"));
-    dir.join(format!("{name}.json"))
+    let file = format!("{name}.json");
+    if let Some(dir) = std::env::var_os("WAVEFORMRS_REFERENCE_DATA") {
+        let path = std::path::PathBuf::from(dir).join(&file);
+        if path.exists() {
+            return path;
+        }
+    }
+    std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/data")
+        .join(file)
 }
 
 /// Whether this crate mirrors the reference build of lalsimulation
