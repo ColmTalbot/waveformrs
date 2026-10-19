@@ -59,6 +59,9 @@ FD_CASES = [
         dict(precession_version=320, mode_array=[(2, 2), (3, 3)]),
         (1e-9, 1e-12),
     ),
+    # LALSimulation 6.2.0 has no parity fix (lalsuite !2593, test_xpnr.py)
+    ("IMRPhenomXPNR", PRECESSING, dict(pnr_parity_fix=False), (1e-9, 1e-12)),
+    ("IMRPhenomXPNR", UNEQUAL, dict(pnr_parity_fix=False), (1e-9, 1e-12)),
 ]
 
 # the crate's tolerances where it does not mirror the reference build
@@ -66,6 +69,7 @@ CROSS_BUILD = {
     "IMRPhenomXHM": (1e-3, 1e-6),
     "IMRPhenomXPHM": (1e-3, 1e-6),
     "IMRPhenomXP": (1e-7, 1e-12),
+    "IMRPhenomXPNR": (1e-3, 1e-6),
 }
 
 

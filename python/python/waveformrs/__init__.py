@@ -18,7 +18,7 @@ The binary is given by keyword arguments with LAL's parameters in the units of
 
 The settings of LAL's ``LALDict`` are :class:`WaveformOptions`, passed as
 ``options=`` and/or as keyword arguments (``precession_version``,
-``mode_array``, ``version_fallback``).
+``mode_array``, ``version_fallback``, ``pnr_parity_fix``).
 
 >>> import numpy as np
 >>> import waveformrs

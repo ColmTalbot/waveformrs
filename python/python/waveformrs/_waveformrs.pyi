@@ -27,6 +27,9 @@ class WaveformOptions:
       all modes.
     * ``version_fallback``: whether IMRPhenomXP/XPHM/XPNR may change the
       precession version as LALSimulation does (default ``True``).
+    * ``pnr_parity_fix``: whether IMRPhenomXPNR applies the fix of lalsuite
+      !2593, which restores the mirror symmetry of the waveform (default
+      ``True``, as LALSimulation master); ``False`` reproduces 6.2.0/6.2.1.
     """
 
     def __init__(
@@ -35,11 +38,13 @@ class WaveformOptions:
         precession_version: PrecessionVersion = 320,
         mode_array: Optional[Sequence[Sequence[int]]] = None,
         version_fallback: bool = True,
+        pnr_parity_fix: bool = True,
         **options: Any,
     ) -> None: ...
     @staticmethod
     def lalsimulation_defaults() -> WaveformOptions:
-        """LALSimulation 6.2.0's defaults: MSA angles (223), all modes."""
+        """LALSimulation 6.2.0's defaults: MSA angles (223), all modes, no
+        IMRPhenomXPNR parity fix."""
     def replace(self, **options: Any) -> WaveformOptions:
         """A copy with the given options changed."""
     @property
@@ -48,6 +53,8 @@ class WaveformOptions:
     def mode_array(self) -> Optional[List[Mode]]: ...
     @property
     def version_fallback(self) -> bool: ...
+    @property
+    def pnr_parity_fix(self) -> bool: ...
     def __eq__(self, other: object) -> bool: ...
 
 class FrequencyGrid:
