@@ -543,15 +543,16 @@ impl FrequencyDomainModel for IMRPhenomXPNR {
         Ok(())
     }
 
-    /// The polarizations at the frequencies of the grid (without a faster
-    /// path: the PNR angles depend on the first and last frequencies).
     fn polarizations_on_grid(
         &self,
         grid: &FrequencyGrid,
         hplus: &mut [Complex<f64>],
         hcross: &mut [Complex<f64>],
     ) -> Result<()> {
-        FrequencyDomainModel::polarizations_into(self, grid.frequencies(), hplus, hcross)
+        check_lengths(grid.len(), hplus, hcross);
+        Ok(IMRPhenomXPNR::polarizations_on_grid(
+            self, grid, hplus, hcross,
+        )?)
     }
 
     fn modes(&self, frequencies: &[f64]) -> Result<FrequencyModes> {

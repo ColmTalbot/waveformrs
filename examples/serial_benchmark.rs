@@ -22,7 +22,8 @@ use waveformrs::{
     grid::FrequencyGrid,
     imrphenomd::IMRPhenomD,
     imrphenomx::{
-        IMRPhenomXAS, IMRPhenomXHM, IMRPhenomXP, IMRPhenomXPHM, PrecessingBinary, PrecessionVersion,
+        IMRPhenomXAS, IMRPhenomXError, IMRPhenomXHM, IMRPhenomXP, IMRPhenomXPHM, IMRPhenomXPNR,
+        PrecessingBinary, PrecessionVersion,
     },
     nrsur::{NRSur7dq4, NRSur7dq4Data, NRSurWorkspace, TimeSeriesPolarizations},
     taylor::TaylorF2,
@@ -108,6 +109,7 @@ fn generate(name: &str, draw: &Draw, freqs: &[f64]) -> Option<Polarizations> {
                     draw.inclination,
                 )
             }),
+        "IMRPhenomXPNR" => xpnr(draw).and_then(|wf| wf.polarizations(freqs)).ok(),
         n if n.starts_with("IMRPhenomXPHM") => {
             IMRPhenomXPHM::with_version(&draw.binary(), version(n))
                 .and_then(|wf| wf.polarizations(freqs))
@@ -161,6 +163,11 @@ fn generate_on_grid(
                 })
                 .is_ok(),
         ),
+        "IMRPhenomXPNR" => Some(
+            xpnr(draw)
+                .and_then(|wf| wf.polarizations_on_grid(grid, hp, hc))
+                .is_ok(),
+        ),
         n if n.starts_with("IMRPhenomXPHM") => Some(
             IMRPhenomXPHM::with_version(&draw.binary(), precession_version(n))
                 .and_then(|wf| wf.polarizations_on_grid(grid, hp, hc))
@@ -175,6 +182,12 @@ fn generate_on_grid(
     }
 }
 
+/// IMRPhenomXPNR as lalsimulation 6.2.0 computes it (without the parity
+/// fix of lalsuite !2593, which costs the same), to compare with LAL.
+fn xpnr(draw: &Draw) -> Result<IMRPhenomXPNR, IMRPhenomXError> {
+    Ok(IMRPhenomXPNR::new(&draw.binary())?.with_parity_fix(false))
+}
+
 fn precession_version(name: &str) -> PrecessionVersion {
     match name {
         n if n.ends_with("(102)") => PrecessionVersion::Nnlo,
@@ -183,7 +196,7 @@ fn precession_version(name: &str) -> PrecessionVersion {
     }
 }
 
-const MODELS: [&str; 10] = [
+const MODELS: [&str; 11] = [
     "TaylorF2",
     "IMRPhenomD",
     "IMRPhenomXAS",
@@ -194,6 +207,7 @@ const MODELS: [&str; 10] = [
     "IMRPhenomXPHM (102)",
     "IMRPhenomXPHM (223)",
     "IMRPhenomXPHM (320)",
+    "IMRPhenomXPNR",
 ];
 
 fn main() {

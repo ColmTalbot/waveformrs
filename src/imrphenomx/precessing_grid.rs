@@ -1,5 +1,9 @@
-//! Evaluation of IMRPhenomXP and IMRPhenomXPHM on a prepared
-//! [`crate::grid::FrequencyGrid`], in passes over the grid.
+//! Evaluation of IMRPhenomXP, IMRPhenomXPHM and IMRPhenomXPNR on a prepared
+//! [`crate::grid::FrequencyGrid`], in passes over the grid. (IMRPhenomXPNR
+//! evaluates its PNR angles for each co-precessing mode, since they depend
+//! on the mode through the frequency map, and adds the antisymmetric part
+//! of the (2,2) mode with [`add_twisted_mode_with_symmetry`]; see
+//! `crate::imrphenomx::xpnr`.)
 //!
 //! The per-frequency drivers evaluate, at each frequency, the Euler angles
 //! for every `m'`, the twisting-up factors and every co-precessing mode. On
@@ -281,24 +285,45 @@ pub(crate) fn add_twisted_mode(
     hplus: &mut [Complex<f64>],
     hcross: &mut [Complex<f64>],
 ) {
+    add_twisted_mode_with_symmetry(ell, mprime, 1.0, ylm, twist, h, hplus, hcross);
+}
+
+/// [`add_twisted_mode`] for a co-precessing mode with
+/// `PolarizationSymmetry` `symmetry`: `h_{l,m'} = symmetry (-1)^l
+/// conj(h_{l,-m'})` (1 for the modes of IMRPhenomXHM, -1 for the
+/// antisymmetric (2,2) mode of IMRPhenomXPNR).
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn add_twisted_mode_with_symmetry(
+    ell: u32,
+    mprime: u32,
+    symmetry: f64,
+    ylm: &[f64],
+    twist: &TwistArrays,
+    h: &[Complex<f64>],
+    hplus: &mut [Complex<f64>],
+    hcross: &mut [Complex<f64>],
+) {
     let n = h.len();
     let rotation = &twist.rotation[..n];
     let half = &twist.half_angles[..n];
     let (hplus, hcross) = (&mut hplus[..n], &mut hcross[..n]);
+    let s = symmetry;
     match (ell, mprime) {
-        (2, 2) => twist_up::<2, 2>(ylm, h, rotation, half, hplus, hcross),
-        (2, 1) => twist_up::<2, 1>(ylm, h, rotation, half, hplus, hcross),
-        (3, 3) => twist_up::<3, 3>(ylm, h, rotation, half, hplus, hcross),
-        (3, 2) => twist_up::<3, 2>(ylm, h, rotation, half, hplus, hcross),
-        (4, 4) => twist_up::<4, 4>(ylm, h, rotation, half, hplus, hcross),
+        (2, 2) => twist_up::<2, 2>(s, ylm, h, rotation, half, hplus, hcross),
+        (2, 1) => twist_up::<2, 1>(s, ylm, h, rotation, half, hplus, hcross),
+        (3, 3) => twist_up::<3, 3>(s, ylm, h, rotation, half, hplus, hcross),
+        (3, 2) => twist_up::<3, 2>(s, ylm, h, rotation, half, hplus, hcross),
+        (4, 4) => twist_up::<4, 4>(s, ylm, h, rotation, half, hplus, hcross),
         _ => unreachable!("mode ({ell},{mprime}) is not twisted up"),
     }
 }
 
-/// `IMRPhenomXPHMTwistUp` for mode `(L, M)` at every grid point, with the
-/// sums over `k` of `crate::imrphenomx::xphm` grouped by `|k|`.
+/// `IMRPhenomXPHMTwistUp` for mode `(L, M)` with `PolarizationSymmetry`
+/// `symmetry` at every grid point, with the sums over `k` of
+/// `crate::imrphenomx::xphm` grouped by `|k|`.
 #[inline(always)]
 fn twist_up<const L: usize, const M: usize>(
+    symmetry: f64,
     ylm: &[f64],
     h: &[Complex<f64>],
     rotation: &[Complex<f64>],
@@ -306,7 +331,7 @@ fn twist_up<const L: usize, const M: usize>(
     hplus: &mut [Complex<f64>],
     hcross: &mut [Complex<f64>],
 ) {
-    let sigma = if L % 2 == 0 { 1.0 } else { -1.0 };
+    let sigma = if L % 2 == 0 { symmetry } else { -symmetry };
     // a_k = (-1)^(k + m') d_{-k} Y_k, b_k = sigma d_k Y_k with k = index - L
     let mut ya = [0.0; 9];
     let mut yb = [0.0; 9];

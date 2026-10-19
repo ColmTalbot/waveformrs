@@ -4,7 +4,8 @@
 //! and the largest difference between the two.
 //!
 //! The precessing models use the binary of `examples/benchmark.rs`
-//! (m1 = 40, m2 = 20 Msun, chi1 = (0.4, -0.3, 0.2), chi2 = (0.1, 0.5, -0.3)).
+//! (m1 = 40, m2 = 20 Msun, chi1 = (0.4, -0.3, 0.2), chi2 = (0.1, 0.5, -0.3));
+//! IMRPhenomXPNR with and without the parity fix of lalsuite !2593.
 //!
 //!     cargo run --release --example grid_benchmark
 use num_complex::Complex;
@@ -14,7 +15,8 @@ use waveformrs::{
     grid::FrequencyGrid,
     imrphenomd::IMRPhenomD,
     imrphenomx::{
-        IMRPhenomXAS, IMRPhenomXHM, IMRPhenomXP, IMRPhenomXPHM, PrecessingBinary, PrecessionVersion,
+        IMRPhenomXAS, IMRPhenomXHM, IMRPhenomXP, IMRPhenomXPHM, IMRPhenomXPNR, PrecessingBinary,
+        PrecessionVersion,
     },
     taylor::TaylorF2,
     waveform::Waveform,
@@ -174,6 +176,28 @@ fn main() {
             },
             |k, hp, hc| {
                 xphm(k)
+                    .polarizations_on_grid(black_box(&grid), hp, hc)
+                    .unwrap()
+            },
+        );
+    }
+    for (label, parity_fix) in [("", true), (" 6.2.0", false)] {
+        let xpnr = |_| {
+            IMRPhenomXPNR::new(&binary)
+                .unwrap()
+                .with_parity_fix(parity_fix)
+        };
+        ab(
+            &format!("IMRPhenomXPNR{label}"),
+            &grid,
+            (10, 10),
+            |k| {
+                xpnr(k)
+                    .polarizations(black_box(grid.frequencies()))
+                    .unwrap()
+            },
+            |k, hp, hc| {
+                xpnr(k)
                     .polarizations_on_grid(black_box(&grid), hp, hc)
                     .unwrap()
             },

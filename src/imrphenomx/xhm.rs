@@ -662,6 +662,16 @@ impl ModeGenerator {
         }
     }
 
+    /// For the grid paths: the ringdown amplitude of the 122019 release with
+    /// the logarithm of the powers instead of `pow` (equal to rounding, see
+    /// `hm_amp_122019::Flags::grid_ringdown`); the other modes are unchanged.
+    pub(crate) fn with_grid_ringdown(mut self) -> Self {
+        if let Self::HigherMode { mode, .. } = &mut self {
+            mode.wfhm.v122019.grid_ringdown = true;
+        }
+        self
+    }
+
     /// Whether the mode vanishes identically (odd modes of equal-mass,
     /// equal-spin binaries).
     pub(crate) fn vanishes(&self) -> bool {

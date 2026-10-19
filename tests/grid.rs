@@ -4,8 +4,8 @@ use waveformrs::{
     grid::FrequencyGrid,
     imrphenomd::IMRPhenomD,
     imrphenomx::{
-        IMRPhenomXAS, IMRPhenomXHM, IMRPhenomXP, IMRPhenomXPHM, Polarizations, PrecessingBinary,
-        PrecessionVersion,
+        IMRPhenomXAS, IMRPhenomXHM, IMRPhenomXP, IMRPhenomXPHM, IMRPhenomXPNR, Polarizations,
+        PrecessingBinary, PrecessionVersion,
     },
     taylor::TaylorF2,
     waveform::Waveform,
@@ -265,11 +265,72 @@ fn spintaylor_fallback_on_grids() {
     }
 }
 
+/// IMRPhenomXPNR with and without the parity fix, also with a mode array,
+/// and the binaries for which LAL changes its angles: in-plane spins below
+/// `1e-7` (no PNR angles nor antisymmetric mode), the transition region of
+/// the PNR angles, the SpinTaylor integration failing (MSA angles) and
+/// equal masses and spins (no odd modes).
+#[test]
+fn imrphenomxpnr_on_grids() {
+    let precessing = precessing_binaries();
+    let edge = |mass_1, mass_2, spin_1, spin_2, f_ref| PrecessingBinary {
+        mass_1,
+        mass_2,
+        spin_1,
+        spin_2,
+        f_ref,
+        ..precessing[0]
+    };
+    let binaries = [
+        precessing[0],
+        precessing[1],
+        edge(30.0, 20.0, [5e-8, 0.0, 0.5], [0.0, 0.0, -0.3], 20.0),
+        edge(90.0, 10.0, [0.5, 0.2, 0.1], [0.1, 0.0, 0.2], 25.0),
+        edge(30.0, 30.0, [0.3, 0.2, 0.1], [0.3, 0.2, 0.1], 20.0),
+    ];
+    for binary in binaries {
+        for parity_fix in [true, false] {
+            let model = IMRPhenomXPNR::new(&binary)
+                .unwrap()
+                .with_parity_fix(parity_fix);
+            let restricted = model
+                .clone()
+                .with_mode_array(&[(2, 2), (3, 2), (4, 4)])
+                .unwrap();
+            for grid in grids() {
+                for model in [&model, &restricted] {
+                    check_precessing(
+                        &format!(
+                            "IMRPhenomXPNR {binary:?} fix {parity_fix} {:?}",
+                            model.modes()
+                        ),
+                        &grid,
+                        model.polarizations(grid.frequencies()).unwrap(),
+                        |grid, hp, hc| model.polarizations_on_grid(grid, hp, hc).unwrap(),
+                    );
+                }
+            }
+        }
+    }
+    // the MSA angles inside the PNR machinery
+    let (heavy, grids) = heavy_binary();
+    let model = IMRPhenomXPNR::new(&heavy).unwrap();
+    for grid in &grids {
+        check_precessing(
+            "IMRPhenomXPNR 223",
+            grid,
+            model.polarizations(grid.frequencies()).unwrap(),
+            |grid, hp, hc| model.polarizations_on_grid(grid, hp, hc).unwrap(),
+        );
+    }
+}
+
 #[test]
 fn precessing_grid_paths_reject_invalid_grids() {
     let binary = precessing_binaries()[0];
     let xp = IMRPhenomXP::new(&binary).unwrap();
     let xphm = IMRPhenomXPHM::new(&binary).unwrap();
+    let xpnr = IMRPhenomXPNR::new(&binary).unwrap();
     let zero = Complex::new(0.0, 0.0);
     for frequencies in [vec![30.0, 20.0, 40.0], vec![-1.0, 20.0]] {
         let grid = FrequencyGrid::new(&frequencies);
@@ -282,8 +343,20 @@ fn precessing_grid_paths_reject_invalid_grids() {
             xphm.polarizations_on_grid(&grid, &mut hp, &mut hc),
             Err(xphm.polarizations(&frequencies).unwrap_err())
         );
+        assert_eq!(
+            xpnr.polarizations_on_grid(&grid, &mut hp, &mut hc),
+            Err(xpnr.polarizations(&frequencies).unwrap_err())
+        );
     }
+    // the reference frequency must lie on the grid
+    let above = FrequencyGrid::uniform(30.0, 200.0, 1.0);
+    let (mut hp, mut hc) = (vec![zero; above.len()], vec![zero; above.len()]);
+    assert_eq!(
+        xpnr.polarizations_on_grid(&above, &mut hp, &mut hc),
+        Err(xpnr.polarizations(above.frequencies()).unwrap_err())
+    );
     let empty = FrequencyGrid::new(&[]);
     assert_eq!(xp.polarizations_on_grid(&empty, &mut [], &mut []), Ok(()));
     assert_eq!(xphm.polarizations_on_grid(&empty, &mut [], &mut []), Ok(()));
+    assert_eq!(xpnr.polarizations_on_grid(&empty, &mut [], &mut []), Ok(()));
 }

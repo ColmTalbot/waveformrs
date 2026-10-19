@@ -54,6 +54,8 @@ mod jframe;
 use num_complex::Complex;
 
 use crate::constants::{MSUN_SI, PC_SI};
+use crate::fastmath;
+use crate::grid::{FrequencyGrid, ScalePowers};
 use crate::imrphenomx::internals::{IMRPhenomXError, UsefulPowers, WaveformStruct};
 use crate::imrphenomx::libm::cexp_i;
 use crate::imrphenomx::phase::PhaseCoefficients;
@@ -61,11 +63,16 @@ use crate::imrphenomx::pnr::{ringdown_frequency, ModeRange, PnrPrecession, PnrSp
 use crate::imrphenomx::pnr_angles::{
     linear_frequency_map, linear_frequency_map_transition_frequencies,
 };
+use crate::imrphenomx::precessing_grid::{
+    add_twisted_mode, add_twisted_mode_with_symmetry, coprecessing_mode,
+    coprecessing_mode_generator, rotate_polarizations, AngleArrays, TwistArrays,
+};
 use crate::imrphenomx::precession::{mf_to_hz, PrecessingBinary};
 use crate::imrphenomx::wigner::half_angles;
 use crate::imrphenomx::xhm::{ModeGenerator, IMRPHENOMXHM_MODES};
 use crate::imrphenomx::xp::{frequency_bounds, Polarizations};
 use crate::imrphenomx::xphm::wigner_d;
+use crate::spintaylor::fp::fma;
 
 /// IMRPhenomXPNR (lalsimulation 6.2.0 with the parity fix of lalsuite
 /// master, see [`IMRPhenomXPNR::with_parity_fix`]): IMRPhenomXPHM with the
@@ -245,6 +252,105 @@ impl<'a> ModeAngles<'a> {
                 Ok(prec.nnlo_angles(omega))
             }
         }
+    }
+}
+
+/// The splines of the PNR angles with the polynomial coefficients of every
+/// interval computed once, for the grid path (the values are those of
+/// [`PnrSplines::angles_from`] bit for bit).
+struct AngleTable<'a> {
+    splines: &'a PnrSplines,
+    /// The coefficients `(a, b, c, d)` of `alpha`, `beta` and `gamma` in
+    /// each interval.
+    coefficients: Vec<[f64; 12]>,
+}
+
+impl<'a> AngleTable<'a> {
+    fn new(splines: &'a PnrSplines) -> Self {
+        let [alpha, beta, gamma] = [&splines.alpha, &splines.beta, &splines.gamma]
+            .map(|spline| spline.coefficient_table());
+        let coefficients = alpha
+            .iter()
+            .zip(&beta)
+            .zip(&gamma)
+            .map(|((a, b), g)| {
+                [
+                    a[0], a[1], a[2], a[3], b[0], b[1], b[2], b[3], g[0], g[1], g[2], g[3],
+                ]
+            })
+            .collect();
+        Self {
+            splines,
+            coefficients,
+        }
+    }
+
+    /// [`PnrSplines::angles_from`].
+    #[inline]
+    fn angles_from(&self, f: f64, hint: &mut usize) -> Result<(f64, f64, f64), IMRPhenomXError> {
+        let spline = &self.splines.alpha;
+        if !spline.contains(f) {
+            return Err(IMRPhenomXError::PnrAngles(
+                "interpolation of the PNR angles out of range",
+            ));
+        }
+        let index = spline.locate(f, *hint);
+        *hint = index;
+        let k = &self.coefficients[index];
+        let delx = f - spline.x()[index];
+        let poly = |a: f64, b: f64, c: f64, d: f64| fma(delx, fma(delx, fma(delx, d, c), b), a);
+        Ok((
+            poly(k[0], k[1], k[2], k[3]),
+            poly(k[4], k[5], k[6], k[7]),
+            poly(k[8], k[9], k[10], k[11]),
+        ))
+    }
+}
+
+impl ModeAngles<'_> {
+    /// [`ModeAngles::at`] at `Mf = m_sec f` for each of `frequencies`,
+    /// appended to `angles`, with the splines evaluated through `table` and
+    /// `cos(beta)` in a vectorised pass (equal to rounding).
+    fn on_grid(
+        &self,
+        table: Option<&AngleTable>,
+        frequencies: &[f64],
+        angles: &mut AngleArrays,
+    ) -> Result<(), IMRPhenomXError> {
+        let (wf, prec) = (self.wf, self.prec);
+        let Some(table) = table else {
+            for &f in frequencies {
+                let (alpha, cos_beta, epsilon) = self.at(wf.m_sec * f)?;
+                angles.push(alpha, cos_beta, epsilon);
+            }
+            return Ok(());
+        };
+        let mut hint = 0;
+        let start = angles.cos_beta.len();
+        for &f in frequencies {
+            let mf_mapped = linear_frequency_map(
+                wf.m_sec * f,
+                self.ell,
+                self.emm,
+                self.mf_low,
+                self.mf_high,
+                wf.f_ring,
+                self.mf_rd_lm,
+                prec.pnr_inspiral_scaling,
+            )
+            .ok_or(IMRPhenomXError::PnrAngles(
+                "invalid transition frequencies of the frequency map",
+            ))?;
+            let (alpha, beta, gamma) =
+                table.angles_from(mf_to_hz(mf_mapped, wf.m_tot), &mut hint)?;
+            angles.push(
+                alpha - prec.alpha_offset,
+                beta,
+                -gamma - prec.epsilon_offset,
+            );
+        }
+        fastmath::cos_in_place(&mut angles.cos_beta[start..]);
+        Ok(())
     }
 }
 
@@ -509,17 +615,80 @@ impl Setup {
             }
         }
 
-        let zeta = prec.zeta_polarization;
-        if zeta.abs() > 0.0 {
-            let cos_pol = (2.0 * zeta).cos();
-            let sin_pol = (2.0 * zeta).sin();
-            for (p, c) in hp.iter_mut().zip(hc.iter_mut()) {
-                let (pp, pc) = (*p, *c);
-                *p = pp * cos_pol + pc * sin_pol;
-                *c = pc * cos_pol - pp * sin_pol;
+        rotate_polarizations(prec.zeta_polarization, &mut hp, &mut hc);
+        Ok((hp, hc))
+    }
+
+    /// [`Setup::generate`] on a prepared grid, in passes over the grid (as
+    /// `crate::imrphenomx::precessing_grid` describes): for each
+    /// co-precessing mode the Euler angles (those of the per-frequency
+    /// path, which depend on the mode through the frequency map), the
+    /// twisting-up factors, the mode from the powers of the grid with `exp(-i
+    /// m' epsilon)` folded into its phase, the antisymmetric part of the
+    /// (2,2) mode in the same way, and the twisting up. Agrees with
+    /// [`Setup::generate`] to rounding.
+    fn generate_grid(
+        &mut self,
+        modes: &[(u32, u32)],
+        grid: &FrequencyGrid,
+        hplus: &mut [Complex<f64>],
+        hcross: &mut [Complex<f64>],
+    ) -> Result<(), IMRPhenomXError> {
+        let splines = self.prepare_angles(modes)?;
+        let tuned = splines.is_some();
+        let wf = &self.wf;
+        let prec = &self.prec;
+        let phase22 = PhaseCoefficients::new(wf);
+        let frequencies = grid.frequencies();
+        let mf_cut = wf.f_max_prime * wf.m_sec;
+        // no waveform above Mf_max (default Mf = 0.3)
+        let n = frequencies.partition_point(|&f| wf.m_sec * f <= mf_cut);
+
+        let zero = Complex::new(0.0, 0.0);
+        hplus.fill(zero);
+        hcross.fill(zero);
+        let scale = ScalePowers::new(wf.m_sec);
+        let mut h = vec![zero; n];
+        let mut extra = Vec::new();
+        let mut angles = AngleArrays::with_capacity(n);
+        let table = splines.as_ref().map(AngleTable::new);
+        for &(ell, emm) in modes {
+            // skip twisting up when the co-precessing mode vanishes
+            if wf.q == 1.0 && wf.chi1l == wf.chi2l && emm % 2 != 0 {
+                continue;
+            }
+            let generator = ModeGenerator::new(wf, &phase22, ell, emm).with_grid_ringdown();
+            let antisymmetric = if (ell, emm) == (2, 2) && prec.antisymmetric && tuned {
+                Some(prec.antisymmetric_waveform_on_grid(wf, grid, n)?)
+            } else {
+                None
+            };
+            let mode_angles = ModeAngles::new(wf, prec, splines.as_ref(), ell, emm);
+            angles.alpha.clear();
+            angles.cos_beta.clear();
+            angles.epsilon.clear();
+            mode_angles.on_grid(table.as_ref(), &frequencies[..n], &mut angles)?;
+            let twist = TwistArrays::new(&angles);
+            let ylm = harmonics(prec, ell);
+            if !generator.vanishes() {
+                coprecessing_mode_generator(
+                    &mut h,
+                    &mut extra,
+                    emm,
+                    &angles.epsilon,
+                    &generator,
+                    grid,
+                    &scale,
+                );
+                add_twisted_mode(ell, emm, ylm, &twist, &h, hplus, hcross);
+            }
+            if let Some((amp, phase)) = &antisymmetric {
+                coprecessing_mode(&mut h, emm, &angles.epsilon, |i| (amp[i], phase[i]));
+                add_twisted_mode_with_symmetry(ell, emm, -1.0, ylm, &twist, &h, hplus, hcross);
             }
         }
-        Ok((hp, hc))
+        rotate_polarizations(prec.zeta_polarization, &mut hplus[..n], &mut hcross[..n]);
+        Ok(())
     }
 }
 
@@ -661,6 +830,35 @@ impl IMRPhenomXPNR {
         };
         self.polarization_setup(0.0, f_min, f_max)?
             .generate(&self.modes, frequencies)
+    }
+
+    /// [`IMRPhenomXPNR::polarizations`] at the frequencies of a prepared
+    /// [`FrequencyGrid`], written into `hplus` and `hcross`: the same
+    /// set-up (the SpinTaylor and PNR angles depend on the first and last
+    /// frequencies), then the modes in passes over the grid with the powers
+    /// of the frequencies from the grid and vectorised `sin`/`cos`. Agrees
+    /// with [`IMRPhenomXPNR::polarizations`] to rounding (~1e-13 relative).
+    ///
+    /// # Panics
+    ///
+    /// If `hplus` or `hcross` do not have the length of the grid.
+    pub fn polarizations_on_grid(
+        &self,
+        grid: &FrequencyGrid,
+        hplus: &mut [Complex<f64>],
+        hcross: &mut [Complex<f64>],
+    ) -> Result<(), IMRPhenomXError> {
+        assert_eq!(hplus.len(), grid.len(), "output length must match the grid");
+        assert_eq!(
+            hcross.len(),
+            grid.len(),
+            "output length must match the grid"
+        );
+        let Some((f_min, f_max)) = frequency_bounds(grid.frequencies())? else {
+            return Ok(());
+        };
+        self.polarization_setup(0.0, f_min, f_max)?
+            .generate_grid(&self.modes, grid, hplus, hcross)
     }
 
     /// `(h_+, h_x)` on the uniform grid `k delta_f`, `k = 0 .. n - 1`,

@@ -42,6 +42,9 @@ MODELS = {
     "IMRPhenomXPHM (102)": ("IMRPhenomXPHM", dict(PhenomXPrecVersion=102, **NO_MULTIBANDING)),
     "IMRPhenomXPHM (223)": ("IMRPhenomXPHM", dict(PhenomXPrecVersion=223, **NO_MULTIBANDING)),
     "IMRPhenomXPHM (320)": ("IMRPhenomXPHM", dict(PhenomXPrecVersion=320, **NO_MULTIBANDING)),
+    # (SimInspiralChooseFDWaveformSequence switches multibanding off; the
+    # Rust side without the parity fix of lalsuite !2593, as in 6.2.0)
+    "IMRPhenomXPNR": ("IMRPhenomXPNR", dict()),
 }
 ALIGNED = {"TaylorF2", "IMRPhenomD", "IMRPhenomXAS", "IMRPhenomXHM"}
 

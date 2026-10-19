@@ -73,6 +73,11 @@ pub(crate) struct Flags {
     pub(crate) intermediate_amp_version: i32,
     /// PNR deviations of the (3,3) mode.
     pub(crate) pnr: Pnr33Deviations,
+    /// Not in LAL: evaluate the ringdown amplitude with one `exp`, `f^(-lc)
+    /// exp(-df lambda / dfd) = exp(-df lambda / dfd - lc ln f)`, with the
+    /// logarithm of the powers (from a grid), instead of `pow` and `exp`
+    /// (the grid paths; equal to rounding).
+    pub(crate) grid_ringdown: bool,
 }
 
 /// The release-specific part of `IMRPhenomXHM_SetHMWaveformVariables` for
@@ -474,6 +479,14 @@ pub(crate) fn rd_amp_ansatz(
     amp: &HMAmpCoefficients,
 ) -> f64 {
     let rd = &amp.v122019.rd;
+    if wfhm.v122019.grid_ringdown {
+        let [a0, lambda, sigma, lc] = [rd[0], rd[1], rd[2], rd[3]];
+        let (ff, frd, fda) = (powers.itself, wfhm.f_ring, wfhm.f_damp);
+        let dfr = ff - frd;
+        let dfd = fda * sigma;
+        return fda * a0.abs() * sigma * fma(-lc, powers.log, -dfr * lambda / dfd).exp()
+            / fma(dfr, dfr, dfd * dfd);
+    }
     rd_amp_ansatz0(
         powers.itself,
         wfhm.f_ring,

@@ -105,6 +105,17 @@ All notable changes to `waveformrs` are recorded here.
   lalsimulation 6.2.0 built with the patch
   (`scripts/build_patched_lalsimulation.sh`, suites
   `imrphenomxpnr_parityfix*`, ~1e-15) and LAL's own unit test.
+- **A grid path for IMRPhenomXPNR** (`IMRPhenomXPNR::polarizations_on_grid`
+  and `FrequencyDomainModel::polarizations_on_grid`, previously the
+  per-frequency path): the set-up of the per-frequency path, then for each
+  co-precessing mode its PNR angles (with the spline coefficients computed
+  once per waveform), the twisting-up factors, the mode from the powers of
+  the grid and the antisymmetric (2,2) mode in passes over the grid.
+  Agrees with the per-frequency path to ~1e-13 (`tests/grid.rs`); 2.2 times
+  faster on 8033 frequencies (`examples/grid_benchmark.rs`). The moving
+  average of the antisymmetric amplitude ratio no longer recomputes windows
+  whose inputs repeat those of the previous window (the same values, on
+  both paths).
 - **IMRPhenomXHM release 122019** (`with_release_version(122019)`), the
   original higher-mode amplitudes used by IMRPhenomXPNR.
 - **Python bindings** (`python/`, the package `waveformrs` built with

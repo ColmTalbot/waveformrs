@@ -117,6 +117,19 @@ impl CubicSpline {
         &self.x
     }
 
+    /// The polynomial coefficients `(a, b, c, d)` of every interval, as
+    /// [`CubicSpline::eval_in`] computes them, for evaluating the spline
+    /// many times (`a + delx (b + delx (c + delx d))` with `delx = value -
+    /// x[i]` gives the values of `eval_in` bit for bit).
+    pub(crate) fn coefficient_table(&self) -> Vec<[f64; 4]> {
+        (0..self.x.len() - 1)
+            .map(|index| {
+                let (a, b, c, d) = self.coefficients(index);
+                [a, b, c, d]
+            })
+            .collect()
+    }
+
     /// Whether `value` lies within the knots, i.e. GSL would evaluate the
     /// spline without a domain error.
     #[inline]

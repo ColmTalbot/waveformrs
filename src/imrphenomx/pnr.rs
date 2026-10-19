@@ -32,7 +32,8 @@
 use std::f64::consts::{FRAC_PI_2, FRAC_PI_4, PI};
 
 use crate::cmath::LibmCbrt;
-use crate::constants::{C_SI, G_SI};
+use crate::constants::{C_SI, G_SI, MTSUN_SI};
+use crate::grid::{FrequencyGrid, ScalePowers};
 use crate::imrphenomx::amplitude::AmpCoefficients;
 use crate::imrphenomx::hm_qnm;
 use crate::imrphenomx::internals::{IMRPhenomXError, UsefulPowers, WaveformStruct};
@@ -2112,84 +2113,85 @@ impl PnrPrecession {
     // antisymmetric waveform
     // -----------------------------------------------------------------------
 
-    /// `IMRPhenomX_PNR_GenerateAntisymmetricAmpRatio`: the ratio of the
-    /// antisymmetric to the symmetric (2,2) amplitude, smoothed over 80
-    /// frequencies.
-    fn antisymmetric_amp_ratio(&self, wf: &WaveformStruct, frequencies: &[f64]) -> Vec<f64> {
+    /// The function `kappa(v)` of `IMRPhenomX_PNR_GenerateAntisymmetricAmpRatio`
+    /// before the smoothing: the ratio of the antisymmetric to the symmetric
+    /// (2,2) amplitude as a function of `v = (pi Mf)^(1/3)` below the
+    /// ringdown frequency, and its value at the ringdown frequency.
+    fn antisymmetric_ratio(&self, wf: &WaveformStruct) -> (impl Fn(f64) -> f64, f64) {
         let m2 = wf.m2;
-        let big_m = wf.m_tot;
         let delta = fnms(2.0, m2, 1.0);
         let eta = wf.eta;
-        let mf_rd = wf.f_ring;
         let theta = self.theta_antisymmetric;
         let chi = self.chi_single_spin_antisymmetric;
         // the phenomenological fit of the amplitude ratio in the PN-NR
         // transition
         let (b0, b1, b2, b3) = (18.0387, 15.4509, 55.1140, -203.6290);
         let b = fma(b3 * eta, theta, fma(b2, theta, fma(b1, eta, b0)));
-        let kappa_at = |v: f64| {
+        let (sin_theta, cos_theta) = (theta.sin(), theta.cos());
+        let kappa_at = move |v: f64| {
             let v2 = v * v;
             let v3 = v2 * v;
             let v5 = v3 * v2;
-            let num = 21.0 * v2 * (1.0 + delta) * chi * theta.sin();
+            let num = 21.0 * v2 * (1.0 + delta) * chi * sin_theta;
             let den = 2.0
                 * fma(
                     -(28.0 * v3 * (1.0 + delta - eta) * chi),
-                    theta.cos(),
+                    cos_theta,
                     fma(v2, fma(55.0, eta, -107.0), fma(84.0 * PI, v3, 42.0)),
                 );
             num / den * fma(b, v5, 1.0)
         };
-        let kappa_rd = kappa_at((PI * mf_rd).libm_cbrt());
+        let kappa_rd = kappa_at((PI * wf.f_ring).libm_cbrt());
+        (kappa_at, kappa_rd)
+    }
+
+    /// `IMRPhenomX_PNR_GenerateAntisymmetricAmpRatio`: the ratio of the
+    /// antisymmetric to the symmetric (2,2) amplitude, smoothed over 80
+    /// frequencies.
+    fn antisymmetric_amp_ratio(&self, wf: &WaveformStruct, frequencies: &[f64]) -> Vec<f64> {
+        let (kappa_at, kappa_rd) = self.antisymmetric_ratio(wf);
         let mut kappa: Vec<f64> = frequencies
             .iter()
             .map(|&f| {
-                let mf = hz_to_mf(f, big_m);
-                if mf < mf_rd {
+                let mf = hz_to_mf(f, wf.m_tot);
+                if mf < wf.f_ring {
                     kappa_at((PI * mf).libm_cbrt())
                 } else {
                     kappa_rd
                 }
             })
             .collect();
-        // moving average (in place, as in LAL)
-        let len = kappa.len();
-        let mut width = 80usize;
-        if width > len.saturating_sub(1) {
-            width = (len as f64 / 2.0).floor() as usize;
-        }
-        let half_width = (width as f64 / 2.0).floor() as usize;
-        let end = len.saturating_sub(width + 1);
-        for id in 0..end {
-            let mut smoothed_ratio = 0.0;
-            let mut frequency_width = 0.0;
-            for j in 0..=width {
-                let df = frequencies[id + j + 1] - frequencies[id + j];
-                smoothed_ratio = fma(kappa[id + j], df, smoothed_ratio);
-                frequency_width += df;
-            }
-            kappa[id + half_width] = smoothed_ratio * 1.0 / frequency_width;
-        }
+        smooth_amp_ratio(&mut kappa, frequencies);
         kappa
     }
 
-    /// `IMRPhenomX_PNR_GeneratePNRAlphaForAntisymmetry`.
-    fn alpha_for_antisymmetry(
+    /// [`PnrPrecession::antisymmetric_amp_ratio`] on a grid, with the powers
+    /// of the frequencies from the grid (equal to rounding).
+    fn antisymmetric_amp_ratio_on_grid(
         &self,
         wf: &WaveformStruct,
-        frequencies: &[f64],
-    ) -> Result<Vec<f64>, IMRPhenomXError> {
-        let mut ap = self.precompute_alpha_coefficients(wf, self.version);
-        self.alpha_connection(wf, &mut ap)?;
-        frequencies
-            .iter()
-            .map(|&f| self.region_alpha_at(wf, hz_to_mf(f, wf.m_tot), &ap))
-            .collect()
+        grid: &FrequencyGrid,
+    ) -> Vec<f64> {
+        let (kappa_at, kappa_rd) = self.antisymmetric_ratio(wf);
+        // v = (pi Mf)^(1/3) = (pi M)^(1/3) f^(1/3)
+        let scale = ScalePowers::new(PI * (MTSUN_SI * wf.m_tot));
+        let frequencies = grid.frequencies();
+        let mut kappa: Vec<f64> = (0..frequencies.len())
+            .map(|i| {
+                if hz_to_mf(frequencies[i], wf.m_tot) < wf.f_ring {
+                    kappa_at(grid.powers(&scale, i).cbrt)
+                } else {
+                    kappa_rd
+                }
+            })
+            .collect();
+        smooth_amp_ratio(&mut kappa, frequencies);
+        kappa
     }
 
-    /// `IMRPhenomX_PNR_GenerateAntisymmetricWaveform`: amplitude and phase
-    /// of the antisymmetric (2,2) co-precessing mode at `frequencies` (Hz),
-    /// `h = amp exp(i phase)`.
+    /// `IMRPhenomX_PNR_GenerateAntisymmetricPhaseCoefficients` and the
+    /// other frequency-independent quantities of
+    /// `IMRPhenomX_PNR_GenerateAntisymmetricWaveform`.
     ///
     /// Below `Mf_T = 0.85 fRING` the phase is `phi_22 / 2 + alpha + A0 Mf +
     /// phi_A0`, above it follows `phi_22`. In LALSimulation 6.2.0 `phi_A0`
@@ -2201,15 +2203,13 @@ impl PnrPrecession {
     /// `phi_A0 = -alpha(f_ref) - pi / 2` and the azimuth `phiJ_Sf` of `J` is
     /// added, which moves by `pi` (a sign flip of the antisymmetric mode)
     /// when the in-plane spins are reversed.
-    pub(crate) fn antisymmetric_waveform(
+    fn antisymmetric_coefficients(
         &self,
         wf: &WaveformStruct,
-        frequencies: &[f64],
-    ) -> Result<(Vec<f64>, Vec<f64>), IMRPhenomXError> {
+    ) -> Result<AntisymmetricCoefficients, IMRPhenomXError> {
         let mut phase22 = PhaseCoefficients::new(wf);
         phase_22_connection_coefficients(&mut phase22);
         let amp22 = AmpCoefficients::new(wf);
-        let kappa = self.antisymmetric_amp_ratio(wf, frequencies);
         let mf_t = 0.85 * wf.f_ring;
         let lina = 0.0;
         let linb = time_shift_22(&phase22, wf);
@@ -2228,87 +2228,323 @@ impl PnrPrecession {
         };
 
         // IMRPhenomX_PNR_GenerateAntisymmetricPhaseCoefficients
-        let (a0, phi_a0, phi_b0) = {
-            let mut ap = self.precompute_alpha_coefficients(wf, self.version);
-            self.alpha_connection(wf, &mut ap)?;
-            let delta_mf = 0.0005;
-            let mf_right = mf_t + delta_mf;
-            let mf_left = mf_t - delta_mf;
-            let alpha_der_mf_t = (self.region_alpha_at(wf, mf_right, &ap)?
-                - self.region_alpha_at(wf, mf_left, &ap)?)
-                / 2.0
-                / delta_mf;
-            let alpha_mf_t = self.region_alpha_at(wf, mf_t, &ap)?;
-            let powers = UsefulPowers::new(mf_t);
-            let (dphi, phi) = if mf_t < phase22.f_phase_match_in {
-                (
-                    inspiral::phase_22_ansatz_exact(mf_t, &powers, &phase22),
-                    inspiral::phase_22_ansatz_int_exact(mf_t, &powers, &phase22),
-                )
-            } else if mf_t > phase22.f_phase_match_im {
-                (
-                    ringdown::phase_22_ansatz_exact(mf_t, &powers, &phase22) + phase22.c2_mrd,
-                    fma(
-                        phase22.c2_mrd,
-                        mf_t,
-                        ringdown::phase_22_ansatz_int_exact(mf_t, &powers, &phase22)
-                            + phase22.c1_mrd,
-                    ),
-                )
-            } else {
-                (
-                    intermediate::phase_22_ansatz_exact(mf_t, &powers, &phase22) + phase22.c2_int,
-                    fma(
-                        phase22.c2_int,
-                        mf_t,
-                        intermediate::phase_22_ansatz_int_exact(mf_t, &powers, &phase22)
-                            + phase22.c1_int,
-                    ),
-                )
-            };
-            let dphi = dphi * inveta + linb;
-            let phi = phi * inveta + (fma(linb, mf_t, lina) + phiref22);
-            let a0 = dphi / 2.0 - alpha_der_mf_t;
-            let phi_a0 = if self.parity_fix {
-                // alpha at the reference frequency (in the region of
-                // alpha_MfT) instead of the offset, which includes the
-                // azimuth of the line of sight
-                let alpha_ref = self.region_alpha_at(wf, wf.mf_ref, &ap)?;
-                -alpha_ref - FRAC_PI_2
-            } else {
-                self.alpha_offset
-            };
-            let phi_b0 = fma(a0, mf_t, alpha_mf_t - phi / 2.0) + phi_a0;
-            (a0, phi_a0, phi_b0)
+        let mut alpha = self.precompute_alpha_coefficients(wf, self.version);
+        self.alpha_connection(wf, &mut alpha)?;
+        let delta_mf = 0.0005;
+        let mf_right = mf_t + delta_mf;
+        let mf_left = mf_t - delta_mf;
+        let alpha_der_mf_t = (self.region_alpha_at(wf, mf_right, &alpha)?
+            - self.region_alpha_at(wf, mf_left, &alpha)?)
+            / 2.0
+            / delta_mf;
+        let alpha_mf_t = self.region_alpha_at(wf, mf_t, &alpha)?;
+        let powers = UsefulPowers::new(mf_t);
+        let (dphi, phi) = if mf_t < phase22.f_phase_match_in {
+            (
+                inspiral::phase_22_ansatz_exact(mf_t, &powers, &phase22),
+                inspiral::phase_22_ansatz_int_exact(mf_t, &powers, &phase22),
+            )
+        } else if mf_t > phase22.f_phase_match_im {
+            (
+                ringdown::phase_22_ansatz_exact(mf_t, &powers, &phase22) + phase22.c2_mrd,
+                fma(
+                    phase22.c2_mrd,
+                    mf_t,
+                    ringdown::phase_22_ansatz_int_exact(mf_t, &powers, &phase22) + phase22.c1_mrd,
+                ),
+            )
+        } else {
+            (
+                intermediate::phase_22_ansatz_exact(mf_t, &powers, &phase22) + phase22.c2_int,
+                fma(
+                    phase22.c2_int,
+                    mf_t,
+                    intermediate::phase_22_ansatz_int_exact(mf_t, &powers, &phase22)
+                        + phase22.c1_int,
+                ),
+            )
         };
+        let dphi = dphi * inveta + linb;
+        let phi = phi * inveta + (fma(linb, mf_t, lina) + phiref22);
+        let a0 = dphi / 2.0 - alpha_der_mf_t;
+        let phi_a0 = if self.parity_fix {
+            // alpha at the reference frequency (in the region of alpha_MfT)
+            // instead of the offset, which includes the azimuth of the line
+            // of sight
+            let alpha_ref = self.region_alpha_at(wf, wf.mf_ref, &alpha)?;
+            -alpha_ref - FRAC_PI_2
+        } else {
+            self.alpha_offset
+        };
+        let phi_b0 = fma(a0, mf_t, alpha_mf_t - phi / 2.0) + phi_a0;
         // the azimuth of J in the L frame instead of the polarization angle
         let phase_offset = if self.parity_fix {
             self.phi_j_sf
         } else {
             self.zeta_polarization
         };
+        Ok(AntisymmetricCoefficients {
+            phase22,
+            amp22,
+            alpha,
+            mf_t,
+            lina,
+            linb,
+            inveta,
+            phiref22,
+            a0,
+            phi_a0,
+            phi_b0,
+            phase_offset,
+            amp_prefactor: wf.amp0 * wf.amp_norm,
+        })
+    }
 
-        let alpha_pnr = self.alpha_for_antisymmetry(wf, frequencies)?;
-        let amp_prefactor = wf.amp0 * wf.amp_norm;
+    /// `IMRPhenomX_PNR_GenerateAntisymmetricWaveform`: amplitude and phase
+    /// of the antisymmetric (2,2) co-precessing mode at `frequencies` (Hz),
+    /// `h = amp exp(i phase)` (see
+    /// [`PnrPrecession::antisymmetric_coefficients`]).
+    pub(crate) fn antisymmetric_waveform(
+        &self,
+        wf: &WaveformStruct,
+        frequencies: &[f64],
+    ) -> Result<(Vec<f64>, Vec<f64>), IMRPhenomXError> {
+        let kappa = self.antisymmetric_amp_ratio(wf, frequencies);
+        let coefficients = self.antisymmetric_coefficients(wf)?;
+        // IMRPhenomX_PNR_GeneratePNRAlphaForAntisymmetry
+        let alpha_pnr = frequencies
+            .iter()
+            .map(|&f| self.region_alpha_at(wf, hz_to_mf(f, wf.m_tot), &coefficients.alpha))
+            .collect::<Result<Vec<f64>, IMRPhenomXError>>()?;
         let mut amp = Vec::with_capacity(frequencies.len());
         let mut phase = Vec::with_capacity(frequencies.len());
         for (i, &f) in frequencies.iter().enumerate() {
             let mf = wf.m_sec * f;
-            let powers = UsefulPowers::new(mf);
-            // symmetric phase and amplitude
-            let phi = phase22.phase_xas(mf, &powers) * inveta;
-            let phi = phi + (fma(linb, mf, lina) + phiref22);
-            let a = amp22.ansatz(mf, &powers);
-            // antisymmetric amplitude and phase
-            let amp_as = kappa[i] * a;
-            let phi_as = if mf < mf_t {
-                fma(a0, mf, phi / 2.0 + alpha_pnr[i]) + phi_a0
-            } else {
-                phi + phi_b0
-            };
-            amp.push(amp_prefactor * powers.m_seven_sixths * amp_as);
-            phase.push(phase_offset + phi_as);
+            let (a, p) =
+                coefficients.amplitude_phase(mf, &UsefulPowers::new(mf), kappa[i], alpha_pnr[i]);
+            amp.push(a);
+            phase.push(p);
         }
         Ok((amp, phase))
+    }
+
+    /// [`PnrPrecession::antisymmetric_waveform`] at the first `n` points of
+    /// `grid`, with the powers of the frequencies from the grid (equal to
+    /// rounding). The amplitude ratio is smoothed over the whole grid, as
+    /// `antisymmetric_waveform` smooths it over all its frequencies; the PNR
+    /// `alpha` is evaluated only below `Mf_T`, where it is used.
+    pub(crate) fn antisymmetric_waveform_on_grid(
+        &self,
+        wf: &WaveformStruct,
+        grid: &FrequencyGrid,
+        n: usize,
+    ) -> Result<(Vec<f64>, Vec<f64>), IMRPhenomXError> {
+        let kappa = self.antisymmetric_amp_ratio_on_grid(wf, grid);
+        let coefficients = self.antisymmetric_coefficients(wf)?;
+        let frequencies = &grid.frequencies()[..n];
+        let n_t = frequencies.partition_point(|&f| wf.m_sec * f < coefficients.mf_t);
+        let alpha_pnr = frequencies[..n_t]
+            .iter()
+            .map(|&f| self.region_alpha_at(wf, hz_to_mf(f, wf.m_tot), &coefficients.alpha))
+            .collect::<Result<Vec<f64>, IMRPhenomXError>>()?;
+        let scale = ScalePowers::new(wf.m_sec);
+        let mut amp = Vec::with_capacity(n);
+        let mut phase = Vec::with_capacity(n);
+        for (i, &kappa) in kappa[..n].iter().enumerate() {
+            let powers = grid.powers(&scale, i);
+            let alpha = if i < n_t { alpha_pnr[i] } else { 0.0 };
+            let (a, p) = coefficients.amplitude_phase(
+                powers.itself,
+                &UsefulPowers::from_grid(&powers),
+                kappa,
+                alpha,
+            );
+            amp.push(a);
+            phase.push(p);
+        }
+        Ok((amp, phase))
+    }
+}
+
+/// The frequency-independent quantities of the antisymmetric (2,2) mode
+/// ([`PnrPrecession::antisymmetric_coefficients`]).
+struct AntisymmetricCoefficients {
+    phase22: PhaseCoefficients,
+    amp22: AmpCoefficients,
+    /// The PNR `alpha` parameters (`IMRPhenomX_PNR_alpha_parameters`).
+    alpha: AlphaParams,
+    mf_t: f64,
+    lina: f64,
+    linb: f64,
+    inveta: f64,
+    phiref22: f64,
+    a0: f64,
+    phi_a0: f64,
+    phi_b0: f64,
+    /// `zeta_polarization` (6.2.0) or `phiJ_Sf` (with the fix).
+    phase_offset: f64,
+    amp_prefactor: f64,
+}
+
+impl AntisymmetricCoefficients {
+    /// Amplitude and phase of the antisymmetric mode at `mf` with the
+    /// powers `powers`, the smoothed amplitude ratio `kappa` and the PNR
+    /// `alpha` (used below `Mf_T` only).
+    #[inline]
+    fn amplitude_phase(
+        &self,
+        mf: f64,
+        powers: &UsefulPowers,
+        kappa: f64,
+        alpha: f64,
+    ) -> (f64, f64) {
+        // symmetric phase and amplitude
+        let phi = self.phase22.phase_xas(mf, powers) * self.inveta;
+        let phi = phi + (fma(self.linb, mf, self.lina) + self.phiref22);
+        let a = self.amp22.ansatz(mf, powers);
+        // antisymmetric amplitude and phase
+        let amp_as = kappa * a;
+        let phi_as = if mf < self.mf_t {
+            fma(self.a0, mf, phi / 2.0 + alpha) + self.phi_a0
+        } else {
+            phi + self.phi_b0
+        };
+        (
+            self.amp_prefactor * powers.m_seven_sixths * amp_as,
+            self.phase_offset + phi_as,
+        )
+    }
+}
+
+/// The moving average of `IMRPhenomX_PNR_GenerateAntisymmetricAmpRatio`,
+/// in place as in LAL: `kappa[id + 40] = sum_j kappa[id + j] df_j / sum_j
+/// df_j` over the 81 points `j = 0..=80` (fewer on short grids) with `df_j =
+/// f[id + j + 1] - f[id + j]`, for `id = 0, 1, ...` in turn (so the later
+/// windows include values already smoothed).
+///
+/// The operations are those of LAL, except that a window whose inputs (the
+/// values of `kappa` it reads and the steps) are bit for bit those of the
+/// previous window takes its result instead of recomputing it: the result
+/// is the same. Above the ringdown frequency, where `kappa` is constant,
+/// the smoothed values settle on a constant, so on a uniform grid most
+/// windows there are not recomputed.
+fn smooth_amp_ratio(kappa: &mut [f64], frequencies: &[f64]) {
+    let len = kappa.len();
+    let mut width = 80usize;
+    if width > len.saturating_sub(1) {
+        width = (len as f64 / 2.0).floor() as usize;
+    }
+    let half_width = (width as f64 / 2.0).floor() as usize;
+    let end = len.saturating_sub(width + 1);
+    if end == 0 {
+        return;
+    }
+    let df: Vec<f64> = frequencies.windows(2).map(|w| w[1] - w[0]).collect();
+    // the first index of the run of bit-for-bit equal values ending at each
+    // index (of the input kappa and of the steps)
+    let run_starts = |values: &[f64]| {
+        let mut starts = vec![0usize; values.len()];
+        for i in 1..values.len() {
+            starts[i] = if values[i].to_bits() == values[i - 1].to_bits() {
+                starts[i - 1]
+            } else {
+                i
+            };
+        }
+        starts
+    };
+    let kappa_start = run_starts(kappa);
+    let df_start = run_starts(&df);
+    let mut previous = 0.0f64;
+    // the number of equal results ending with the previous one
+    let mut equal_results = 0usize;
+    for id in 0..end {
+        // Window id reads the results of windows id - hw ..= id - 1 at
+        // j < hw (hw = half_width) and the input values at j >= hw. It
+        // repeats window id - 1 if the results of windows id - hw - 1 ..= id
+        // - 1 are equal, the input values are constant over id - 1 + hw ..=
+        // id + width and the steps over id - 1 ..= id + width.
+        let repeat = id > half_width
+            && equal_results > half_width
+            && kappa_start[id + width] < id + half_width
+            && df_start[id + width] < id;
+        let value = if repeat {
+            previous
+        } else {
+            let mut smoothed_ratio = 0.0;
+            let mut frequency_width = 0.0;
+            for j in 0..=width {
+                let step = df[id + j];
+                smoothed_ratio = fma(kappa[id + j], step, smoothed_ratio);
+                frequency_width += step;
+            }
+            smoothed_ratio * 1.0 / frequency_width
+        };
+        equal_results = if id > 0 && value.to_bits() == previous.to_bits() {
+            equal_results + 1
+        } else {
+            1
+        };
+        previous = value;
+        kappa[id + half_width] = value;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// The moving average as LAL writes it.
+    fn smooth_as_lal(kappa: &mut [f64], frequencies: &[f64]) {
+        let len = kappa.len();
+        let mut width = 80usize;
+        if width > len.saturating_sub(1) {
+            width = (len as f64 / 2.0).floor() as usize;
+        }
+        let half_width = (width as f64 / 2.0).floor() as usize;
+        for id in 0..len.saturating_sub(width + 1) {
+            let mut smoothed_ratio = 0.0;
+            let mut frequency_width = 0.0;
+            for j in 0..=width {
+                let df = frequencies[id + j + 1] - frequencies[id + j];
+                smoothed_ratio = fma(kappa[id + j], df, smoothed_ratio);
+                frequency_width += df;
+            }
+            kappa[id + half_width] = smoothed_ratio * 1.0 / frequency_width;
+        }
+    }
+
+    /// The windows skipped by `smooth_amp_ratio` do not change the result:
+    /// uniform and geometric grids, a ratio constant above a "ringdown"
+    /// frequency, constant everywhere, with plateaus, and short grids.
+    #[test]
+    fn smoothing_is_that_of_lal() {
+        let uniform: Vec<f64> = (0..3000).map(|i| 20.0 + 0.125 * i as f64).collect();
+        let geometric: Vec<f64> = (0..3000).map(|i| 20.0 * 1.001f64.powi(i)).collect();
+        let short: Vec<f64> = (0..60).map(|i| 20.0 + 0.5 * i as f64).collect();
+        let ratios: [&dyn Fn(f64) -> f64; 4] = [
+            &|f| {
+                if f < 150.0 {
+                    0.1 / (1.0 + f / 300.0)
+                } else {
+                    0.1 / 1.5
+                }
+            },
+            &|_| 0.07,
+            &|f| ((f / 7.0).floor() * 0.01).min(0.2),
+            &|f| 0.1 * (f / 50.0).sin(),
+        ];
+        for frequencies in [&uniform, &geometric, &short] {
+            for ratio in ratios {
+                let kappa: Vec<f64> = frequencies.iter().map(|&f| ratio(f)).collect();
+                let (mut fast, mut lal) = (kappa.clone(), kappa);
+                smooth_amp_ratio(&mut fast, frequencies);
+                smooth_as_lal(&mut lal, frequencies);
+                assert!(fast
+                    .iter()
+                    .zip(&lal)
+                    .all(|(a, b)| a.to_bits() == b.to_bits()));
+            }
+        }
     }
 }
