@@ -7,6 +7,9 @@ name = "waveformrs"
 description = "Gravitational-wave models that reproduce LALSimulation 6.2.0 to rounding (Python bindings of the Rust crate)"
 readme = "README.md"
 requires-python = ">=3.9"
+# waveformrs is derived in part from LALSuite and GSL (see ../NOTICE.md)
+license = "GPL-3.0-or-later"
+license-files = ["COPYING"]
 dependencies = ["numpy>=1.21"]
 dynamic = ["version"]
 classifiers = [

@@ -4,6 +4,16 @@ All notable changes to `waveformrs` are recorded here.
 
 ## Unreleased
 
+### License
+
+- **waveformrs is licensed under the GNU General Public License version 3
+  or later** (`LICENSE`), as the code it is translated from requires:
+  LALSuite (GPL-2.0-or-later) and GSL (GPL-3.0-or-later), with parts of
+  glibc (LGPL-2.1-or-later) and fdlibm. `NOTICE.md` lists the original files
+  and their authors; the library sources carry SPDX headers, and the crates
+  and the Python package declare `GPL-3.0-or-later`. The crate had no
+  license before.
+
 ### Breaking changes
 
 - **`phi_c` is the orbital reference phase in every `Waveform` method.**

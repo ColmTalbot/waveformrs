@@ -61,3 +61,10 @@ cd python && maturin develop --release   # the Python package
 - [docs/linux.md](docs/linux.md): running on Linux.
 - [report/waveformrs-report.html](report/waveformrs-report.html): the
   technical report, with validation and performance details.
+
+## License
+
+waveformrs is free software, licensed under the GNU General Public License
+version 3 or later ([LICENSE](LICENSE)). Much of it is translated from
+LALSuite and the GNU Scientific Library, whose licenses require this;
+[NOTICE.md](NOTICE.md) lists the original code and its authors.
