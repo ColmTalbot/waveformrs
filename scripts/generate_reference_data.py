@@ -25,6 +25,15 @@ and uniform grids (``imrphenomxpnr_uniform``), the J-frame modes of
 ``SimIMRPhenomXPHMFrequencySequenceOneMode`` with the flags of
 IMRPhenomXPNR (``imrphenomxpnr_sequence_modes``).
 
+The ``imrphenomxpnr_parityfix*`` suites are the same four IMRPhenomXPNR
+suites computed with lalsimulation 6.2.0 plus the fix of lalsuite merge
+request !2593 (in lalsuite master, not in lalsimulation 6.2.0 or 6.2.1).
+They need a liblalsimulation built with the patch
+(``scripts/build_patched_lalsimulation.sh``), passed with
+``--lalsimulation-library``; its functions are called through ctypes
+(``scripts/lalsimulation_ctypes.py``) and its VCS information is recorded
+in the output as ``lalsimulation_build``.
+
 The time-domain ``nrsur7dq4`` suites store the polarizations of
 ``SimInspiralChooseTDWaveform`` (with the epoch, or the error message for
 the cases where lalsimulation fails), the modes of
@@ -35,6 +44,10 @@ file ``NRSur7dq4_v1.0.h5`` in ``LAL_DATA_PATH``.
 Usage
 -----
     OMP_NUM_THREADS=1 python scripts/generate_reference_data.py [--n-frequencies 256]
+    OMP_NUM_THREADS=1 python scripts/generate_reference_data.py \\
+        --lalsimulation-library build/liblalsimulation.37.dylib \\
+        --suites imrphenomxpnr_parityfix imrphenomxpnr_parityfix_uniform \\
+        imrphenomxpnr_parityfix_modes imrphenomxpnr_parityfix_sequence_modes
 
 ``OMP_NUM_THREADS=1`` is required for the MSA suites (``imrphenomxp_msa``,
 ``imrphenomxp_spintaylor_fallback``): the MSA angles of lalsimulation write
@@ -1421,22 +1434,50 @@ SUITES = dict(
     spin_weighted_harmonics=spin_weighted_harmonic_cases,
 )
 
+# Suites for a liblalsimulation with the fix of lalsuite !2593
+# (--lalsimulation-library): the IMRPhenomXPNR suites with the same cases.
+PATCHED_SUITES = dict(
+    imrphenomxpnr_parityfix=xpnr_cases,
+    imrphenomxpnr_parityfix_uniform=xpnr_uniform_cases,
+    imrphenomxpnr_parityfix_modes=xpnr_mode_cases,
+    imrphenomxpnr_parityfix_sequence_modes=xpnr_sequence_mode_cases,
+)
+
 
 def main():
+    global lalsim
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--n-frequencies", type=int, default=256)
     parser.add_argument("--suites", nargs="*", default=list(SUITES))
     parser.add_argument("--outdir", default=str(DATA_DIR))
+    parser.add_argument(
+        "--lalsimulation-library",
+        help="a liblalsimulation (linked against the liblal of the SWIG modules) whose "
+        "waveform functions replace those of the SWIG module",
+    )
     args = parser.parse_args()
     outdir = Path(args.outdir)
     outdir.mkdir(parents=True, exist_ok=True)
+    build = None
+    if args.lalsimulation_library is not None:
+        from lalsimulation_ctypes import Library, Overlay
+
+        library = Library(args.lalsimulation_library)
+        lalsim = Overlay(lalsim, library)
+        build = dict(library=Path(library.path).name, **library.vcs_info)
+        print(f"lalsimulation {build['version']}: {build['vcsStatus']}")
     for name in args.suites:
-        cases = [generate(case, args.n_frequencies) for case in SUITES[name]()]
+        if name in PATCHED_SUITES and build is None:
+            raise SystemExit(f"{name} needs --lalsimulation-library (a build with lalsuite !2593)")
+        suite = SUITES.get(name) or PATCHED_SUITES[name]
+        cases = [generate(case, args.n_frequencies) for case in suite()]
         output = dict(
             lalsimulation_version=lalsim.__version__,
             lal_version=lal.__version__,
             cases=cases,
         )
+        if build is not None:
+            output["lalsimulation_build"] = build
         path = outdir / f"{name}.json"
         with open(path, "w") as ff:
             json.dump(output, ff)
