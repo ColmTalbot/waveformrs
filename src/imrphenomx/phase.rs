@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2024-2026 Colm Talbot. Parts of waveformrs are translated
+// from LALSuite, GSL, glibc and fdlibm: see NOTICE.md for their authors.
 //! Phase of the (2,2) mode: `IMRPhenomXPhaseCoefficients`,
 //! `IMRPhenomXGetPhaseCoefficients`, `IMRPhenomX_Phase_22_ConnectionCoefficients`,
 //! `IMRPhenomX_TimeShift_22`, `IMRPhenomX_Phase_22` and `IMRPhenomX_dPhase_22`

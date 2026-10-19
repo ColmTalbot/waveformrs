@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2024-2026 Colm Talbot. Parts of waveformrs are translated
+// from LALSuite, GSL, glibc and fdlibm: see NOTICE.md for their authors.
 //! The dynamics surrogate: integration of the ODE for the coprecessing-frame
 //! quaternion, the orbital phase and the spins
 //! (`PrecessingNRSur_IntegrateDynamics` and the functions it calls).

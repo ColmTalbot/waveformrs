@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2024-2026 Colm Talbot. Parts of waveformrs are translated
+// from LALSuite, GSL, glibc and fdlibm: see NOTICE.md for their authors.
 //! Inspiral region of the IMRPhenomXHM higher modes,
 //! `LALSimIMRPhenomXHM_inspiral.c`: parameter-space fits of the amplitude
 //! collocation points (version 122022) and of the extreme-mass-ratio phase

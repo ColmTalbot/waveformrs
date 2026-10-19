@@ -1,3 +1,6 @@
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2024-2026 Colm Talbot. Parts of waveformrs are translated
+# from LALSuite, GSL, glibc and fdlibm: see NOTICE.md for their authors.
 """Type stubs of the extension module ``waveformrs._waveformrs``.
 
 The binary is given by keyword arguments (``BinaryKwargs``) followed by the

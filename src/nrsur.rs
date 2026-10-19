@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2024-2026 Colm Talbot. Parts of waveformrs are translated
+// from LALSuite, GSL, glibc and fdlibm: see NOTICE.md for their authors.
 //! The precessing numerical-relativity surrogate NRSur7dq4 (Varma et al.
 //! 2019, arXiv:1905.09300), a port of `LALSimIMRPrecessingNRSur.c` from
 //! LALSimulation 6.2.0.

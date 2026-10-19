@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2024-2026 Colm Talbot. Parts of waveformrs are translated
+// from LALSuite, GSL, glibc and fdlibm: see NOTICE.md for their authors.
 //! The J-frame modes `(2, m)` of IMRPhenomXP: its co-precessing (2,2) mode
 //! twisted up mode by mode with the Euler angles of its polarizations, in
 //! the conventions of the J-frame modes of IMRPhenomXPHM. LALSimulation has

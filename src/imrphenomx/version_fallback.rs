@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2024-2026 Colm Talbot. Parts of waveformrs are translated
+// from LALSuite, GSL, glibc and fdlibm: see NOTICE.md for their authors.
 //! The automatic changes of the Euler-angle prescription of IMRPhenomXP and
 //! IMRPhenomXPHM, and the errors that replace them when they are switched
 //! off (`with_version_fallback(false)`).

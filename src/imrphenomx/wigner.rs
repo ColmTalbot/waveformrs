@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2024-2026 Colm Talbot. Parts of waveformrs are translated
+// from LALSuite, GSL, glibc and fdlibm: see NOTICE.md for their authors.
 //! Spin-weighted spherical harmonics and Wigner-d matrices used to twist up
 //! the co-precessing modes of IMRPhenomXP/XPHM (Appendix A of
 //! arXiv:2004.06503), following `IMRPhenomXPTwistUp22`,

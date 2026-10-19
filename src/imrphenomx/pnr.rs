@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2024-2026 Colm Talbot. Parts of waveformrs are translated
+// from LALSuite, GSL, glibc and fdlibm: see NOTICE.md for their authors.
 //! The PNR ("phenomenological and numerical-relativity") machinery of
 //! IMRPhenomXPNR in lalsimulation 6.2.0, following
 //! `LALSimIMRPhenomX_PNR.c`, `LALSimIMRPhenomX_PNR_internals.c`,

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2024-2026 Colm Talbot. Parts of waveformrs are translated
+// from LALSuite, GSL, glibc and fdlibm: see NOTICE.md for their authors.
 //! Parameter-space fits of the IMRPhenomXHM amplitude for the 122019
 //! release (fits version 122018): the inspiral and intermediate collocation
 //! points and the ringdown coefficients, from

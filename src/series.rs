@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2024-2026 Colm Talbot. Parts of waveformrs are translated
+// from LALSuite, GSL, glibc and fdlibm: see NOTICE.md for their authors.
 //! Uniformly sampled time and frequency series with LAL's epoch arithmetic.
 //!
 //! These mirror `REAL8TimeSeries` and `COMPLEX16FrequencySeries` (with

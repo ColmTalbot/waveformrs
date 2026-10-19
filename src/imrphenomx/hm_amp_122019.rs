@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2024-2026 Colm Talbot. Parts of waveformrs are translated
+// from LALSuite, GSL, glibc and fdlibm: see NOTICE.md for their authors.
 //! The amplitude of the IMRPhenomXHM higher modes in the original release,
 //! `PhenomXHMReleaseVersion = 122019` (arXiv:2001.10914), as used by
 //! IMRPhenomXPNR: the parts of `IMRPhenomXHM_SetHMWaveformVariables`,

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2024-2026 Colm Talbot. Parts of waveformrs are translated
+// from LALSuite, GSL, glibc and fdlibm: see NOTICE.md for their authors.
 //! Quasi-normal mode fits of the higher modes, `LALSimIMRPhenomXHM_qnm.c`.
 //!
 //! The ringdown and damping frequencies of the (2,1), (3,3), (3,2) and (4,4)

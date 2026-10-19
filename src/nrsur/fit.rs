@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2024-2026 Colm Talbot. Parts of waveformrs are translated
+// from LALSuite, GSL, glibc and fdlibm: see NOTICE.md for their authors.
 //! Parameter-space fits of the precessing NR surrogates.
 //!
 //! A fit is `sum_i c_i prod_j B_j(k_ij; x_j)` where `B_j` are monomials of

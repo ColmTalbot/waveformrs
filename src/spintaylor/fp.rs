@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2024-2026 Colm Talbot. Parts of waveformrs are translated
+// from LALSuite, GSL, glibc and fdlibm: see NOTICE.md for their authors.
 //! Floating point helpers that reproduce the arithmetic of the C code.
 //!
 //! LALSuite and GSL are plain C, and C compilers are allowed to contract an

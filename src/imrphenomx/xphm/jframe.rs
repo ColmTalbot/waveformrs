@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2024-2026 Colm Talbot. Parts of waveformrs are translated
+// from LALSuite, GSL, glibc and fdlibm: see NOTICE.md for their authors.
 //! The modes `h_lm` of IMRPhenomXPHM in the inertial J frame, as
 //! `SimInspiralChooseFDModes` returns them: `XLALSimIMRPhenomXPHMOneMode`
 //! (uniform grids) and `XLALSimIMRPhenomXPHMFrequencySequenceOneMode`

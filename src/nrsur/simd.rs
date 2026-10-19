@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2024-2026 Colm Talbot. Parts of waveformrs are translated
+// from LALSuite, GSL, glibc and fdlibm: see NOTICE.md for their authors.
 //! Four `f64` lanes with element-wise, separately rounded arithmetic (NEON
 //! on aarch64, plain arrays elsewhere), used to evaluate independent time
 //! samples together. Every operation rounds exactly as the scalar operation

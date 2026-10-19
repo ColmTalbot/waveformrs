@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2024-2026 Colm Talbot. Parts of waveformrs are translated
+// from LALSuite, GSL, glibc and fdlibm: see NOTICE.md for their authors.
 //! Mode-dependent variables and coefficients of IMRPhenomXHM,
 //! `LALSimIMRPhenomXHM_internals.c`, for the default model versions
 //! (`PhenomXHMReleaseVersion` 122022 with the 122019 phase).

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2024-2026 Colm Talbot. Parts of waveformrs are translated
+// from LALSuite, GSL, glibc and fdlibm: see NOTICE.md for their authors.
 //! The C library's `cbrt`, which `f64::cbrt` is not on every platform.
 //!
 //! On linux-gnu, Rust links its `compiler-builtins` ahead of the system libm,

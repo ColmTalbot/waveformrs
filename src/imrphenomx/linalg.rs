@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2024-2026 Colm Talbot. Parts of waveformrs are translated
+// from LALSuite, GSL, glibc and fdlibm: see NOTICE.md for their authors.
 //! Dense linear solve for the small collocation systems of IMRPhenomX.
 //!
 //! LALSimulation solves these with `gsl_linalg_LU_decomp` followed by

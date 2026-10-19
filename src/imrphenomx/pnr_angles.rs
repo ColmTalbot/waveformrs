@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2024-2026 Colm Talbot. Parts of waveformrs are translated
+// from LALSuite, GSL, glibc and fdlibm: see NOTICE.md for their authors.
 //! The model-independent parts of the PNR precession angles of
 //! IMRPhenomXPNR (Hamilton et al. 2021, arXiv:2107.08876), following
 //! `LALSimIMRPhenomX_PNR_alpha.c`, `LALSimIMRPhenomX_PNR_beta.c` and

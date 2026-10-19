@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2024-2026 Colm Talbot. Parts of waveformrs are translated
+// from LALSuite, GSL, glibc and fdlibm: see NOTICE.md for their authors.
 //! Numerical "SpinTaylor" Euler angles of IMRPhenomXP/XPHM
 //! (`PhenomXPrecVersion` 320, arXiv:2412.16721), following
 //! `LALSimIMRPhenomX_precession.c`:

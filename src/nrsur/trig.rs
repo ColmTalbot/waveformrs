@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2024-2026 Colm Talbot. Parts of waveformrs are translated
+// from LALSuite, GSL, glibc and fdlibm: see NOTICE.md for their authors.
 //! `sin` and `cos` as LALSimulation evaluates them.
 //!
 //! On Darwin, clang combines `sin(x)` and `cos(x)` of the same argument in

@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2024-2026 Colm Talbot. Parts of waveformrs are translated
+// from LALSuite, GSL, glibc and fdlibm: see NOTICE.md for their authors.
 //! Multiple-scale-analysis (MSA) Euler angles of IMRPhenomXP/XPHM
 //! (`PhenomXPrecVersion` 223; Chatziioannou et al. 2017, arXiv:1703.03967,
 //! as implemented in `LALSimInspiralFDPrecAngles`), following the MSA
