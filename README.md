@@ -55,7 +55,7 @@ Time domain:
 - **Python bindings.** The same models and features from Python with numpy
   arrays, including batches across threads. See
   [python/README.md](python/README.md).
-- **Platforms.** Tested on macOS and in Linux containers.
+- **Platforms.** Tested on macOS and Linux, on every push to GitHub.
 
 ## Getting started
 

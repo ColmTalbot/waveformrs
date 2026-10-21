@@ -192,6 +192,15 @@ All notable changes to `waveformrs` are recorded here.
     derivative contains `(4/3)`, an integer division (= 1); it has no
     effect on LAL's waveforms and is kept here to match.
 
+- **Continuous integration** (`.github/workflows/ci.yml`): build warnings,
+  clippy and rustfmt; `cargo test --release` on macOS arm64 (strict
+  tolerances) and Linux x86-64 and arm64 (the cross-build tolerances of
+  `tests/common`), with and without the `fft` feature; and the Python tests
+  against lalsimulation 6.2.0 from conda-forge on macOS and Linux. The
+  NRSur7dq4 data are downloaded from Zenodo and cached. The SpinTaylor
+  suites of IMRPhenomXP_NRTidalv2/v3 have cross-build tolerances of 1e-6
+  (6e-8 seen on Linux arm64).
+
 ### Fixed
 
 - **IMRPhenomXHM returns an error instead of panicking** through
