@@ -199,7 +199,9 @@ All notable changes to `waveformrs` are recorded here.
   against lalsimulation 6.2.0 from conda-forge on macOS and Linux. The
   NRSur7dq4 data are downloaded from Zenodo and cached. The SpinTaylor
   suites of IMRPhenomXP_NRTidalv2/v3 have cross-build tolerances of 1e-6
-  (6e-8 seen on Linux arm64).
+  (6e-8 seen on Linux arm64), and the IMRPhenomXHM modes are looser
+  (the (3,±2) modes 2e-1, the others 4e-7), as the Ubuntu runners differ
+  from the containers of `docs/linux.md` by up to five times.
 
 ### Fixed
 

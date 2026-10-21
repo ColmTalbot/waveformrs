@@ -90,7 +90,8 @@ in `CROSS_BUILD_TOLERANCES`. That table covers only the suites that amplify
 last-bit differences:
 
 * the IMRPhenomXHM (3,±2) mode, the l = 3 modes of XPHM, and every XHM/XPHM
-  polarisation (relative 1e-3 to 2e-2);
+  polarisation (relative 1e-3 to 2e-1; the (3,±2) modes differ more on
+  the Ubuntu runners of GitHub Actions than in these containers);
 * the MSA angles;
 * the SpinTaylor angles of IMRPhenomXP_NRTidalv2 and v3 (relative 1e-6);
 * the SpinTaylor orbit and angles;

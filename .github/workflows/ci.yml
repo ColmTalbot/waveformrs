@@ -6,6 +6,7 @@ name: CI
 
 on:
   push:
+    branches: [main]
   pull_request:
   workflow_dispatch:
 
@@ -56,9 +57,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - name: NRSur7dq4 data
         uses: ./.github/actions/nrsur-data
-      - run: cargo test --release
+      - run: cargo test --release --no-fail-fast
       # the doctests of src/conversions need the fft feature (docs/linux.md)
-      - run: cargo test --release --no-default-features --lib --tests
+      - run: cargo test --release --no-fail-fast --no-default-features --lib --tests
 
   python:
     name: Python bindings (${{ matrix.os }})
