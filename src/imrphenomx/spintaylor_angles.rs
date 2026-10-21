@@ -300,7 +300,7 @@ impl Coarse {
     }
 }
 
-/// `IMRPhenomX_InspiralAngles_SpinTaylor` for black-hole binaries: evolve the
+/// `IMRPhenomX_InspiralAngles_SpinTaylor`: evolve the
 /// SpinTaylorT4 equations from `f_min` (Hz, already including the buffer
 /// below the first frequency of the waveform) through `f_ref` up to
 /// `(fRING + 8 fDAMP) / M` of the aligned-spin model.
@@ -350,7 +350,11 @@ pub(crate) fn inspiral_angles_spintaylor_with(
     }
     let (m1_si, m2_si) = (wf.m1_si, wf.m2_si);
     let pi_gm = PI * (m1_si + m2_si) * (G_SI / C_SI) / (C_SI * C_SI);
-    let binary = SpinTaylorT4::new(m1_si, m2_si, chi1, chi2);
+    // the matter parameters of the waveform struct (black holes unless the
+    // NRTidal corrections are on)
+    let lambda = [wf.lambda1, wf.lambda2];
+    let quadparam = [wf.quadparam1, wf.quadparam2];
+    let binary = SpinTaylorT4::new(m1_si, m2_si, chi1, chi2).with_matter(lambda, quadparam);
 
     // For versions 32* to work, the integration must start in the inspiral.
     let f_meco_hz = mf_to_hz(wf.f_meco, wf.m_tot);
@@ -396,8 +400,9 @@ pub(crate) fn inspiral_angles_spintaylor_with(
             "transition frequency in PN integration is not positive",
         ));
     }
-    let fine_binary =
-        SpinTaylorT4::new(m1_si, m2_si, at.s1, at.s2).with_orientation(at.lnhat, at.e1);
+    let fine_binary = SpinTaylorT4::new(m1_si, m2_si, at.s1, at.s2)
+        .with_orientation(at.lnhat, at.e1)
+        .with_matter(lambda, quadparam);
     let fine = Run::evolve(&fine_binary, 0.5 / f_cut, f_trans, f_cut)?;
     let len_pn = copy_length + fine.len();
     if len_pn < 4 {

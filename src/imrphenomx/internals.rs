@@ -14,6 +14,7 @@ use crate::imrphenomx::qnm::{fdamp22, fring22};
 use crate::imrphenomx::utilities::{
     chi_eff, chi_pn_hat, dchi, f_isco, f_meco, final_mass_2017, final_spin_2017, s_tot_r,
 };
+use crate::nrtidal::NRTidalVersion;
 
 /// Errors raised for parameters at which LALSimulation refuses to generate
 /// IMRPhenomX waveforms.
@@ -62,6 +63,8 @@ pub enum IMRPhenomXError {
     /// The PNR angles of IMRPhenomXPNR could not be computed where
     /// LALSimulation raises an error.
     PnrAngles(&'static str),
+    /// A tidal deformability is negative (NRTidal models).
+    NegativeTidalDeformability,
 }
 
 impl fmt::Display for IMRPhenomXError {
@@ -96,6 +99,10 @@ impl fmt::Display for IMRPhenomXError {
             ),
             Self::SpinTaylorAngles(why) => write!(f, "SpinTaylor Euler angles: {why}"),
             Self::InvalidModeArray => write!(f, "mode array contains unavailable modes"),
+            Self::NegativeTidalDeformability => write!(
+                f,
+                "the tidal deformabilities must be non-negative for NRTidalv2 and NRTidalv3"
+            ),
             Self::PrecessionVersionUnavailable {
                 requested,
                 fallback,
@@ -355,11 +362,16 @@ pub(crate) struct WaveformStruct {
     /// S1.L + S2.L in units of M^2.
     pub(crate) sl: f64,
 
-    // Matter parameters (always the BBH values)
+    // Matter parameters (the BBH values unless `nrtidal` is set)
     pub(crate) lambda1: f64,
     pub(crate) lambda2: f64,
     pub(crate) quadparam1: f64,
     pub(crate) quadparam2: f64,
+    /// The NRTidal corrections of the (2,2) mode (LAL's
+    /// `PhenomXTidalFlag`), see [`WaveformStruct::set_nrtidal`].
+    pub(crate) nrtidal: Option<NRTidalVersion>,
+    /// `kappa2T` (zero for black holes).
+    pub(crate) kappa2t: f64,
 
     /// `PhenomXHMReleaseVersion` of the higher modes: 122022 (default) or
     /// 122019 (original amplitudes, used by IMRPhenomXPNR).
@@ -590,6 +602,8 @@ impl WaveformStruct {
             lambda2: 0.0,
             quadparam1: 1.0,
             quadparam2: 1.0,
+            nrtidal: None,
+            kappa2t: 0.0,
             hm_release: 122022,
             f_ref,
             phi_ref_in: phi0,
@@ -668,6 +682,37 @@ impl WaveformStruct {
     pub(crate) fn set_final_spin(&mut self, a_final: f64) {
         self.a_final = a_final;
         self.set_ringdown_frequencies();
+    }
+
+    /// The matter parameters of `IMRPhenomXSetWaveformVariables` with
+    /// `PhenomXTidalFlag` set: the tidal deformabilities `lambda_1`,
+    /// `lambda_2` of the bodies of mass `mass_1`, `mass_2` as passed to
+    /// [`WaveformStruct::new`] (swapped like the masses), the
+    /// quadrupole-monopole parameters from the deformabilities
+    /// (`XLALSimInspiralSetQuadMonParamsFromLambdas`) and `kappa2T`.
+    pub(crate) fn set_nrtidal(
+        &mut self,
+        version: NRTidalVersion,
+        mass_1: f64,
+        mass_2: f64,
+        lambda_1: f64,
+        lambda_2: f64,
+    ) -> Result<(), IMRPhenomXError> {
+        if !(lambda_1 >= 0.0 && lambda_2 >= 0.0) {
+            return Err(IMRPhenomXError::NegativeTidalDeformability);
+        }
+        let (lambda1, lambda2) = if mass_1 >= mass_2 {
+            (lambda_1, lambda_2)
+        } else {
+            (lambda_2, lambda_1)
+        };
+        self.nrtidal = Some(version);
+        self.lambda1 = lambda1;
+        self.lambda2 = lambda2;
+        self.quadparam1 = crate::nrtidal::default_quadparam(lambda1);
+        self.quadparam2 = crate::nrtidal::default_quadparam(lambda2);
+        self.kappa2t = crate::nrtidal::kappa2t(self.m1_si, self.m2_si, lambda1, lambda2);
+        Ok(())
     }
 
     /// Set the reference frequency in Hz (zero selects `f_min`).

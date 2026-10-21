@@ -56,6 +56,7 @@ use crate::grid::FrequencyGrid;
 use crate::imrphenomd::IMRPhenomD;
 use crate::imrphenomx::{IMRPhenomXAS, IMRPhenomXHM, Polarizations, PrecessionVersion};
 use crate::nrsur::{NRSur7dq4, NRSurWorkspace};
+use crate::nrtidal::NRTidalVersion;
 use crate::taylor::TaylorF2;
 
 pub use crate::nrsur::{Mode as TimeSeriesMode, TimeSeriesModes, TimeSeriesPolarizations};
@@ -147,7 +148,7 @@ impl Extrinsic {
 /// ```
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 #[non_exhaustive]
-#[allow(clippy::upper_case_acronyms)]
+#[allow(clippy::upper_case_acronyms, non_camel_case_types)]
 pub enum Approximant {
     /// [`TaylorF2`] (frequency domain, aligned spins, (2,2) mode).
     TaylorF2,
@@ -168,11 +169,27 @@ pub enum Approximant {
     IMRPhenomXPNR,
     /// [`NRSur7dq4`] (time domain, precessing, `l <= 4`).
     NRSur7dq4,
+    /// [`IMRPhenomD`] with the NRTidalv2 corrections
+    /// ([`IMRPhenomD::with_nrtidal_v2`]; frequency domain, aligned spins,
+    /// (2,2) mode).
+    IMRPhenomD_NRTidalv2,
+    /// [`IMRPhenomXAS`] with the NRTidalv2 corrections (frequency domain,
+    /// aligned spins, (2,2) mode).
+    IMRPhenomXAS_NRTidalv2,
+    /// [`IMRPhenomXAS`] with the NRTidalv3 corrections (frequency domain,
+    /// aligned spins, (2,2) mode).
+    IMRPhenomXAS_NRTidalv3,
+    /// [`IMRPhenomXP`](crate::imrphenomx::IMRPhenomXP) with the NRTidalv2
+    /// corrections (frequency domain, precessing, (2,2) mode).
+    IMRPhenomXP_NRTidalv2,
+    /// [`IMRPhenomXP`](crate::imrphenomx::IMRPhenomXP) with the NRTidalv3
+    /// corrections (frequency domain, precessing, (2,2) mode).
+    IMRPhenomXP_NRTidalv3,
 }
 
 impl Approximant {
     /// Every approximant of the crate.
-    pub const ALL: [Approximant; 8] = [
+    pub const ALL: [Approximant; 13] = [
         Self::TaylorF2,
         Self::IMRPhenomD,
         Self::IMRPhenomXAS,
@@ -181,6 +198,11 @@ impl Approximant {
         Self::IMRPhenomXPHM,
         Self::IMRPhenomXPNR,
         Self::NRSur7dq4,
+        Self::IMRPhenomD_NRTidalv2,
+        Self::IMRPhenomXAS_NRTidalv2,
+        Self::IMRPhenomXAS_NRTidalv3,
+        Self::IMRPhenomXP_NRTidalv2,
+        Self::IMRPhenomXP_NRTidalv3,
     ];
 
     /// LAL's name of the approximant.
@@ -194,6 +216,11 @@ impl Approximant {
             Self::IMRPhenomXPHM => "IMRPhenomXPHM",
             Self::IMRPhenomXPNR => "IMRPhenomXPNR",
             Self::NRSur7dq4 => "NRSur7dq4",
+            Self::IMRPhenomD_NRTidalv2 => "IMRPhenomD_NRTidalv2",
+            Self::IMRPhenomXAS_NRTidalv2 => "IMRPhenomXAS_NRTidalv2",
+            Self::IMRPhenomXAS_NRTidalv3 => "IMRPhenomXAS_NRTidalv3",
+            Self::IMRPhenomXP_NRTidalv2 => "IMRPhenomXP_NRTidalv2",
+            Self::IMRPhenomXP_NRTidalv3 => "IMRPhenomXP_NRTidalv3",
         }
     }
 
@@ -207,8 +234,25 @@ impl Approximant {
     pub fn is_precessing(&self) -> bool {
         matches!(
             self,
-            Self::IMRPhenomXP | Self::IMRPhenomXPHM | Self::IMRPhenomXPNR | Self::NRSur7dq4
+            Self::IMRPhenomXP
+                | Self::IMRPhenomXPHM
+                | Self::IMRPhenomXPNR
+                | Self::NRSur7dq4
+                | Self::IMRPhenomXP_NRTidalv2
+                | Self::IMRPhenomXP_NRTidalv3
         )
+    }
+
+    /// The version of the NRTidal corrections of the approximant (`None`
+    /// for the binary-black-hole models).
+    pub fn nrtidal_version(&self) -> Option<NRTidalVersion> {
+        match self {
+            Self::IMRPhenomD_NRTidalv2
+            | Self::IMRPhenomXAS_NRTidalv2
+            | Self::IMRPhenomXP_NRTidalv2 => Some(NRTidalVersion::V2),
+            Self::IMRPhenomXAS_NRTidalv3 | Self::IMRPhenomXP_NRTidalv3 => Some(NRTidalVersion::V3),
+            _ => None,
+        }
     }
 }
 
@@ -277,6 +321,14 @@ pub struct WaveformOptions {
     /// [`IMRPhenomXPNR::with_parity_fix`](crate::imrphenomx::IMRPhenomXPNR::with_parity_fix)).
     /// Ignored by the other models.
     pub pnr_parity_fix: bool,
+    /// LAL's `lambda1`, `lambda2`: the dimensionless tidal deformabilities
+    /// `Lambda_i = (2 / 3) k_2 / C_i^5` of the two bodies (in the order of
+    /// [`Binary::mass_1`], [`Binary::mass_2`]), used by the NRTidal
+    /// approximants. Zero by default; like LAL, the other approximants
+    /// reject non-zero values (TaylorF2 too, whose tidal terms are not
+    /// implemented here).
+    pub lambda_1: f64,
+    pub lambda_2: f64,
 }
 
 impl Default for WaveformOptions {
@@ -286,6 +338,8 @@ impl Default for WaveformOptions {
             mode_array: None,
             version_fallback: true,
             pnr_parity_fix: true,
+            lambda_1: 0.0,
+            lambda_2: 0.0,
         }
     }
 }
@@ -328,6 +382,19 @@ impl WaveformOptions {
     pub fn with_pnr_parity_fix(mut self, fix: bool) -> Self {
         self.pnr_parity_fix = fix;
         self
+    }
+
+    /// Set the tidal deformabilities [`WaveformOptions::lambda_1`] and
+    /// [`WaveformOptions::lambda_2`].
+    pub fn with_tidal_deformabilities(mut self, lambda_1: f64, lambda_2: f64) -> Self {
+        self.lambda_1 = lambda_1;
+        self.lambda_2 = lambda_2;
+        self
+    }
+
+    /// Whether a tidal deformability is set (LAL's `checkTidesZero` fails).
+    fn has_tides(&self) -> bool {
+        self.lambda_1 != 0.0 || self.lambda_2 != 0.0
     }
 }
 
@@ -552,6 +619,12 @@ pub fn choose_fd_model(
         }),
         None => Ok(()),
     };
+    if approximant.nrtidal_version().is_none() && options.has_tides() {
+        return Err(Error::Unsupported {
+            approximant,
+            what: "tidal deformabilities (use an NRTidal approximant)",
+        });
+    }
     Ok(match approximant {
         Approximant::TaylorF2 => {
             no_mode_array()?;
@@ -578,6 +651,18 @@ pub fn choose_fd_model(
         }
         Approximant::IMRPhenomXPHM => Box::new(frequency_domain::xphm(binary, options)?),
         Approximant::IMRPhenomXPNR => Box::new(frequency_domain::xpnr(binary, options)?),
+        Approximant::IMRPhenomD_NRTidalv2 => {
+            no_mode_array()?;
+            Box::new(frequency_domain::imrphenomd_nrtidal(binary, options)?)
+        }
+        Approximant::IMRPhenomXAS_NRTidalv2 | Approximant::IMRPhenomXAS_NRTidalv3 => {
+            no_mode_array()?;
+            Box::new(frequency_domain::xas_nrtidal(approximant, binary, options)?)
+        }
+        Approximant::IMRPhenomXP_NRTidalv2 | Approximant::IMRPhenomXP_NRTidalv3 => {
+            no_mode_array()?;
+            Box::new(frequency_domain::xp_nrtidal(approximant, binary, options)?)
+        }
         Approximant::NRSur7dq4 => {
             return Err(Error::Unsupported {
                 approximant,
@@ -638,6 +723,12 @@ pub fn choose_fd_modes(
     f_max: f64,
     options: &WaveformOptions,
 ) -> Result<FrequencyModes> {
+    if options.has_tides() {
+        return Err(Error::Unsupported {
+            approximant,
+            what: "tidal deformabilities",
+        });
+    }
     match approximant {
         Approximant::IMRPhenomXHM => {
             let mut model = IMRPhenomXHM::from_binary(binary)?;

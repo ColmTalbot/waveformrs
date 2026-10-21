@@ -42,11 +42,13 @@ pub const BINARY_NAMES: [&str; 8] = [
 ];
 
 /// The options that can be given as keyword arguments.
-pub const OPTION_NAMES: [&str; 4] = [
+pub const OPTION_NAMES: [&str; 6] = [
     "precession_version",
     "mode_array",
     "version_fallback",
     "pnr_parity_fix",
+    "lambda_1",
+    "lambda_2",
 ];
 
 /// Set the option `name` of `options` to `value`; `Ok(false)` if `name` is
@@ -73,6 +75,14 @@ fn apply_option(
         }
         "version_fallback" => current.with_version_fallback(extract_bool(value, name)?),
         "pnr_parity_fix" => current.with_pnr_parity_fix(extract_bool(value, name)?),
+        "lambda_1" => {
+            let lambda_2 = current.lambda_2;
+            current.with_tidal_deformabilities(extract_f64(value, name)?, lambda_2)
+        }
+        "lambda_2" => {
+            let lambda_1 = current.lambda_1;
+            current.with_tidal_deformabilities(lambda_1, extract_f64(value, name)?)
+        }
         _ => {
             *options = current;
             return Ok(false);
@@ -116,6 +126,8 @@ fn option_items<'py>(
                 .to_owned()
                 .into_any(),
         ),
+        ("lambda_1", options.lambda_1.into_pyobject(py)?.into_any()),
+        ("lambda_2", options.lambda_2.into_pyobject(py)?.into_any()),
     ])
 }
 
@@ -325,6 +337,13 @@ pub fn parse_request(kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<(Binary, Wa
 ///   restores the mirror symmetry of the waveform (default ``True``, as
 ///   LALSimulation master after 6.2.1); ``False`` reproduces LALSimulation
 ///   6.2.0 and 6.2.1.
+/// * ``lambda_1``, ``lambda_2``: LAL's ``lambda1``, ``lambda2``, the
+///   dimensionless tidal deformabilities of the bodies of ``mass_1`` and
+///   ``mass_2`` (default 0), used by the NRTidal approximants
+///   (``IMRPhenomD_NRTidalv2``, ``IMRPhenomXAS_NRTidalv2``,
+///   ``IMRPhenomXAS_NRTidalv3``, ``IMRPhenomXP_NRTidalv2``,
+///   ``IMRPhenomXP_NRTidalv3``); the other approximants reject non-zero
+///   values.
 ///
 /// Multibanding is not implemented: the models reproduce LAL with
 /// ``PhenomXHMThresholdMband = PhenomXPHMThresholdMband = 0``.
@@ -340,7 +359,7 @@ impl PyWaveformOptions {
     #[pyo3(
         signature = (**kwargs),
         text_signature = "(*, precession_version=320, mode_array=None, version_fallback=True, \
-                          pnr_parity_fix=True)"
+                          pnr_parity_fix=True, lambda_1=0.0, lambda_2=0.0)"
     )]
     fn new(kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<Self> {
         let keywords = match kwargs {
@@ -402,6 +421,18 @@ impl PyWaveformOptions {
     #[getter]
     fn pnr_parity_fix(&self) -> bool {
         self.inner.pnr_parity_fix
+    }
+
+    /// The tidal deformability of the body of ``mass_1`` (LAL's ``lambda1``).
+    #[getter]
+    fn lambda_1(&self) -> f64 {
+        self.inner.lambda_1
+    }
+
+    /// The tidal deformability of the body of ``mass_2`` (LAL's ``lambda2``).
+    #[getter]
+    fn lambda_2(&self) -> f64 {
+        self.inner.lambda_2
     }
 
     /// The options as a dict of keyword arguments.

@@ -23,6 +23,15 @@ Frequency domain:
   LALSuite; the behaviour of the LALSimulation releases is available as an
   option.
 
+Binary neutron stars, with the NRTidal tidal corrections:
+
+- **IMRPhenomD_NRTidalv2**: IMRPhenomD with NRTidalv2.
+- **IMRPhenomXAS_NRTidalv2** and **IMRPhenomXAS_NRTidalv3**: aligned spins,
+  dominant mode, with NRTidalv2 or NRTidalv3.
+- **IMRPhenomXP_NRTidalv2** and **IMRPhenomXP_NRTidalv3**: precessing spins,
+  dominant mode, with NRTidalv2 or NRTidalv3 and the same choice of
+  precession angles as IMRPhenomXP.
+
 Time domain:
 
 - **NRSur7dq4**: numerical-relativity surrogate for precessing binaries. It
@@ -40,8 +49,9 @@ Time domain:
 - **Time and frequency domains.** Convert between them, following
   LALSimulation's conditioning.
 - **Options.** Settings matching LALSimulation's, including the choice of
-  precession angles, a restricted set of modes, and whether a model may
-  switch precession versions automatically.
+  precession angles, a restricted set of modes, whether a model may
+  switch precession versions automatically, and the tidal deformabilities
+  of neutron stars.
 - **Python bindings.** The same models and features from Python with numpy
   arrays, including batches across threads. See
   [python/README.md](python/README.md).

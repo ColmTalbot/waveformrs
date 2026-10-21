@@ -197,7 +197,7 @@ def test_pickle():
     assert wf.WaveformOptions(**options.as_dict()) == options
     assert repr(options) == (
         "WaveformOptions(precession_version=102, mode_array=[(2, 2)], version_fallback=True, "
-        "pnr_parity_fix=True)"
+        "pnr_parity_fix=True, lambda_1=0.0, lambda_2=0.0)"
     )
     grid = wf.FrequencyGrid.uniform(20.0, 64.0, 0.5)
     np.testing.assert_array_equal(pickle.loads(pickle.dumps(grid)).frequencies, grid.frequencies)

@@ -28,6 +28,7 @@ use crate::imrphenomx::{IMRPhenomXAS, IMRPhenomXP, IMRPhenomXPHM, IMRPhenomXPNR}
 use crate::model::choose_td_model;
 use crate::model::{choose_fd_model, Approximant, Binary, TimeDomainModel, WaveformOptions};
 use crate::nrsur::NRSur7dq4;
+use crate::nrtidal;
 #[cfg(feature = "fft")]
 use crate::spintaylor::fp::fma;
 
@@ -115,6 +116,15 @@ impl FdWaveform {
         })
     }
 
+    /// The tidal deformabilities of the options, non-negative.
+    fn tidal_deformabilities(&self) -> Result<(f64, f64)> {
+        let (lambda_1, lambda_2) = (self.options.lambda_1, self.options.lambda_2);
+        if !(lambda_1 >= 0.0 && lambda_2 >= 0.0) {
+            return Err(self.invalid("the tidal deformabilities must be non-negative"));
+        }
+        Ok((lambda_1, lambda_2))
+    }
+
     fn invalid(&self, message: &'static str) -> Error {
         Error::InvalidParameter {
             approximant: self.approximant,
@@ -173,6 +183,33 @@ impl FdWaveform {
                     model = model.with_mode_array(&positive)?;
                 }
                 let (hp, hc) = model.polarizations_uniform(delta_f, f_min, f_max)?;
+                let n = hp.len();
+                Ok(embed(delta_f, n, 0, hp, hc))
+            }
+            Approximant::IMRPhenomXP_NRTidalv2 | Approximant::IMRPhenomXP_NRTidalv3 => {
+                // XLALSimIMRPhenomXPHM with PhenomXTidalFlag and the (2,2)
+                // co-precessing mode only (the frequency sequences use
+                // IMRPhenomXP)
+                if options.mode_array.is_some() {
+                    return Err(Error::Unsupported {
+                        approximant: self.approximant,
+                        what: "a mode array",
+                    });
+                }
+                let (lambda_1, lambda_2) = self.tidal_deformabilities()?;
+                let version = self.approximant.nrtidal_version().expect("NRTidal");
+                // f_ref = 0 is f_min in the driver for both versions
+                let f_ref = if f_ref == 0.0 { f_min } else { f_ref };
+                let binary = Binary { f_ref, ..*b };
+                let (hp, hc) = IMRPhenomXPHM::with_nrtidal(
+                    &binary,
+                    options.precession_version,
+                    version,
+                    lambda_1,
+                    lambda_2,
+                )?
+                .with_version_fallback(options.version_fallback)
+                .polarizations_uniform(delta_f, f_min, f_max)?;
                 let n = hp.len();
                 Ok(embed(delta_f, n, 0, hp, hc))
             }
@@ -252,8 +289,61 @@ impl FdWaveform {
                 }
                 Ok(embed(delta_f, n, i_start, hp, hc))
             }
-            Approximant::IMRPhenomXAS | Approximant::IMRPhenomXHM => {
-                // XLALSimIMRPhenomXASGenerateFD, XLALSimIMRPhenomXHM2
+            Approximant::IMRPhenomD_NRTidalv2 => {
+                // IMRPhenomD_NRTidal_Core: IMRPhenomD up to 1.3 times the
+                // merger frequency (and zeros up to f_max beyond it)
+                let binary = Binary {
+                    f_ref: if f_ref == 0.0 { f_min } else { f_ref },
+                    ..*b
+                };
+                let model = choose_fd_model(self.approximant, &binary, options)?;
+                let (lambda_1, lambda_2) = self.tidal_deformabilities()?;
+                let (m1_si, m2_si) = (b.mass_1 * MSUN_SI, b.mass_2 * MSUN_SI);
+                let (m1_si, m2_si, lambda_1, lambda_2) = if m1_si < m2_si {
+                    (m2_si, m1_si, lambda_2, lambda_1)
+                } else {
+                    (m1_si, m2_si, lambda_1, lambda_2)
+                };
+                let kappa2t = nrtidal::kappa2t(m1_si, m2_si, lambda_1, lambda_2);
+                let f_merger =
+                    nrtidal::merger_frequency((m1_si + m2_si) / MSUN_SI, kappa2t, m1_si / m2_si);
+                let nrtidal_f_max = 1.3 * f_merger;
+                let f_max_tidal = if f_max > nrtidal_f_max || f_max == 0.0 {
+                    nrtidal_f_max
+                } else {
+                    f_max
+                };
+                // XLALSimIMRPhenomDGenerateFD up to f_max_tidal
+                let m_sec =
+                    (b.mass_1 * MSUN_SI / MSUN_SI + b.mass_2 * MSUN_SI / MSUN_SI) * MTSUN_SI;
+                let f_cut = 0.2 / m_sec;
+                if f_cut <= f_min {
+                    return Err(self.invalid("the cutoff frequency Mf = 0.2 is below f_min"));
+                }
+                let f_max_prime = f_max_tidal.min(f_cut);
+                if f_max_prime <= f_min {
+                    return Err(self.invalid("f_max must be above f_min"));
+                }
+                let mut n = next_pow2((f_max_prime / delta_f) as usize) + 1;
+                let i_start = (f_min / delta_f) as usize;
+                let i_stop = (f_max_prime / delta_f) as usize;
+                let frequencies: Vec<f64> = (i_start..i_stop).map(|i| i as f64 * delta_f).collect();
+                let (hp, hc) = model.polarizations(&frequencies)?;
+                if f_max_prime < f_max_tidal {
+                    n = next_pow2((f_max_tidal / delta_f) as usize) + 1;
+                }
+                if f_max > nrtidal_f_max {
+                    n = 2.0f64.powf((f_max / delta_f).log2().ceil()) as usize + 1;
+                }
+                Ok(embed(delta_f, n, i_start, hp, hc))
+            }
+            Approximant::IMRPhenomXAS
+            | Approximant::IMRPhenomXHM
+            | Approximant::IMRPhenomXAS_NRTidalv2
+            | Approximant::IMRPhenomXAS_NRTidalv3 => {
+                // XLALSimIMRPhenomXASGenerateFD, XLALSimIMRPhenomXHM2 (and
+                // XLALSimIMRPhenomXHM with the (2,2) mode only for the
+                // NRTidal approximants)
                 let binary = Binary {
                     f_ref: if f_ref == 0.0 { f_min } else { f_ref },
                     ..*b
@@ -394,9 +484,12 @@ impl FdGenerator for FdWaveform {
     fn zero_reference_frequency_is_f_min(&self) -> bool {
         // (IMRPhenomXPNR is not among LAL's FIX_REFERENCE_FREQUENCY
         // approximants: its f_ref = 0 becomes the lowered f_min)
+        // (nor is IMRPhenomXP_NRTidalv3, unlike IMRPhenomXP_NRTidalv2)
         matches!(
             self.approximant,
-            Approximant::IMRPhenomXP | Approximant::IMRPhenomXPHM
+            Approximant::IMRPhenomXP
+                | Approximant::IMRPhenomXPHM
+                | Approximant::IMRPhenomXP_NRTidalv2
         )
     }
 

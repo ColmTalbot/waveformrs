@@ -611,6 +611,119 @@ def uniform_precessing_cases(approximant="IMRPhenomXP", extra_flags=None, extra=
     ]
 
 
+def nrtidal_aligned_cases(approximant):
+    """Binary neutron stars (and a black hole with a neutron star) for the
+    aligned-spin NRTidal approximants: unequal deformabilities, bodies in
+    either order, zero deformabilities, f_ref = 0 and grids that end before
+    the merger frequency."""
+    configs = [
+        # mass_1, mass_2, chi_1, chi_2, lambda_1, lambda_2, inclination, phi_ref, f_min, f_ref, f_max
+        (1.4, 1.3, 0.0, 0.0, 400.0, 600.0, 0.4, 0.3, 20.0, 20.0, 4096.0),
+        (1.6, 1.2, 0.05, -0.03, 200.0, 1500.0, 1.1, 2.0, 25.0, 40.0, 4096.0),
+        (1.2, 1.6, -0.03, 0.05, 1500.0, 200.0, 1.1, 2.0, 25.0, 40.0, 4096.0),
+        (1.35, 1.35, 0.1, 0.1, 800.0, 800.0, 0.0, 1.0, 20.0, 0.0, 3000.0),
+        (1.8, 1.1, 0.3, -0.2, 50.0, 3000.0, 2.2, 4.5, 30.0, 30.0, 4096.0),
+        (2.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.8, 0.5, 20.0, 25.0, 4096.0),
+        (1.4, 1.4, 0.0, 0.0, 5000.0, 4000.0, 1.6, 5.0, 15.0, 20.0, 4096.0),
+        # the grid ends before the merger frequency
+        (1.4, 1.3, 0.02, 0.01, 400.0, 600.0, 0.4, 0.3, 20.0, 20.0, 600.0),
+        (5.0, 1.4, 0.4, 0.0, 0.0, 700.0, 1.0, 2.5, 20.0, 30.0, 4096.0),
+    ]
+    return [
+        dict(
+            approximant=approximant,
+            mass_1=m1,
+            mass_2=m2,
+            chi_1=c1,
+            chi_2=c2,
+            luminosity_distance=100.0,
+            inclination=iota,
+            phi_ref=phi,
+            f_min=fmin,
+            f_ref=fref,
+            f_max=fmax,
+            lal_flags=dict(TidalLambda1=l1, TidalLambda2=l2),
+        )
+        for m1, m2, c1, c2, l1, l2, iota, phi, fmin, fref, fmax in configs
+    ]
+
+
+def nrtidal_precessing_cases(approximant):
+    """Precessing binary neutron stars for IMRPhenomXP_NRTidalv2/v3 with the
+    SpinTaylor, MSA and NNLO angles."""
+    configs = [
+        # mass_1, mass_2, spin_1, spin_2, lambda_1, lambda_2, f_min, f_ref, f_max, PrecVersion
+        (1.4, 1.3, [0.1, 0.05, 0.05], [-0.05, 0.08, 0.0], 400.0, 600.0, 20.0, 20.0, 4096.0, 320),
+        (1.6, 1.2, [0.2, -0.1, 0.1], [0.0, 0.1, -0.05], 200.0, 1500.0, 25.0, 40.0, 4096.0, 320),
+        (1.2, 1.6, [0.0, 0.1, -0.05], [0.2, -0.1, 0.1], 1500.0, 200.0, 25.0, 40.0, 4096.0, 320),
+        (1.35, 1.35, [0.3, 0.0, 0.2], [0.0, 0.3, -0.2], 800.0, 800.0, 20.0, 0.0, 3000.0, 320),
+        (1.4, 1.3, [0.1, 0.05, 0.05], [-0.05, 0.08, 0.0], 400.0, 600.0, 20.0, 30.0, 4096.0, 223),
+        (1.8, 1.1, [0.3, 0.2, -0.1], [0.0, 0.0, 0.0], 50.0, 3000.0, 30.0, 30.0, 4096.0, 223),
+        (1.4, 1.3, [0.1, 0.05, 0.05], [-0.05, 0.08, 0.0], 400.0, 600.0, 20.0, 20.0, 4096.0, 102),
+        (5.0, 1.4, [0.5, 0.2, 0.3], [0.0, 0.0, 0.0], 0.0, 700.0, 20.0, 25.0, 4096.0, 102),
+        (1.4, 1.3, [0.1, 0.05, 0.05], [-0.05, 0.08, 0.0], 400.0, 600.0, 20.0, 20.0, 600.0, 320),
+    ]
+    return [
+        dict(
+            approximant=approximant,
+            mass_1=m1,
+            mass_2=m2,
+            spin_1=s1,
+            spin_2=s2,
+            luminosity_distance=100.0,
+            inclination=1.0,
+            phi_ref=0.8,
+            f_min=fmin,
+            f_ref=fref,
+            f_max=fmax,
+            lal_flags=dict(TidalLambda1=l1, TidalLambda2=l2, PhenomXPrecVersion=version),
+        )
+        for m1, m2, s1, s2, l1, l2, fmin, fref, fmax, version in configs
+    ]
+
+
+def nrtidal_uniform_cases():
+    """The NRTidal approximants on uniform grids (SimInspiralChooseFDWaveform:
+    IMRPhenomD_NRTidal_Core, and IMRPhenomXHM / IMRPhenomXPHM with the (2,2)
+    mode only for IMRPhenomXAS/XP_NRTidalv2/v3), multibanding off."""
+    configs = [
+        # approximant, mass_1, mass_2, spin_1, spin_2, lambda_1, lambda_2, f_min, f_ref, f_max, PrecVersion
+        ("IMRPhenomD_NRTidalv2", 1.4, 1.3, [0, 0, 0.02], [0, 0, -0.01], 400.0, 600.0, 40.0, 0.0, 2048.0, None),
+        ("IMRPhenomD_NRTidalv2", 1.2, 1.6, [0, 0, 0.05], [0, 0, 0.0], 1500.0, 200.0, 40.0, 50.0, 0.0, None),
+        ("IMRPhenomD_NRTidalv2", 1.4, 1.3, [0, 0, 0.0], [0, 0, 0.0], 400.0, 600.0, 40.0, 40.0, 1024.0, None),
+        ("IMRPhenomXAS_NRTidalv2", 1.4, 1.3, [0, 0, 0.02], [0, 0, -0.01], 400.0, 600.0, 40.0, 0.0, 2048.0, None),
+        ("IMRPhenomXAS_NRTidalv3", 1.2, 1.6, [0, 0, 0.05], [0, 0, 0.0], 1500.0, 200.0, 40.0, 50.0, 4096.0, None),
+        ("IMRPhenomXAS_NRTidalv3", 1.4, 1.3, [0, 0, 0.0], [0, 0, 0.0], 400.0, 600.0, 40.0, 40.0, 1024.0, None),
+        ("IMRPhenomXP_NRTidalv2", 1.4, 1.3, [0.1, 0.05, 0.05], [-0.05, 0.08, 0.0], 400.0, 600.0, 40.0, 0.0, 2048.0, 320),
+        ("IMRPhenomXP_NRTidalv3", 1.2, 1.6, [0.0, 0.1, -0.05], [0.2, -0.1, 0.1], 1500.0, 200.0, 40.0, 50.0, 2048.0, 320),
+        ("IMRPhenomXP_NRTidalv3", 1.4, 1.3, [0.1, 0.05, 0.05], [-0.05, 0.08, 0.0], 400.0, 600.0, 40.0, 45.0, 2048.0, 223),
+        ("IMRPhenomXP_NRTidalv2", 1.4, 1.3, [0.1, 0.05, 0.05], [-0.05, 0.08, 0.0], 400.0, 600.0, 40.0, 45.0, 1024.0, 102),
+    ]
+    cases = list()
+    for approximant, m1, m2, s1, s2, l1, l2, fmin, fref, fmax, version in configs:
+        flags = dict(TidalLambda1=l1, TidalLambda2=l2, **NO_MULTIBANDING)
+        if version is not None:
+            flags["PhenomXPrecVersion"] = version
+        cases.append(
+            dict(
+                approximant=approximant,
+                mass_1=m1,
+                mass_2=m2,
+                spin_1=s1,
+                spin_2=s2,
+                luminosity_distance=100.0,
+                inclination=0.9,
+                phi_ref=1.3,
+                f_min=fmin,
+                f_ref=fref,
+                delta_f=1.0,
+                f_max=fmax,
+                lal_flags=flags,
+            )
+        )
+    return cases
+
+
 def xphm_mode_array_cases():
     """IMRPhenomXPHM with restricted mode arrays (which also change the
     frequency range of the SpinTaylor angles) and equal masses and aligned
@@ -1432,6 +1545,12 @@ SUITES = dict(
     nrsur7dq4_modes=nrsur7dq4_mode_cases,
     nrsur7dq4_dynamics=nrsur7dq4_dynamics_cases,
     spin_weighted_harmonics=spin_weighted_harmonic_cases,
+    imrphenomd_nrtidalv2=lambda: nrtidal_aligned_cases("IMRPhenomD_NRTidalv2"),
+    imrphenomxas_nrtidalv2=lambda: nrtidal_aligned_cases("IMRPhenomXAS_NRTidalv2"),
+    imrphenomxas_nrtidalv3=lambda: nrtidal_aligned_cases("IMRPhenomXAS_NRTidalv3"),
+    imrphenomxp_nrtidalv2=lambda: nrtidal_precessing_cases("IMRPhenomXP_NRTidalv2"),
+    imrphenomxp_nrtidalv3=lambda: nrtidal_precessing_cases("IMRPhenomXP_NRTidalv3"),
+    nrtidal_uniform=nrtidal_uniform_cases,
 )
 
 # Suites for a liblalsimulation with the fix of lalsuite !2593

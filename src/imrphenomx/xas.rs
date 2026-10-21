@@ -14,10 +14,12 @@ use crate::fastmath;
 use crate::grid::{FrequencyGrid, ScalePowers};
 use crate::imrphenomx::amplitude::AmpCoefficients;
 use crate::imrphenomx::internals::{fma, IMRPhenomXError, UsefulPowers, WaveformStruct};
+use crate::imrphenomx::nrtidal::Tidal;
 use crate::imrphenomx::phase::{
-    phase_22, phase_22_connection_coefficients, time_shift_22, PhaseCoefficients,
+    dphase_22, phase_22, phase_22_connection_coefficients, time_shift_22, PhaseCoefficients,
 };
 use crate::model::Extrinsic;
+use crate::nrtidal::{NRTidalVersion, TidalSeries};
 use crate::waveform::Waveform;
 
 /// IMRPhenomXAS (Pratten et al. 2020, arXiv:2001.11412), the (2,2) mode of
@@ -83,6 +85,9 @@ pub struct IMRPhenomXAS {
     /// Inclination and orbital reference phase used by
     /// [`crate::model::FrequencyDomainModel`].
     pub(crate) extrinsic: Extrinsic,
+    /// The NRTidal corrections (IMRPhenomXAS_NRTidalv2/v3), if the waveform
+    /// struct has them.
+    pub(crate) tidal: Option<Tidal>,
 }
 
 /// `2 sqrt(5 / (64 pi)) exp(-2 i pi / 2)`, the factor from the spin-weighted
@@ -143,6 +148,54 @@ impl IMRPhenomXAS {
         Ok(Self::from_waveform_struct(wf, false))
     }
 
+    /// IMRPhenomXAS_NRTidalv2 (`version` [`NRTidalVersion::V2`], Colleoni
+    /// et al. 2023, arXiv:2311.15978) or IMRPhenomXAS_NRTidalv3
+    /// ([`NRTidalVersion::V3`], Abac et al. 2024, arXiv:2311.07456): the
+    /// arguments of [`IMRPhenomXAS::from_components`] and the tidal
+    /// deformabilities `Lambda_1`, `Lambda_2` of the two bodies, as
+    /// `XLALSimIMRPhenomXASFrequencySequence` with `PhenomXTidalFlag` 2 or
+    /// 3. The quadrupole-monopole parameters follow from the
+    /// deformabilities as in LAL.
+    ///
+    /// The tidal corrections depend on the whole frequency grid, as in LAL:
+    /// the time shift is set at the merger frequency or at the last
+    /// frequency of the grid if it ends below it, and the NRTidalv3 phase is
+    /// held at its first minimum on the grid after merger. The
+    /// single-frequency methods of [`Waveform`] use the time shift at the
+    /// merger frequency and no minimum.
+    #[allow(clippy::too_many_arguments)]
+    pub fn with_nrtidal(
+        version: NRTidalVersion,
+        mass_1: f64,
+        mass_2: f64,
+        chi_1: f64,
+        chi_2: f64,
+        luminosity_distance: f64,
+        lambda_1: f64,
+        lambda_2: f64,
+    ) -> Result<Self, IMRPhenomXError> {
+        let mut wf = WaveformStruct::new(
+            mass_1,
+            mass_2,
+            chi_1,
+            chi_2,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            luminosity_distance,
+            0.0,
+        )?;
+        wf.set_nrtidal(version, mass_1, mass_2, lambda_1, lambda_2)?;
+        Ok(Self::from_waveform_struct(wf, false))
+    }
+
+    /// The version of the NRTidal corrections, if the model has them.
+    pub fn nrtidal_version(&self) -> Option<NRTidalVersion> {
+        self.tidal.map(|tidal| tidal.version)
+    }
+
     /// Build the coefficients for given waveform variables, as
     /// `IMRPhenomXASGenerateFD` does. If `use_reference_frequency`, the phase
     /// is referenced to `wf.mf_ref`.
@@ -163,6 +216,7 @@ impl IMRPhenomXAS {
             amp_prefactor: wf.amp0 * wf.amp_norm,
             mf_cut: wf.f_cut * wf.m_sec,
             extrinsic: Extrinsic::default(),
+            tidal: wf.nrtidal.map(|version| Tidal::new(&wf, version)),
         };
         if use_reference_frequency {
             new.has_reference_frequency = true;
@@ -198,12 +252,104 @@ impl IMRPhenomXAS {
         self.wf.m_tot
     }
 
-    /// `-(phi22(MfRef) / eta + linb MfRef + lina)`, evaluated as in
-    /// `IMRPhenomXASGenerateFD`.
+    /// `-(phi22(MfRef) / eta + phiTfRef + linb MfRef + lina)`, evaluated
+    /// as in `IMRPhenomXASGenerateFD` (`phiTfRef = -phi_T(MfRef)` with the
+    /// NRTidal corrections, zero otherwise).
     fn reference_phase_shift(&self, mf_ref: f64) -> f64 {
         let powers = UsefulPowers::new(mf_ref);
-        let phi = self.inveta * phase_22(mf_ref, &powers, &self.phase22);
+        let mut phi = self.inveta * phase_22(mf_ref, &powers, &self.phase22);
+        if let Some(tidal) = &self.tidal {
+            phi += -tidal.phase(mf_ref, &powers);
+        }
         -(fma(self.linb, mf_ref, phi) + self.lina)
+    }
+
+    /// `phiTfRef`, the tidal contribution to the reference phase (zero
+    /// without the NRTidal corrections).
+    pub(crate) fn tidal_reference_phase(&self) -> f64 {
+        match &self.tidal {
+            Some(tidal) => -tidal.phase(self.wf.mf_ref, &UsefulPowers::new(self.wf.mf_ref)),
+            None => 0.0,
+        }
+    }
+
+    /// The model for a grid whose last frequency is `f_last` (Hz): with the
+    /// NRTidal corrections, `linb` includes the time shift `tshift` of
+    /// `IMRPhenomXASGenerateFD`, set by the phase derivative at the merger
+    /// frequency or at `f_last` if it is lower. Without them, `self`.
+    pub(crate) fn for_grid(&self, f_last: f64) -> Self {
+        let Some(tidal) = &self.tidal else {
+            return *self;
+        };
+        let mut model = *self;
+        let f_final = f_last.min(tidal.f_merger());
+        let mf_final = f_final * self.wf.m_sec;
+        let powers = UsefulPowers::new(mf_final);
+        let dphi_fmerger = 1. / self.wf.eta * dphase_22(mf_final, &powers, &self.phase22)
+            + self.linb
+            - tidal.phase_derivative(mf_final, &powers);
+        model.linb += -dphi_fmerger;
+        if model.has_reference_frequency {
+            model.reference_phase_shift = model.reference_phase_shift(model.wf.mf_ref);
+        }
+        model
+    }
+
+    /// The (2,2) mode on `frequencies` (which set the grid-dependent tidal
+    /// terms) times `factor`, written into `out`, with the NRTidal
+    /// corrections, for the orbital reference phase `phi_c`.
+    fn tidal_h22_into(
+        &self,
+        tidal: &Tidal,
+        frequencies: &[f64],
+        phi_c: f64,
+        factor: Complex<f64>,
+        out: &mut [Complex<f64>],
+    ) {
+        let (Some(&f_min), Some(&f_max)) = (frequencies.first(), frequencies.last()) else {
+            return;
+        };
+        let model = self.for_grid(f_max);
+        let (phif_ref, mf_cut) = model.grid_phase_and_cutoff(f_min, f_max, phi_c);
+        let series = tidal.series(frequencies);
+        for (i, (h, &f)) in out.iter_mut().zip(frequencies).enumerate() {
+            let mf = model.wf.m_sec * f;
+            *h = if mf <= mf_cut {
+                model.h22_tidal(tidal, mf, &UsefulPowers::new(mf), phif_ref, &series, i) * factor
+            } else {
+                Complex::new(0.0, 0.0)
+            };
+        }
+    }
+
+    /// The (2,2) mode with the NRTidal corrections at point `index` of
+    /// `series`, for precomputed powers of `mf`, without the cutoff.
+    #[inline]
+    pub(crate) fn h22_tidal(
+        &self,
+        tidal: &Tidal,
+        mf: f64,
+        powers: &UsefulPowers,
+        phif_ref: f64,
+        series: &TidalSeries,
+        index: usize,
+    ) -> Complex<f64> {
+        let phi = self.phase_22_full(mf, powers, phif_ref);
+        let amp = self.amp22.ansatz(mf, powers);
+        tidal.h22(&self.wf, powers, amp, phi, series, index)
+    }
+
+    /// The single-frequency (2,2) mode `h22(Mf)` with the NRTidal
+    /// corrections for the time shift at the merger frequency, zero above
+    /// the cutoff.
+    fn tidal_h22_single(&self, tidal: &Tidal, mf: f64, two_phi0: f64) -> Complex<f64> {
+        if mf > self.mf_cut {
+            return Complex::new(0.0, 0.0);
+        }
+        let model = self.for_grid(f64::INFINITY);
+        let series = tidal.series(&[mf / self.wf.m_sec]);
+        let powers = UsefulPowers::fast(mf);
+        model.h22_tidal(tidal, mf, &powers, model.phif_ref(two_phi0), &series, 0)
     }
 
     /// `phifRef` for the gravitational-wave phase `2 phi0` (twice LAL's
@@ -255,6 +401,52 @@ impl IMRPhenomXAS {
     }
 }
 
+/// The (2,2) mode of `IMRPhenomXASGenerateFD` with the NRTidal corrections
+/// on one grid (as IMRPhenomXPHM calls it): the model with the time shift
+/// of the grid, its `phifRef` and the tidal series on the grid.
+pub(crate) struct TidalGrid22 {
+    xas: IMRPhenomXAS,
+    tidal: Tidal,
+    phif_ref: f64,
+    series: TidalSeries,
+}
+
+impl TidalGrid22 {
+    /// For a model with the NRTidal corrections, the gravitational-wave
+    /// phase `2 phi0` and the frequencies (Hz) of the grid.
+    pub(crate) fn new(xas: &IMRPhenomXAS, two_phi0: f64, frequencies: &[f64]) -> Self {
+        let tidal = xas.tidal.expect("NRTidal corrections");
+        let xas = xas.for_grid(frequencies.last().copied().unwrap_or(f64::INFINITY));
+        Self {
+            phif_ref: xas.phif_ref(two_phi0),
+            series: tidal.series(frequencies),
+            xas,
+            tidal,
+        }
+    }
+
+    /// `h_{2,-2}` at the point `index` of the grid, at `mf`.
+    #[inline]
+    pub(crate) fn h22(&self, index: usize, mf: f64, powers: &UsefulPowers) -> Complex<f64> {
+        self.xas
+            .h22_tidal(&self.tidal, mf, powers, self.phif_ref, &self.series, index)
+    }
+
+    /// Amplitude and phase of [`TidalGrid22::h22`], `h = A exp(i phi)`.
+    #[inline]
+    pub(crate) fn amplitude_phase(
+        &self,
+        index: usize,
+        mf: f64,
+        powers: &UsefulPowers,
+    ) -> (f64, f64) {
+        let phi = self.xas.phase_22_full(mf, powers, self.phif_ref);
+        let amp = self.xas.amp22.ansatz(mf, powers);
+        self.tidal
+            .amplitude_phase(&self.xas.wf, powers, amp, phi, &self.series, index)
+    }
+}
+
 impl IMRPhenomXAS {
     /// `phifRef` and the cutoff `Mf` for a grid from `f_min` to `f_max`, as
     /// in [`Waveform::waveform`], for the orbital reference phase `phi_c`.
@@ -279,6 +471,9 @@ impl IMRPhenomXAS {
         let (Some(&f_min), Some(&f_max)) = (frequencies.first(), frequencies.last()) else {
             return;
         };
+        if let Some(tidal) = &self.tidal {
+            return self.tidal_h22_into(tidal, frequencies, phi_c, ylm_factor(), out);
+        }
         let (phif_ref, mf_cut) = self.grid_phase_and_cutoff(f_min, f_max, phi_c);
         let ylm = ylm_factor();
         for (h, &f) in out.iter_mut().zip(frequencies) {
@@ -293,6 +488,10 @@ impl IMRPhenomXAS {
         let (Some(&f_min), Some(&f_max)) = (frequencies.first(), frequencies.last()) else {
             return;
         };
+        if let Some(tidal) = &self.tidal {
+            let one = Complex::new(1.0, 0.0);
+            return self.tidal_h22_into(tidal, frequencies, phi_ref, one, out);
+        }
         let (phif_ref, mf_cut) = self.grid_phase_and_cutoff(f_min, f_max, phi_ref);
         for (h, &f) in out.iter_mut().zip(frequencies) {
             *h = self.h22(self.wf.m_sec * f, phif_ref, mf_cut);
@@ -310,11 +509,29 @@ impl Waveform for IMRPhenomXAS {
     /// for the orbital reference phase `phi_c`.
     fn phase(&self, v: f64, phi_c: f64) -> f64 {
         let powers = UsefulPowers::fast(v);
+        if let Some(tidal) = &self.tidal {
+            let model = self.for_grid(f64::INFINITY);
+            let series = tidal.series(&[v / self.wf.m_sec]);
+            let phi = model.phase_22_full(v, &powers, model.phif_ref(2.0 * phi_c));
+            return PI - (phi - (series.phase[0] + tidal.multipole_phase(&powers)));
+        }
         PI - self.phase_22_full(v, &powers, self.phif_ref(2.0 * phi_c))
     }
 
-    /// `|Y| |h22(Mf)|`, zero above the cutoff frequency.
+    /// `|Y| |h22(Mf)|`, zero above the cutoff frequency (with the NRTidal
+    /// corrections, `|Y| (A + A_T) window`, which can be negative).
     fn amplitude(&self, v: f64) -> f64 {
+        if let Some(tidal) = &self.tidal {
+            if v > self.mf_cut {
+                return 0.0;
+            }
+            let powers = UsefulPowers::fast(v);
+            let series = tidal.series(&[v / self.wf.m_sec]);
+            let amplitude = self.wf.amp0
+                * (self.wf.amp_norm * powers.m_seven_sixths * self.amp22.ansatz(v, &powers)
+                    + 2. * (PI / 5.).sqrt() * series.amplitude[0]);
+            return 2.0 * (5.0 / (64.0 * PI)).sqrt() * amplitude * series.taper[0];
+        }
         if v <= self.mf_cut {
             let powers = UsefulPowers::fast(v);
             2.0 * (5.0 / (64.0 * PI)).sqrt() * self.amplitude_22_full(v, &powers)
@@ -325,6 +542,9 @@ impl Waveform for IMRPhenomXAS {
 
     fn waveform_single_frequency(&self, frequency: f64, phi_c: f64) -> Complex<f64> {
         let mf = self.orbital_speed(frequency);
+        if let Some(tidal) = &self.tidal {
+            return self.tidal_h22_single(tidal, mf, 2.0 * phi_c) * ylm_factor();
+        }
         self.h22(mf, self.phif_ref(2.0 * phi_c), self.mf_cut) * ylm_factor()
     }
 
@@ -336,6 +556,11 @@ impl Waveform for IMRPhenomXAS {
         let (Some(&f_min), Some(&f_max)) = (frequencies.first(), frequencies.last()) else {
             return Vec::new();
         };
+        if let Some(tidal) = &self.tidal {
+            let mut out = vec![Complex::new(0.0, 0.0); frequencies.len()];
+            self.tidal_h22_into(tidal, frequencies, phi_c, ylm_factor(), &mut out);
+            return out;
+        }
         let (phif_ref, mf_cut) = self.grid_phase_and_cutoff(f_min, f_max, phi_c);
         let ylm = ylm_factor();
         frequencies
@@ -350,6 +575,9 @@ impl Waveform for IMRPhenomXAS {
         let (Some(&f_min), Some(&f_max)) = (frequencies.first(), frequencies.last()) else {
             return;
         };
+        if let Some(tidal) = &self.tidal {
+            return self.tidal_h22_into(tidal, frequencies, phi_c, ylm_factor(), out);
+        }
         let (phif_ref, mf_cut) = self.grid_phase_and_cutoff(f_min, f_max, phi_c);
         // Y h22 = |Y| A exp(i (phi + arg Y)), stored as (amplitude, -phase)
         // for the vectorised conversion.

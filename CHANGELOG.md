@@ -143,6 +143,54 @@ All notable changes to `waveformrs` are recorded here.
   that also derive from `ValueError`, `RuntimeError` or `OSError`. Tested
   against lalsimulation's Python API (`python/tests`); see
   `python/README.md`. `pnr_parity_fix` is one of the options.
+- **NRTidal binary-neutron-star models**: the approximants
+  `IMRPhenomD_NRTidalv2`, `IMRPhenomXAS_NRTidalv2`, `IMRPhenomXAS_NRTidalv3`,
+  `IMRPhenomXP_NRTidalv2` and `IMRPhenomXP_NRTidalv3`, every model of
+  LALSimulation 6.2.0 that adds NRTidalv2 or NRTidalv3 to a model of the
+  crate (IMRPhenomXHM, IMRPhenomXPHM, IMRPhenomXPNR, TaylorF2 and NRSur7dq4
+  have none in LAL). The tidal deformabilities are
+  `WaveformOptions::lambda_1` and `lambda_2` (LAL's `lambda1`, `lambda2`,
+  also `lambda_1=` / `lambda_2=` in Python); as in LAL, the other
+  approximants reject non-zero values, and the quadrupole-monopole
+  parameters follow from the deformabilities
+  (`XLALSimInspiralSetQuadMonParamsFromLambdas`).
+  - `waveformrs::nrtidal`: `LALSimNRTunedTides.c` (the NRTidalv2 and
+    NRTidalv3 phase, the amplitude correction, the merger frequencies and
+    the Planck window, with NRTidalv3 held at its first minimum after
+    merger on the grid as in LAL), `XLALSimInspiralEOSQfromLambda` and the
+    3.5PN spin-squared and spin-cubed terms.
+  - `IMRPhenomD::with_nrtidal_v2`: the quadrupole-monopole terms in the
+    post-Newtonian phase of IMRPhenomD (`Subtract3PNSS` keeps the
+    black-hole values, as in LAL) and the NRTidalv2 corrections of
+    `XLALSimIMRPhenomDNRTidalFrequencySequence`.
+  - `IMRPhenomXAS::with_nrtidal` and `IMRPhenomXP::with_nrtidal`: the tidal
+    corrections of `IMRPhenomXASGenerateFD` and `IMRPhenomXPGenerateFD`
+    (the frequency sequences of LAL), including the time shift at the
+    merger frequency (or at the last frequency of a grid that ends below
+    it) and the tidal reference phase; the SpinTaylor angles integrate the
+    tidal and quadrupole-monopole terms. On uniform grids,
+    `FdWaveform::polarizations_uniform` reproduces
+    `SimInspiralChooseFDWaveform`, which builds IMRPhenomXAS_NRTidal with
+    IMRPhenomXHM and IMRPhenomXP_NRTidal with IMRPhenomXPHM restricted to
+    the (2,2) mode (multibanding off), and IMRPhenomD_NRTidalv2 up to 1.3
+    times the merger frequency. As in LAL, `f_ref = 0` is `f_min` in
+    `SimInspiralTD` for IMRPhenomXP_NRTidalv2 but not for
+    IMRPhenomXP_NRTidalv3.
+  - Against LALSimulation 6.2.0 (`tests/model.rs`, suites
+    `imrphenomd_nrtidalv2`, `imrphenomxas_nrtidalv2/v3`,
+    `imrphenomxp_nrtidalv2/v3` and `nrtidal_uniform` of
+    `scripts/generate_reference_data.py`, binary neutron stars through
+    merger and a black hole with a neutron star): maximum relative errors
+    of 1.8e-11 (IMRPhenomD_NRTidalv2, whose phase reaches ~1e5 rad),
+    1.2e-12 (IMRPhenomXAS) and 1.2e-12 (IMRPhenomXP, all three
+    precession versions), with mismatches below 1e-15. The start of the
+    SpinTaylor angles is sensitive to the last bit of the
+    quadrupole-monopole parameter (a change of one ulp in the
+    deformability moves the phase at `f_min` by ~1e-8), so it is computed
+    with the fused multiply-adds of LAL's arm64 build.
+  - `docs/lal-nrtidalv3-integer-division.md`: LAL's NRTidalv3 phase
+    derivative contains `(4/3)`, an integer division (= 1); it has no
+    effect on LAL's waveforms and is kept here to match.
 
 ### Fixed
 

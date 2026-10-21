@@ -17,8 +17,8 @@ use crate::grid::{FrequencyGrid, ScalePowers};
 use crate::imrphenomx::internals::{hz_to_mf, IMRPhenomXError, UsefulPowers, WaveformStruct};
 use crate::imrphenomx::phase::PhaseCoefficients;
 use crate::imrphenomx::precessing_grid::{
-    add_twisted_mode, angles_with_reuse, coprecessing_mode_generator, rotate_polarizations,
-    AngleArrays, TwistArrays,
+    add_twisted_mode, angles_with_reuse, coprecessing_mode, coprecessing_mode_generator,
+    rotate_polarizations, AngleArrays, TwistArrays,
 };
 use crate::imrphenomx::precession::{
     mf_to_hz, PrecessingBinary, PrecessionStruct, PrecessionVersion,
@@ -26,8 +26,10 @@ use crate::imrphenomx::precession::{
 use crate::imrphenomx::spintaylor_angles::{inspiral_angles_spintaylor, SpinTaylorAngles};
 use crate::imrphenomx::version_fallback::{check_version, forbid_spintaylor_fallback};
 use crate::imrphenomx::wigner::half_angles;
+use crate::imrphenomx::xas::TidalGrid22;
 use crate::imrphenomx::xhm::{ModeGenerator, IMRPHENOMXHM_MODES};
-use crate::imrphenomx::xp::{frequency_bounds, Polarizations};
+use crate::imrphenomx::xp::{frequency_bounds, Polarizations, TidalInput};
+use crate::nrtidal::NRTidalVersion;
 
 pub(super) mod jframe;
 
@@ -97,6 +99,9 @@ pub struct IMRPhenomXPHM {
     version_fallback: bool,
     /// Parameter-only set-up for a non-uniform grid (`f_ref > 0`).
     setup: Option<Setup>,
+    /// The NRTidal corrections of the (2,2) mode (only for the uniform-grid
+    /// IMRPhenomXP_NRTidalv2/v3, see [`IMRPhenomXPHM::with_nrtidal`]).
+    tidal: Option<TidalInput>,
 }
 
 /// One co-precessing mode ready for evaluation.
@@ -308,6 +313,21 @@ impl Setup {
         f_min: f64,
         f_max: f64,
     ) -> Result<Self, IMRPhenomXError> {
+        Self::with_tidal(binary, version, None, modes, delta_f, f_min, f_max)
+    }
+
+    /// [`Setup::new`] with the NRTidal corrections of the (2,2) mode (LAL's
+    /// `PhenomXTidalFlag`, as the uniform-grid IMRPhenomXP_NRTidalv2/v3 of
+    /// `SimInspiralChooseFDWaveform` use it).
+    fn with_tidal(
+        binary: &PrecessingBinary,
+        version: PrecessionVersion,
+        tidal: Option<TidalInput>,
+        modes: &[(u32, u32)],
+        delta_f: f64,
+        f_min: f64,
+        f_max: f64,
+    ) -> Result<Self, IMRPhenomXError> {
         let (m1, m2, chi1, chi2) = binary.ordered();
         let (wf_m1, wf_m2, wf_chi1, wf_chi2) = if delta_f > 0.0 {
             (
@@ -332,6 +352,9 @@ impl Setup {
             binary.luminosity_distance * 1e6 * PC_SI,
             binary.inclination,
         )?;
+        if let Some((version, lambda_1, lambda_2)) = tidal {
+            wf.set_nrtidal(version, binary.mass_1, binary.mass_2, lambda_1, lambda_2)?;
+        }
         // IMRPhenomX_GetandSetModes: the range of |m| in the mode array.
         let m_min = modes.iter().map(|&(_, m)| m).min().unwrap_or(4);
         let m_max = modes.iter().map(|&(_, m)| m).max().unwrap_or(1);
@@ -437,6 +460,7 @@ impl Setup {
         };
         let wf = &self.wf;
         let prec = &self.prec;
+        let tidal22 = tidal_22(&modes, wf, frequencies);
 
         let n = frequencies.len();
         let zero = Complex::new(0.0, 0.0);
@@ -489,7 +513,10 @@ impl Setup {
             let mut sum_p = zero;
             let mut sum_c = zero;
             for mode in &modes {
-                let h = mode.generator.h(mf, &powers);
+                let h = match &tidal22 {
+                    Some(tidal22) if (mode.ell, mode.emm) == (2, 2) => tidal22.h22(i, mf, &powers),
+                    _ => mode.generator.h(mf, &powers),
+                };
                 let (p, c) = twist_up(
                     mode.ell,
                     mode.emm,
@@ -541,6 +568,7 @@ impl Setup {
         let wf = &self.wf;
         let prec = &self.prec;
         let frequencies = grid.frequencies();
+        let tidal22 = tidal_22(&modes, wf, frequencies);
         let mf_cut = wf.f_max_prime * wf.m_sec;
         // the frequencies with Mf <= mf_cut
         let n = frequencies.partition_point(|&f| wf.m_sec * f <= mf_cut);
@@ -583,15 +611,25 @@ impl Setup {
                 continue;
             }
             let emm = mode.emm as usize;
-            coprecessing_mode_generator(
-                &mut h,
-                &mut extra,
-                mode.emm,
-                &angles[emm].as_ref().expect("angles of m'").epsilon,
-                &mode.generator,
-                grid,
-                &scale,
-            );
+            let epsilon = &angles[emm].as_ref().expect("angles of m'").epsilon;
+            match &tidal22 {
+                Some(tidal22) if (mode.ell, mode.emm) == (2, 2) => {
+                    coprecessing_mode(&mut h, 2, epsilon, |i| {
+                        let powers = grid.powers(&scale, i);
+                        let mf = powers.itself;
+                        tidal22.amplitude_phase(i, mf, &UsefulPowers::from_grid(&powers))
+                    })
+                }
+                _ => coprecessing_mode_generator(
+                    &mut h,
+                    &mut extra,
+                    mode.emm,
+                    epsilon,
+                    &mode.generator,
+                    grid,
+                    &scale,
+                ),
+            }
             let twist = twists[emm].as_ref().expect("twist of m'");
             let ylm = harmonics(prec, mode.ell);
             add_twisted_mode(mode.ell, mode.emm, ylm, twist, &h, hplus, hcross);
@@ -706,9 +744,22 @@ fn spintaylor_angles<const MRD_COS_BETA: bool>(
 /// [`PrecessionVersion::Msa`] and generate the polarisations on the same
 /// grid. None of the SpinTaylor set-up enters the MSA angles, so this is
 /// what LAL computes.
+/// The (2,2) mode with the NRTidal corrections on the grid `frequencies`,
+/// if the (2,2) mode is active and the waveform struct has them.
+fn tidal_22(modes: &[Mode], wf: &WaveformStruct, frequencies: &[f64]) -> Option<TidalGrid22> {
+    modes.iter().find_map(|mode| match &mode.generator {
+        ModeGenerator::Xas22 { xas, .. } if xas.tidal.is_some() => {
+            Some(TidalGrid22::new(xas, 2.0 * wf.phi0, frequencies))
+        }
+        _ => None,
+    })
+}
+
+#[allow(clippy::too_many_arguments)]
 fn fallback_to_msa(
     result: Result<Polarizations, IMRPhenomXError>,
     binary: &PrecessingBinary,
+    tidal: Option<TidalInput>,
     modes: &[(u32, u32)],
     delta_f: f64,
     frequencies: &[f64],
@@ -716,10 +767,16 @@ fn fallback_to_msa(
     f_max: f64,
 ) -> Result<Polarizations, IMRPhenomXError> {
     match result {
-        Err(IMRPhenomXError::SpinTaylorFallbackToMsa(_)) => {
-            Setup::new(binary, PrecessionVersion::Msa, modes, delta_f, f_min, f_max)?
-                .generate(modes, frequencies)
-        }
+        Err(IMRPhenomXError::SpinTaylorFallbackToMsa(_)) => Setup::with_tidal(
+            binary,
+            PrecessionVersion::Msa,
+            tidal,
+            modes,
+            delta_f,
+            f_min,
+            f_max,
+        )?
+        .generate(modes, frequencies),
         result => result,
     }
 }
@@ -852,7 +909,46 @@ impl IMRPhenomXPHM {
             custom_mode_array: false,
             version_fallback: true,
             setup: (binary.f_ref > 0.0).then_some(setup),
+            tidal: None,
         })
+    }
+
+    /// The model with the NRTidal corrections of the (2,2) mode for the
+    /// tidal deformabilities of the bodies of `binary.mass_1` and
+    /// `binary.mass_2`, with only the (2,2) co-precessing mode: what
+    /// `SimInspiralChooseFDWaveform` (`XLALSimIMRPhenomXPHM`) computes for
+    /// IMRPhenomXP_NRTidalv2/v3 on uniform grids. (On frequency sequences
+    /// LAL uses IMRPhenomXP, [`crate::imrphenomx::IMRPhenomXP::with_nrtidal`].)
+    pub(crate) fn with_nrtidal(
+        binary: &PrecessingBinary,
+        version: PrecessionVersion,
+        nrtidal: NRTidalVersion,
+        lambda_1: f64,
+        lambda_2: f64,
+    ) -> Result<Self, IMRPhenomXError> {
+        let tidal = Some((nrtidal, lambda_1, lambda_2));
+        let modes = vec![(2, 2)];
+        let mut model = Self::build(binary, version, modes.clone())?;
+        // the parameter-only set-up with the tidal parameters (placeholder
+        // bounds as in Self::build)
+        let f_placeholder = if binary.f_ref > 0.0 {
+            binary.f_ref
+        } else {
+            20.0
+        };
+        let setup = Setup::with_tidal(
+            binary,
+            version,
+            tidal,
+            &modes,
+            0.0,
+            f_placeholder,
+            2.0 * f_placeholder,
+        )?;
+        model.setup = (binary.f_ref > 0.0).then_some(setup);
+        model.custom_mode_array = true;
+        model.tidal = tidal;
+        Ok(model)
     }
 
     /// The binary parameters.
@@ -883,6 +979,7 @@ impl IMRPhenomXPHM {
         fallback_to_msa(
             self.strict(setup.generate(&self.modes, frequencies)),
             &self.binary,
+            self.tidal,
             &self.modes,
             0.0,
             frequencies,
@@ -926,9 +1023,10 @@ impl IMRPhenomXPHM {
             self.setup(f_min, f_max)?
                 .generate_grid(modes, grid, hplus, hcross),
         ) {
-            Err(IMRPhenomXError::SpinTaylorFallbackToMsa(_)) => Setup::new(
+            Err(IMRPhenomXError::SpinTaylorFallbackToMsa(_)) => Setup::with_tidal(
                 &self.binary,
                 PrecessionVersion::Msa,
+                self.tidal,
                 modes,
                 0.0,
                 f_min,
@@ -943,7 +1041,15 @@ impl IMRPhenomXPHM {
     fn setup(&self, f_min: f64, f_max: f64) -> Result<Setup, IMRPhenomXError> {
         let setup = match &self.setup {
             Some(setup) => setup.with_bounds(f_min, f_max),
-            None => Setup::new(&self.binary, self.version, &self.modes, 0.0, f_min, f_max)?,
+            None => Setup::with_tidal(
+                &self.binary,
+                self.version,
+                self.tidal,
+                &self.modes,
+                0.0,
+                f_min,
+                f_max,
+            )?,
         };
         self.check(&setup)?;
         Ok(setup)
@@ -975,9 +1081,10 @@ impl IMRPhenomXPHM {
                 "f_max must be non-negative",
             ));
         }
-        let mut setup = Setup::new(
+        let mut setup = Setup::with_tidal(
             &self.binary,
             self.version,
+            self.tidal,
             &self.modes,
             delta_f,
             f_min,
@@ -991,6 +1098,7 @@ impl IMRPhenomXPHM {
         let (hp_band, hc_band) = fallback_to_msa(
             self.strict(setup.generate(&self.modes, &frequencies)),
             &self.binary,
+            self.tidal,
             &self.modes,
             delta_f,
             &frequencies,

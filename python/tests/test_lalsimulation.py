@@ -34,6 +34,18 @@ UNEQUAL = dict(
     f_ref=25.0,
 )
 FREQUENCIES = np.geomspace(20.0, 1024.0, 400)
+NEUTRON_STARS = dict(
+    mass_1=1.4,
+    mass_2=1.25,
+    luminosity_distance=100.0,
+    inclination=0.7,
+    phi_ref=1.2,
+    f_ref=30.0,
+    lambda_1=400.0,
+    lambda_2=700.0,
+)
+BNS_ALIGNED = dict(NEUTRON_STARS, spin_1=(0.0, 0.0, 0.03), spin_2=(0.0, 0.0, -0.02))
+BNS_PRECESSING = dict(NEUTRON_STARS, spin_1=(0.1, 0.05, 0.03), spin_2=(-0.05, 0.08, 0.0))
 
 # (approximant, binary, options, (relative error, mismatch))
 FD_CASES = [
@@ -62,6 +74,11 @@ FD_CASES = [
     # LALSimulation 6.2.0 has no parity fix (lalsuite !2593, test_xpnr.py)
     ("IMRPhenomXPNR", PRECESSING, dict(pnr_parity_fix=False), (1e-9, 1e-12)),
     ("IMRPhenomXPNR", UNEQUAL, dict(pnr_parity_fix=False), (1e-9, 1e-12)),
+    ("IMRPhenomD_NRTidalv2", BNS_ALIGNED, {}, (1e-9, 1e-12)),
+    ("IMRPhenomXAS_NRTidalv2", BNS_ALIGNED, {}, (1e-9, 1e-12)),
+    ("IMRPhenomXAS_NRTidalv3", BNS_ALIGNED, {}, (1e-9, 1e-12)),
+    ("IMRPhenomXP_NRTidalv2", BNS_PRECESSING, dict(precession_version=320), (1e-9, 1e-12)),
+    ("IMRPhenomXP_NRTidalv3", BNS_PRECESSING, dict(precession_version=223), (1e-9, 1e-12)),
 ]
 
 # the crate's tolerances where it does not mirror the reference build
@@ -70,6 +87,8 @@ CROSS_BUILD = {
     "IMRPhenomXPHM": (1e-3, 1e-6),
     "IMRPhenomXP": (1e-7, 1e-12),
     "IMRPhenomXPNR": (1e-3, 1e-6),
+    "IMRPhenomXP_NRTidalv2": (1e-6, 1e-12),
+    "IMRPhenomXP_NRTidalv3": (1e-6, 1e-12),
 }
 
 
@@ -83,6 +102,13 @@ def case_id(case):
     approximant, binary, options, _ = case
     label = f"{approximant}-m{binary['mass_1']:g}+{binary['mass_2']:g}"
     return label + "".join(f"-{key}={value}" for key, value in options.items())
+
+
+def frequencies_for(binary):
+    """The frequencies of a case: through the merger of neutron stars."""
+    if "lambda_1" in binary:
+        return np.geomspace(20.0, 4096.0, 400)
+    return FREQUENCIES
 
 
 def lal_args(lal, binary):
@@ -108,6 +134,9 @@ def lal_dict(lal, lalsim, options):
         lalsim.SimInspiralWaveformParamsInsertPhenomXPrecVersion(
             params, options["precession_version"]
         )
+    for key, name in (("lambda_1", "TidalLambda1"), ("lambda_2", "TidalLambda2")):
+        if key in options:
+            getattr(lalsim, f"SimInspiralWaveformParamsInsert{name}")(params, options[key])
     if options.get("mode_array") is not None:
         modes = lalsim.SimInspiralCreateModeArray()
         for ell, emm in options["mode_array"]:
@@ -134,11 +163,16 @@ def lal_sequence(lal, lalsim, approximant, binary, options, frequencies):
         binary["f_ref"],
         distance,
         inclination,
-        lal_dict(lal, lalsim, options),
+        lal_dict(lal, lalsim, dict(options, **tides(binary))),
         lalsim.GetApproximantFromString(approximant),
         vector,
     )
     return hp.data.data, hc.data.data
+
+
+def tides(binary):
+    """The tidal deformabilities of a binary (options of the models)."""
+    return {key: binary[key] for key in ("lambda_1", "lambda_2") if key in binary}
 
 
 @pytest.mark.parametrize("case", FD_CASES, ids=[case_id(case) for case in FD_CASES])
@@ -146,8 +180,9 @@ def test_polarizations(lal, case):
     approximant, binary, options, strict = case
     lal_mod, lalsim = lal
     rel, mismatch = tolerances(approximant, strict)
-    hp, hc = wf.polarizations(approximant, FREQUENCIES, **binary, **options)
-    lp, lc = lal_sequence(lal_mod, lalsim, approximant, binary, options, FREQUENCIES)
+    frequencies = frequencies_for(binary)
+    hp, hc = wf.polarizations(approximant, frequencies, **binary, **options)
+    lp, lc = lal_sequence(lal_mod, lalsim, approximant, binary, options, frequencies)
     for test, reference in ((hp, lp), (hc, lc)):
         error, mm = compare(test, reference)
         assert error <= rel and mm <= mismatch, (error, mm)

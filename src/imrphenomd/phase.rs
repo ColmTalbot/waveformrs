@@ -77,7 +77,15 @@ impl PhaseCoefficients {
 
 pub(crate) fn inspiral_prefactors(params: &Params, coeffs: &PhaseCoefficients) -> PNPhasing {
     let mut pn = PNPhasing::new(params);
-    let _3pnss = taylor_3pn_ss(params) * pn.v[0];
+    // Subtract3PNSS: the 3PN spin-spin term of TaylorF2 that PhenomD was not
+    // tuned with, always with the black-hole quadrupole-monopole parameters
+    // (the neutron-star values of IMRPhenomD_NRTidalv2 stay in pn.v[6]).
+    let black_holes = Params {
+        qm_def_1: 1.0,
+        qm_def_2: 1.0,
+        ..*params
+    };
+    let _3pnss = taylor_3pn_ss(&black_holes) * pn.v[0];
     pn.v[5] -= PI / 4.0;
     pn.v[6] -= _3pnss;
     pn.v[8] = coeffs.sigma[0] / params.eta / POWERS_OF_PI.one;

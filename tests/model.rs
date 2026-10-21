@@ -41,7 +41,67 @@ fn options(case: &common::Case) -> WaveformOptions {
     if !case.mode_array.is_empty() {
         options = options.with_mode_array(&case.mode_array);
     }
-    options
+    let lambda = |key: &str| case.lal_flags.get(key).copied().unwrap_or(0.0);
+    options.with_tidal_deformabilities(lambda("TidalLambda1"), lambda("TidalLambda2"))
+}
+
+/// The NRTidal approximants on uniform grids against
+/// `SimInspiralChooseFDWaveform` (multibanding off), including the length
+/// of the series.
+#[test]
+fn nrtidal_uniform_grids_match_lalsimulation() {
+    use waveformrs::conversions::{FdRequest, FdWaveform};
+    let suite = "nrtidal_uniform";
+    common::check_all(suite, 1e-9, 1e-12, |case| {
+        let approximant: Approximant = case.approximant.parse().unwrap();
+        let model = FdWaveform::new(approximant, binary(case), options(case)).unwrap();
+        let delta_f = case.frequencies[1];
+        let h = model
+            .polarizations_uniform(&FdRequest {
+                delta_f,
+                f_min: case.f_min,
+                f_max: case.f_max,
+                f_ref: case.f_ref,
+            })
+            .unwrap();
+        assert_eq!(
+            h.hplus.data.len(),
+            case.frequencies.len(),
+            "{}",
+            case.label()
+        );
+        (h.hplus.data, h.hcross.data)
+    });
+}
+
+/// The NRTidal approximants against `SimInspiralChooseFDWaveformSequence`.
+#[test]
+fn nrtidal_models_match_lalsimulation() {
+    let suites = [
+        ("imrphenomd_nrtidalv2", Approximant::IMRPhenomD_NRTidalv2),
+        (
+            "imrphenomxas_nrtidalv2",
+            Approximant::IMRPhenomXAS_NRTidalv2,
+        ),
+        (
+            "imrphenomxas_nrtidalv3",
+            Approximant::IMRPhenomXAS_NRTidalv3,
+        ),
+        ("imrphenomxp_nrtidalv2", Approximant::IMRPhenomXP_NRTidalv2),
+        ("imrphenomxp_nrtidalv3", Approximant::IMRPhenomXP_NRTidalv3),
+    ];
+    for (suite, approximant) in suites {
+        let reference = common::load(suite);
+        assert!(reference
+            .cases
+            .iter()
+            .all(|case| case.approximant == approximant.to_string()));
+        common::check_all(suite, 1e-9, 1e-12, |case| {
+            let model = choose_fd_model(approximant, &binary(case), &options(case)).unwrap();
+            assert_eq!(model.approximant(), approximant);
+            model.polarizations(&case.frequencies).unwrap()
+        });
+    }
 }
 
 /// `choose_fd_model(...).polarizations` against

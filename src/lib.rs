@@ -17,6 +17,7 @@ pub mod imrphenomx;
 pub mod interpolate;
 pub mod model;
 pub mod nrsur;
+pub mod nrtidal;
 pub mod pn;
 #[cfg(test)]
 mod reference;

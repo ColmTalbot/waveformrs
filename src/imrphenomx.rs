@@ -58,6 +58,7 @@ mod internals;
 pub(crate) mod libm;
 mod linalg;
 mod msa;
+mod nrtidal;
 mod phase;
 mod pnr;
 mod pnr_angles;

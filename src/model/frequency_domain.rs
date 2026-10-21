@@ -16,6 +16,7 @@ use crate::model::modes::aligned_22;
 use crate::model::{
     Approximant, Binary, Extrinsic, FrequencyDomainModel, FrequencyModes, WaveformOptions,
 };
+use crate::nrtidal::NRTidalVersion;
 use crate::taylor::TaylorF2;
 use crate::waveform::Waveform;
 
@@ -166,39 +167,15 @@ impl IMRPhenomD {
 /// frequency of the grid.
 impl FrequencyDomainModel for IMRPhenomD {
     fn from_binary(binary: &Binary) -> Result<Self> {
-        let approximant = Approximant::IMRPhenomD;
-        check_aligned(approximant, binary)?;
-        if !is_non_negative(binary.f_ref) {
-            return Err(invalid(
-                approximant,
-                "fRef_in must be positive (or 0 for 'ignore')",
-            ));
-        }
-        if !(binary.mass_1 > 0.0 && binary.mass_2 > 0.0) {
-            return Err(invalid(approximant, "masses must be positive"));
-        }
-        if !is_positive(binary.luminosity_distance) {
-            return Err(invalid(approximant, "distance must be positive"));
-        }
-        let (m1, m2, chi1, chi2) = heavier_first(binary);
-        if !((-1.0..=1.0).contains(&chi1) && (-1.0..=1.0).contains(&chi2)) {
-            return Err(invalid(
-                approximant,
-                "spins outside the range [-1,1] are not supported",
-            ));
-        }
-        let mut model = IMRPhenomD::new(m1 + m2, m2 / m1, chi1, chi2, binary.luminosity_distance);
-        if binary.f_ref > 0.0 {
-            model = model.with_reference_frequency(binary.f_ref);
-        } else {
-            model.reference_at_first_frequency = true;
-        }
-        model.extrinsic = Extrinsic::of(binary);
-        Ok(model)
+        imrphenomd(Approximant::IMRPhenomD, binary, None)
     }
 
     fn approximant(&self) -> Approximant {
-        Approximant::IMRPhenomD
+        if self.is_tidal() {
+            Approximant::IMRPhenomD_NRTidalv2
+        } else {
+            Approximant::IMRPhenomD
+        }
     }
 
     fn polarizations_into(
@@ -239,6 +216,80 @@ impl FrequencyDomainModel for IMRPhenomD {
     }
 }
 
+/// The tidal deformabilities of `options` for an NRTidal approximant,
+/// rejecting negative values as LAL does.
+fn tidal_deformabilities(
+    approximant: Approximant,
+    options: &WaveformOptions,
+) -> Result<(f64, f64)> {
+    let (lambda_1, lambda_2) = (options.lambda_1, options.lambda_2);
+    if !(lambda_1 >= 0.0 && lambda_2 >= 0.0) {
+        return Err(invalid(
+            approximant,
+            "the tidal deformabilities must be non-negative",
+        ));
+    }
+    Ok((lambda_1, lambda_2))
+}
+
+/// IMRPhenomD_NRTidalv2 for [`crate::model::choose_fd_model`], as
+/// `SimInspiralChooseFDWaveformSequence`
+/// (`XLALSimIMRPhenomDNRTidalFrequencySequence`).
+pub(super) fn imrphenomd_nrtidal(binary: &Binary, options: &WaveformOptions) -> Result<IMRPhenomD> {
+    let approximant = Approximant::IMRPhenomD_NRTidalv2;
+    let lambda = tidal_deformabilities(approximant, options)?;
+    imrphenomd(approximant, binary, Some(lambda))
+}
+
+/// IMRPhenomD (with the NRTidalv2 corrections for the tidal deformabilities
+/// `lambda` of the bodies of `mass_1`, `mass_2`).
+fn imrphenomd(
+    approximant: Approximant,
+    binary: &Binary,
+    lambda: Option<(f64, f64)>,
+) -> Result<IMRPhenomD> {
+    check_aligned(approximant, binary)?;
+    if !is_non_negative(binary.f_ref) {
+        return Err(invalid(
+            approximant,
+            "fRef_in must be positive (or 0 for 'ignore')",
+        ));
+    }
+    if !(binary.mass_1 > 0.0 && binary.mass_2 > 0.0) {
+        return Err(invalid(approximant, "masses must be positive"));
+    }
+    if !is_positive(binary.luminosity_distance) {
+        return Err(invalid(approximant, "distance must be positive"));
+    }
+    let (m1, m2, chi1, chi2) = heavier_first(binary);
+    if !((-1.0..=1.0).contains(&chi1) && (-1.0..=1.0).contains(&chi2)) {
+        return Err(invalid(
+            approximant,
+            "spins outside the range [-1,1] are not supported",
+        ));
+    }
+    let distance = binary.luminosity_distance;
+    let mut model = match lambda {
+        None => IMRPhenomD::new(m1 + m2, m2 / m1, chi1, chi2, distance),
+        Some((lambda_1, lambda_2)) => {
+            // the deformabilities follow the bodies, heavier first
+            let (lambda_1, lambda_2) = if binary.mass_1 >= binary.mass_2 {
+                (lambda_1, lambda_2)
+            } else {
+                (lambda_2, lambda_1)
+            };
+            IMRPhenomD::with_nrtidal_v2(m1 + m2, m2 / m1, chi1, chi2, distance, lambda_1, lambda_2)
+        }
+    };
+    if binary.f_ref > 0.0 {
+        model = model.with_reference_frequency(binary.f_ref);
+    } else {
+        model.reference_at_first_frequency = true;
+    }
+    model.extrinsic = Extrinsic::of(binary);
+    Ok(model)
+}
+
 /// IMRPhenomXAS as `SimInspiralChooseFDWaveformSequence`
 /// (`XLALSimIMRPhenomXASFrequencySequence`).
 impl FrequencyDomainModel for IMRPhenomXAS {
@@ -260,7 +311,11 @@ impl FrequencyDomainModel for IMRPhenomXAS {
     }
 
     fn approximant(&self) -> Approximant {
-        Approximant::IMRPhenomXAS
+        match self.nrtidal_version() {
+            None => Approximant::IMRPhenomXAS,
+            Some(NRTidalVersion::V2) => Approximant::IMRPhenomXAS_NRTidalv2,
+            Some(NRTidalVersion::V3) => Approximant::IMRPhenomXAS_NRTidalv3,
+        }
     }
 
     fn polarizations_into(
@@ -295,6 +350,59 @@ impl FrequencyDomainModel for IMRPhenomXAS {
         self.h22_into(frequencies, self.extrinsic.phi_ref, &mut h);
         Ok(aligned_22(frequencies, h, self.extrinsic.inclination))
     }
+}
+
+/// IMRPhenomXAS_NRTidalv2/v3 for [`crate::model::choose_fd_model`], as
+/// `SimInspiralChooseFDWaveformSequence`
+/// (`XLALSimIMRPhenomXASFrequencySequence` with `PhenomXTidalFlag` 2 or 3).
+pub(super) fn xas_nrtidal(
+    approximant: Approximant,
+    binary: &Binary,
+    options: &WaveformOptions,
+) -> Result<IMRPhenomXAS> {
+    check_aligned(approximant, binary)?;
+    if !is_non_negative(binary.f_ref) {
+        return Err(IMRPhenomXError::NegativeReferenceFrequency.into());
+    }
+    let (lambda_1, lambda_2) = tidal_deformabilities(approximant, options)?;
+    let version = approximant
+        .nrtidal_version()
+        .expect("an NRTidal approximant");
+    let mut model = IMRPhenomXAS::with_nrtidal(
+        version,
+        binary.mass_1,
+        binary.mass_2,
+        binary.spin_1[2],
+        binary.spin_2[2],
+        binary.luminosity_distance,
+        lambda_1,
+        lambda_2,
+    )?
+    .with_reference_frequency(binary.f_ref);
+    model.extrinsic = Extrinsic::of(binary);
+    Ok(model)
+}
+
+/// IMRPhenomXP_NRTidalv2/v3 for [`crate::model::choose_fd_model`], as
+/// `SimInspiralChooseFDWaveformSequence`
+/// (`XLALSimIMRPhenomXPFrequencySequence` with `PhenomXTidalFlag` 2 or 3).
+pub(super) fn xp_nrtidal(
+    approximant: Approximant,
+    binary: &Binary,
+    options: &WaveformOptions,
+) -> Result<IMRPhenomXP> {
+    let (lambda_1, lambda_2) = tidal_deformabilities(approximant, options)?;
+    let version = approximant
+        .nrtidal_version()
+        .expect("an NRTidal approximant");
+    Ok(IMRPhenomXP::with_nrtidal(
+        binary,
+        options.precession_version,
+        version,
+        lambda_1,
+        lambda_2,
+    )?
+    .with_version_fallback(options.version_fallback))
 }
 
 /// `IMRPhenomXHM::with_mode_array` returning an error for modes the model
@@ -391,7 +499,11 @@ impl FrequencyDomainModel for IMRPhenomXP {
     }
 
     fn approximant(&self) -> Approximant {
-        Approximant::IMRPhenomXP
+        match self.nrtidal_version() {
+            None => Approximant::IMRPhenomXP,
+            Some(NRTidalVersion::V2) => Approximant::IMRPhenomXP_NRTidalv2,
+            Some(NRTidalVersion::V3) => Approximant::IMRPhenomXP_NRTidalv3,
+        }
     }
 
     fn polarizations(&self, frequencies: &[f64]) -> Result<Polarizations> {

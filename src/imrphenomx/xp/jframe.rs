@@ -10,7 +10,7 @@ use std::f64::consts::PI;
 
 use num_complex::Complex;
 
-use super::{frequency_bounds, phif_ref_xp, IMRPhenomXP, Setup};
+use super::{frequency_bounds, IMRPhenomXP, Mode22, Setup};
 use crate::cmath::LibmCbrt;
 use crate::imrphenomx::internals::{IMRPhenomXError, UsefulPowers};
 use crate::imrphenomx::libm::cexp_i;
@@ -35,8 +35,11 @@ impl Setup {
         };
         let wf = &self.wf;
         let prec = &self.prec;
-        let xas = self.xas.as_ref().expect("XAS coefficients");
-        let phif_ref = phif_ref_xp(xas, wf);
+        let mode = Mode22::new(
+            self.xas.as_ref().expect("XAS coefficients"),
+            wf,
+            frequencies,
+        );
         let mf_cut = wf.f_max_prime * wf.m_sec;
         for (i, &f) in frequencies.iter().enumerate() {
             let mf = wf.m_sec * f;
@@ -58,7 +61,7 @@ impl Setup {
                     (alpha, cos_beta, epsilon)
                 }
             };
-            let h22 = xas.h22_with_powers(mf, &UsefulPowers::new(mf), phif_ref);
+            let h22 = mode.h22(i, mf, &UsefulPowers::new(mf));
             let (cb, sb) = half_angles(cos_beta);
             let mut c = [1.0; 9];
             let mut s = [1.0; 9];
@@ -107,10 +110,15 @@ impl IMRPhenomXP {
             return Ok(FrequencyModes::default());
         };
         match self.strict(self.setup(f_min, f_max)?.jframe_modes(frequencies)) {
-            Err(IMRPhenomXError::SpinTaylorFallbackToMsa(_)) => {
-                Setup::new(&self.binary, PrecessionVersion::Msa, 0.0, f_min, f_max)?
-                    .jframe_modes(frequencies)
-            }
+            Err(IMRPhenomXError::SpinTaylorFallbackToMsa(_)) => Setup::new(
+                &self.binary,
+                PrecessionVersion::Msa,
+                self.tidal,
+                0.0,
+                f_min,
+                f_max,
+            )?
+            .jframe_modes(frequencies),
             result => result,
         }
     }

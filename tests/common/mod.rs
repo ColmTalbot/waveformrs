@@ -144,7 +144,7 @@ pub fn mirrored_build() -> bool {
 /// the osx-arm64 or the Linux lalsimulation, which are themselves of the
 /// size of the differences between lalsimulation's own builds
 /// (report/data/linux_reference_comparison.json).
-const CROSS_BUILD_TOLERANCES: [(&str, (f64, f64)); 28] = [
+const CROSS_BUILD_TOLERANCES: [(&str, (f64, f64)); 31] = [
     ("imrphenomxhm", (1e-3, 1e-6)),
     // the (3,+-2) modes, and the others (up to 2e-9 at mass ratio 30)
     ("imrphenomxhm_modes_32", (2e-2, 4e-5)),
@@ -169,6 +169,12 @@ const CROSS_BUILD_TOLERANCES: [(&str, (f64, f64)); 28] = [
     ("imrphenomxpnr_modes", (1e-3, 1e-6)),
     ("imrphenomxpnr_modes_l3", (2e-2, 4e-5)),
     ("imrphenomxp_msa", (1e-7, 1e-12)),
+    // the SpinTaylor angles of IMRPhenomXP_NRTidalv2/v3, whose start is
+    // sensitive to the last bit of the quadrupole-monopole parameter (up to
+    // 6e-8 on Linux arm64 against the committed data)
+    ("imrphenomxp_nrtidalv2", (1e-6, 1e-12)),
+    ("imrphenomxp_nrtidalv3", (1e-6, 1e-12)),
+    ("nrtidal_uniform", (1e-6, 1e-12)),
     // absolute difference of the Euler angles
     ("imrphenomxp_spintaylor_angles", (1e-9, 0.0)),
     // spin components and the like, relative to their largest value
