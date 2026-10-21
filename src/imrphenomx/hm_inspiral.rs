@@ -19,6 +19,7 @@ use crate::imrphenomx::hm_internals::{
     Fit, HMAmpCoefficients, HMPhaseCoefficients, HMWaveformStruct,
 };
 use crate::imrphenomx::internals::{fma, UsefulPowers, WaveformStruct, POWERS_OF_LALPI};
+use crate::imrphenomx::jet::Jet;
 
 /// `IMRPhenomXHM_Insp_Amp_21_iv1` (version 122022): inspiral amplitude
 /// collocation point (strain units, f^(-7/6) included).
@@ -2129,21 +2130,40 @@ pub(crate) fn amp_ansatz(
     insp + pseudo
 }
 
+/// `|pn[0] + pn[1] f^(1/3) + ... + pn[6] f^2|` with its first and second
+/// derivatives.
+pub(crate) fn pn_modulus_jet(ff: f64, pn: &[Complex<f64>; 7]) -> Jet {
+    let mut re = Jet::constant(pn[0].re);
+    let mut im = Jet::constant(pn[0].im);
+    for (k, c) in pn.iter().enumerate().skip(1) {
+        let p = Jet::power(ff, k as f64 / 3.);
+        re = re + p * c.re;
+        im = im + p * c.im;
+    }
+    re.hypot(im)
+}
+
+/// [`amp_ansatz`] with its first and second derivatives.
+fn amp_ansatz_jet(ff: f64, wfhm: &HMWaveformStruct, amp: &HMAmpCoefficients) -> Jet {
+    let m_seven_sixths = Jet::power(ff, -7. / 6.);
+    let insp =
+        pn_modulus_jet(ff, &amp.pn) * m_seven_sixths * (amp.pn_global_factor * wfhm.amp_norm);
+    let c = &amp.inspiral_coefficients;
+    let pseudo = Jet::power(ff, 7. / 3.) * (c[0] / amp.fcut_insp_seven_thirds)
+        + Jet::power(ff, 8. / 3.) * (c[1] / amp.fcut_insp_eight_thirds)
+        + Jet::power(ff, 3.) * (c[2] / amp.fcut_insp_three);
+    insp + pseudo * m_seven_sixths * amp.pn_dominant
+}
+
 /// `IMRPhenomXHM_Inspiral_Amp_NDAnsatz`: derivative of the inspiral
-/// amplitude by fourth-order finite differences with step 1e-9.
+/// amplitude. LALSimulation takes it by fourth-order finite differences
+/// with step 1e-9; this is the analytic derivative they approximate.
 pub(crate) fn amp_nd_ansatz(
     powers: &UsefulPowers,
     wfhm: &HMWaveformStruct,
     amp: &HMAmpCoefficients,
 ) -> f64 {
-    let df = 10e-10;
-    let f = powers.itself;
-    let at = |x: f64| amp_ansatz(&UsefulPowers::new(x), wfhm, amp);
-    let fun2r = at(fma(2., df, f));
-    let funr = at(f + df);
-    let funl = at(f - df);
-    let fun2l = at(fma(-2., df, f));
-    (fma(-8., funl, fma(8., funr, -fun2r)) + fun2l) / (12. * df)
+    amp_ansatz_jet(powers.itself, wfhm, amp).d1
 }
 
 /// `IMRPhenomXHM_Get_Inspiral_Amp_Coefficients` with

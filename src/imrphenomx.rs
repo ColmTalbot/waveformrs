@@ -54,6 +54,7 @@ mod hm_ringdown;
 mod inspiral;
 mod intermediate;
 mod internals;
+mod jet;
 mod linalg;
 mod msa;
 mod nrtidal;

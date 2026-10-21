@@ -27,9 +27,11 @@ use num_complex::Complex;
 
 use crate::complex::{csqrt, principal_cbrt};
 use crate::imrphenomx::hm_fits_122018 as fits;
+use crate::imrphenomx::hm_inspiral;
 use crate::imrphenomx::hm_internals::{HMAmpCoefficients, HMWaveformStruct};
 use crate::imrphenomx::hm_poly_122019::{self as poly, PolyInputs};
 use crate::imrphenomx::internals::{fma, UsefulPowers, WaveformStruct, POWERS_OF_LALPI};
+use crate::imrphenomx::jet::{self, Jet};
 use crate::imrphenomx::poly_roots;
 
 /// `PhenomXHMReleaseVersion` of the original IMRPhenomXHM.
@@ -427,15 +429,58 @@ pub(crate) fn inspiral_ansatz(
     inspiral_ansatz_rescaled(powers, wfhm, amp) * (powers.m_seven_sixths * wfhm.amp_norm)
 }
 
-/// The fourth-order finite-difference derivative with step 1e-9 of
-/// `IMRPhenomXHM_Inspiral_Amp_NDAnsatz` and `IMRPhenomXHM_RD_Amp_NDAnsatz`.
-fn nd_derivative(f: f64, at: impl Fn(f64) -> f64) -> f64 {
-    let df = 10e-10;
-    let fun2r = at(fma(2., df, f));
-    let funr = at(f + df);
-    let funl = at(f - df);
-    let fun2l = at(fma(-2., df, f));
-    (fma(-8., funl, fma(8., funr, -fun2r)) + fun2l) / (12. * df)
+/// [`inspiral_ansatz_rescaled`] with its first and second derivatives.
+/// LALSimulation (`IMRPhenomXHM_Inspiral_Amp_NDAnsatz`) takes the first by
+/// fourth-order finite differences with step 1e-9.
+fn inspiral_ansatz_rescaled_jet(ff: f64, wfhm: &HMWaveformStruct, amp: &HMAmpCoefficients) -> Jet {
+    let pn = if wfhm.v122019.use_famp_pn {
+        pn21_ansatz_jet(ff, &amp.v122019.pn21) / (Jet::power(ff, -7. / 6.) * amp.amp_norm)
+    } else {
+        hm_inspiral::pn_modulus_jet(ff, &amp.pn) * amp.pn_global_factor
+    };
+    let rho = &amp.v122019.rho;
+    pn + Jet::power(ff, 7. / 3.) * (rho[0] / amp.fcut_insp_seven_thirds)
+        + Jet::power(ff, 8. / 3.) * (rho[1] / amp.fcut_insp_eight_thirds)
+        + Jet::power(ff, 3.) * (rho[2] / amp.fcut_insp_three)
+}
+
+/// [`pn21_ansatz`] with its first and second derivatives.
+fn pn21_ansatz_jet(ff: f64, c: &Pn21Coefficients) -> Jet {
+    let lalpi = &*POWERS_OF_LALPI;
+    let two_to_m_one_sixths = 0.8908987181403393;
+    let three_to_m_one_second = 0.5773502691896257;
+    let pw = |k: f64| Jet::power(ff, k);
+    let mut re = Jet::constant(0.);
+    let mut im = Jet::constant(0.);
+    for (k, xk) in c.x.iter().enumerate() {
+        let p = pw((k + 1) as f64 / 3.);
+        re = re + p * xk.re;
+        im = im + p * xk.im;
+    }
+    let modulus = re.hypot(im) * pw(2. / 3.) * c.pntd_factor.abs();
+    let log_term = Jet::variable(ff).ln() * (2. / 3.) + c.log2pi_two_thirds;
+    let xdot = pw(4.) * c.xdot6
+        + pw(10. / 3.) * c.xdot5
+        + pw(13. / 3.) * c.xdot65
+        + pw(14. / 3.) * c.xdot7
+        + pw(5.) * c.xdot75
+        + pw(16. / 3.) * c.xdot8
+        + log_term * pw(16. / 3.) * c.xdot8_log
+        + pw(17. / 3.) * c.xdot85;
+    modulus
+        * pw(-1. / 6.)
+        * (2. * lalpi.sqrt * three_to_m_one_second * two_to_m_one_sixths * lalpi.m_one_sixth)
+        / xdot.sqrt()
+}
+
+/// [`rd_amp_ansatz`] with its first and second derivatives.
+pub(crate) fn rd_amp_ansatz_jet(ff: f64, wfhm: &HMWaveformStruct, amp: &HMAmpCoefficients) -> Jet {
+    let [a0, lambda, sigma, lc] = amp.v122019.rd;
+    let (frd, fda) = (wfhm.f_ring, wfhm.f_damp);
+    let dfr = Jet::variable(ff) - frd;
+    let dfd = fda * sigma;
+    (dfr * (-lambda / dfd)).exp() * (fda * a0.abs() * sigma) / (dfr * dfr + dfd * dfd)
+        * Jet::power(ff, -lc)
 }
 
 /// `WavyPoints`: whether three consecutive values are not monotonic.
@@ -851,15 +896,15 @@ fn intermediate_ansatz(powers: &UsefulPowers, amp: &HMAmpCoefficients, order: i3
 /* ---------------------------------------------------------------------- */
 
 /// `IMRPhenomXHM_GetAmplitudeCoefficients` for the 122019 release.
-/// `rotate(powers, amp)` is `SpheroidalToSpherical` for the (3,2) with the
-/// coefficients computed so far.
+/// `rotate(f, amp)` is `SpheroidalToSpherical` for the (3,2) with the
+/// coefficients computed so far, with its first and second derivatives.
 pub(crate) fn get_amplitude_coefficients<R>(
     amp: &mut HMAmpCoefficients,
     wfhm: &mut HMWaveformStruct,
     wf: &WaveformStruct,
     rotate: R,
 ) where
-    R: Fn(&UsefulPowers, &HMAmpCoefficients) -> Complex<f64>,
+    R: Fn(f64, &HMAmpCoefficients) -> [Complex<f64>; 3],
 {
     amp.amp_norm = wf.amp_norm;
     amp.pn_dominant = wf.amp_norm * (2. / wfhm.emm as f64).powf(-7. / 6.);
@@ -1023,23 +1068,16 @@ pub(crate) fn get_amplitude_coefficients<R>(
 
     // Values and derivatives at the boundaries (rescaled ansatzes).
     let insp_f1 = inspiral_ansatz_rescaled(&powers_of_ff1, wfhm, amp);
-    let rd_f4 = if wfhm.mixing_on {
-        let h = rotate(&powers_of_ff4, amp);
-        h.re.hypot(h.im)
+    let (rd_f4, mut d4) = if wfhm.mixing_on {
+        let h = rotate(f4, amp);
+        (h[0].re.hypot(h[0].im), jet::abs_derivative(h))
     } else {
-        rd_amp_ansatz(&powers_of_ff4, wfhm, amp)
+        (
+            rd_amp_ansatz(&powers_of_ff4, wfhm, amp),
+            rd_amp_dansatz(&powers_of_ff4, wfhm, amp),
+        )
     };
-    let mut d1 = nd_derivative(f1, |x| {
-        inspiral_ansatz_rescaled(&UsefulPowers::new(x), wfhm, amp)
-    });
-    let mut d4 = if wfhm.mixing_on {
-        nd_derivative(f4, |x| {
-            let h = rotate(&UsefulPowers::new(x), amp);
-            h.re.hypot(h.im)
-        })
-    } else {
-        rd_amp_dansatz(&powers_of_ff4, wfhm, amp)
-    };
+    let mut d1 = inspiral_ansatz_rescaled_jet(f1, wfhm, amp).d1;
     // Derivatives of the inverse of the full amplitudes.
     d1 = 7.0 / 6.0 * f1.powf(1.0 / 6.0) / insp_f1 - f1.powf(7.0 / 6.0) * d1 / (insp_f1 * insp_f1);
     d4 = 7.0 / 6.0 * f4.powf(1.0 / 6.0) / rd_f4 - f4.powf(7.0 / 6.0) * d4 / (rd_f4 * rd_f4);
@@ -1950,6 +1988,7 @@ mod tests {
     use num_complex::Complex;
 
     use super::RELEASE_122019;
+    use crate::imrphenomx::hm_inspiral;
     use crate::imrphenomx::hm_internals::HMMode;
     use crate::imrphenomx::internals::{UsefulPowers, WaveformStruct};
     use crate::imrphenomx::phase::PhaseCoefficients;
@@ -1975,6 +2014,46 @@ mod tests {
                 let g = Complex::from_polar(1.0, lin)
                     * (c1 * Complex::from_polar(a1, p1) + c2 * Complex::from_polar(a2, p2));
                 assert!((g - h).norm() <= 1e-12 * h.norm(), "{mf}: {g} != {h}");
+            }
+        }
+    }
+
+    /// The analytic derivatives of the inspiral amplitudes (both releases,
+    /// including the TaylorT4 inspiral of the (2,1)) against well-conditioned
+    /// finite differences.
+    #[test]
+    fn inspiral_amplitude_derivatives() {
+        for release in [RELEASE_122019, super::RELEASE_122022] {
+            for (m1, m2, chi1, chi2) in [(36.0, 29.0, 0.3, -0.4), (79.0, 4.0, -0.89, 0.96)] {
+                let mut wf =
+                    WaveformStruct::new(m1, m2, chi1, chi2, 0.0, 20.0, 0.4, 10.0, 0.0, 500.0, 0.0)
+                        .unwrap();
+                wf.hm_release = release;
+                for (ell, emm) in [(2, 1), (3, 3), (3, 2), (4, 4)] {
+                    let mode = HMMode::new(ell, emm, &wf, &PhaseCoefficients::new(&wf));
+                    let (wfhm, amp) = (&mode.wfhm, &mode.amp);
+                    let f = amp.f_amp_match_in;
+                    let (analytic, value): (f64, &dyn Fn(f64) -> f64) = if release == RELEASE_122019
+                    {
+                        (super::inspiral_ansatz_rescaled_jet(f, wfhm, amp).d1, &|x| {
+                            super::inspiral_ansatz_rescaled(&UsefulPowers::new(x), wfhm, amp)
+                        })
+                    } else {
+                        (
+                            hm_inspiral::amp_nd_ansatz(&UsefulPowers::new(f), wfhm, amp),
+                            &|x| hm_inspiral::amp_ansatz(&UsefulPowers::new(x), wfhm, amp),
+                        )
+                    };
+                    let d = 1e-3 * f;
+                    let fd = (value(f - 2. * d) - 8. * value(f - d) + 8. * value(f + d)
+                        - value(f + 2. * d))
+                        / (12. * d);
+                    let scale = value(f) / f;
+                    assert!(
+                        (analytic - fd).abs() < 1e-8 * scale,
+                        "{release} ({ell},{emm}): {analytic} {fd}"
+                    );
+                }
             }
         }
     }

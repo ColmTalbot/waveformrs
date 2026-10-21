@@ -120,9 +120,7 @@ impl fmt::Display for IMRPhenomXError {
 impl std::error::Error for IMRPhenomXError {}
 
 /// `a * b + c`, fused where the hardware can (see
-/// [`crate::spintaylor::fp`]). Several IMRPhenomXHM coefficients are computed
-/// by finite differences that amplify rounding differences by up to 1e14,
-/// so they differ from LAL's more than the rest of the model.
+/// [`crate::spintaylor::fp`]).
 pub(crate) use crate::spintaylor::fp::fma;
 
 /// Cached powers of a number, `IMRPhenomX_UsefulPowers`.
