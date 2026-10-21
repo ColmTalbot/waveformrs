@@ -118,33 +118,21 @@ pub fn data_path(name: &str) -> std::path::PathBuf {
         .join(file)
 }
 
-/// Whether this crate mirrors the reference build of lalsimulation
-/// operation by operation: on macOS arm64 it reproduces the conda-forge
-/// osx-arm64 build (clang's fused multiply-adds, Apple's libm) to rounding,
-/// mostly bit for bit.
-///
-/// Elsewhere the arithmetic differs in the last bits. Against the committed
-/// data the libm differs (glibc's `sin`, `pow`, `cbrt`, ... are not Apple's)
-/// and so do the fused multiply-adds on x86-64. Against data from this
-/// machine's lalsimulation (`WAVEFORMRS_REFERENCE_DATA`), LAL is compiled
-/// by GCC, which on aarch64 also fuses products and sums in different
-/// statements (on x86-64 a few untraced last-bit differences remain). The
-/// ill-conditioned parts of the models turn that into much
-/// larger differences, in LAL itself as much as here (docs/linux.md): the
+/// Tolerances `(relative error, mismatch)` of the suites that amplify
+/// rounding errors, on every platform. The crate does not reproduce any
+/// build of lalsimulation operation by operation (it uses Rust's elementary
+/// functions and fuses multiply-adds where the hardware can), and the
+/// ill-conditioned parts of the models turn last-bit differences into much
+/// larger ones, in LAL itself as much as here (docs/linux.md): the
 /// IMRPhenomXHM (3,2) mode (relative ~2e-3 between LAL's own Linux and
 /// macOS builds) and, through it, every IMRPhenomXHM/XPHM polarisation and
-/// the l = 3 modes of IMRPhenomXPHM, and the MSA angles.
-pub fn mirrored_build() -> bool {
-    cfg!(all(target_os = "macos", target_arch = "aarch64"))
-}
-
-/// Tolerances `(relative error, mismatch)` of the suites that need looser
-/// ones where [`mirrored_build`] is false, about ten times the largest
-/// differences seen between this crate on Linux (arm64 and amd64) and either
-/// the osx-arm64 or the Linux lalsimulation, which are themselves of the
-/// size of the differences between lalsimulation's own builds
+/// the l = 3 modes of IMRPhenomXPHM, the MSA angles and the SpinTaylor
+/// angles. The values are about ten times the largest differences seen
+/// between this crate on macOS and Linux (arm64 and amd64) and either the
+/// osx-arm64 or the Linux lalsimulation, which are themselves of the size
+/// of the differences between lalsimulation's own builds
 /// (report/data/linux_reference_comparison.json).
-const CROSS_BUILD_TOLERANCES: [(&str, (f64, f64)); 31] = [
+const AMPLIFYING_SUITE_TOLERANCES: [(&str, (f64, f64)); 31] = [
     ("imrphenomxhm", (1e-3, 1e-6)),
     // the (3,+-2) modes, and the others (up to 2e-9 at mass ratio 30 in the
     // containers of docs/linux.md; on the Ubuntu runners of GitHub Actions
@@ -194,26 +182,13 @@ const CROSS_BUILD_TOLERANCES: [(&str, (f64, f64)); 31] = [
     ("spintaylor_angles_long", (1e-5, 0.0)),
 ];
 
-/// The tolerances of `suite`: `strict` where [`mirrored_build`] (or where
-/// the suite needs nothing looser), else those of
-/// [`CROSS_BUILD_TOLERANCES`].
+/// The tolerances of `suite`: those of [`AMPLIFYING_SUITE_TOLERANCES`],
+/// else `strict`.
 pub fn tolerances(suite: &str, strict: (f64, f64)) -> (f64, f64) {
-    if mirrored_build() {
-        return strict;
-    }
-    match CROSS_BUILD_TOLERANCES
+    AMPLIFYING_SUITE_TOLERANCES
         .iter()
         .find(|(name, _)| *name == suite)
-    {
-        Some(&(_, loose)) => {
-            println!(
-                "{suite}: not the osx-arm64 build that this crate mirrors, tolerances \
-                 {loose:?} instead of {strict:?} (docs/linux.md)"
-            );
-            loose
-        }
-        None => strict,
-    }
+        .map_or(strict, |&(_, tolerances)| tolerances)
 }
 
 pub fn load(name: &str) -> ReferenceFile {

@@ -269,9 +269,9 @@ impl Failures {
         (hplus, hcross): (Vec<C64>, Vec<C64>),
         tolerance: f64,
     ) {
-        // at least the cross-build tolerance where the crate does not mirror
-        // LAL's build (the SpinTaylor angles and the (3,2) mode amplify
-        // last-bit differences; tests/common)
+        // at least the tolerance of the suites that amplify last-bit
+        // differences (the SpinTaylor angles and the (3,2) mode;
+        // tests/common)
         let floor = common::tolerances(&format!("long {}", case.approximant), (0.0, 0.0)).0;
         let tolerance = tolerance.max(floor);
         let [(plus, at_plus), (cross, at_cross)] = case.errors(&hplus, &hcross);

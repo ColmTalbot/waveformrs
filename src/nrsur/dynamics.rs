@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2024-2026 Colm Talbot. Parts of waveformrs are translated
-// from LALSuite, GSL, glibc and fdlibm: see NOTICE.md for their authors.
+// from LALSuite, GSL and fdlibm: see NOTICE.md for their authors.
 //! The dynamics surrogate: integration of the ODE for the coprecessing-frame
 //! quaternion, the orbital phase and the spins
 //! (`PrecessingNRSur_IntegrateDynamics` and the functions it calls).
@@ -14,7 +14,6 @@
 use crate::nrsur::data::{DynamicsNode, NRSur7dq4Data};
 use crate::nrsur::fit::{MassRatioParameters, PowerTable};
 use crate::nrsur::spline::polynomial4;
-use crate::nrsur::trig::sincos;
 use crate::nrsur::NRSurError;
 use crate::spintaylor::fp::{fma, fms, fnms};
 
@@ -190,7 +189,7 @@ impl<'d> Dynamics<'d> {
     /// the orbital phase.
     #[inline]
     fn table(&self, y: &State) -> (PowerTable, f64, f64) {
-        let (sp, cp) = sincos(y[4]);
+        let (sp, cp) = f64::sin_cos(y[4]);
         (self.params.table(&fit_x(self.q, y, sp, cp)), sp, cp)
     }
 

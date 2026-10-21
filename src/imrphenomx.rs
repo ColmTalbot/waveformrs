@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2024-2026 Colm Talbot. Parts of waveformrs are translated
-// from LALSuite, GSL, glibc and fdlibm: see NOTICE.md for their authors.
+// from LALSuite, GSL and fdlibm: see NOTICE.md for their authors.
 //! The IMRPhenomX family of frequency-domain phenomenological models.
 //!
 //! This is a port of the IMRPhenomX implementation in LALSimulation
@@ -41,7 +41,6 @@
 //! | `hm_fits_122018` | parameter-space fits of the 122019 amplitude        |
 //! | `hm_poly_122019` | intermediate amplitude polynomial of the 122019 release |
 //! | `poly_roots`   | GSL's `gsl_poly_complex_solve`                         |
-//! | `libm`         | the C library's `cexp`                                 |
 
 mod amplitude;
 mod hm_amp_122019;
@@ -55,7 +54,6 @@ mod hm_ringdown;
 mod inspiral;
 mod intermediate;
 mod internals;
-pub(crate) mod libm;
 mod linalg;
 mod msa;
 mod nrtidal;

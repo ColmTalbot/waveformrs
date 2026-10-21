@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2024-2026 Colm Talbot. Parts of waveformrs are translated
-// from LALSuite, GSL, glibc and fdlibm: see NOTICE.md for their authors.
+// from LALSuite, GSL and fdlibm: see NOTICE.md for their authors.
 //! The precessing (2,2)-mode model IMRPhenomXP, following
 //! `XLALSimIMRPhenomXPFrequencySequence`, `XLALSimIMRPhenomXPGenerateFD` and
 //! `IMRPhenomXPGenerateFD` in `LALSimIMRPhenomX.c`.
@@ -9,7 +9,6 @@ use std::f64::consts::PI;
 
 use num_complex::Complex;
 
-use crate::cmath::LibmCbrt;
 use crate::constants::MSUN_SI;
 use crate::grid::{FrequencyGrid, ScalePowers};
 use crate::imrphenomx::internals::{hz_to_mf, IMRPhenomXError, UsefulPowers, WaveformStruct};
@@ -31,8 +30,7 @@ use crate::spintaylor::fp::fma;
 mod jframe;
 
 /// `pWF->phifRef` as `IMRPhenomXPGenerateFD` evaluates it,
-/// `-(phi22(MfRef) / eta + linb MfRef + lina) + 2 phi0 + pi / 4`, which LAL's
-/// arm64 build contracts differently from `IMRPhenomXASGenerateFD`.
+/// `-(phi22(MfRef) / eta + linb MfRef + lina) + 2 phi0 + pi / 4`.
 fn phif_ref_xp(xas: &IMRPhenomXAS, wf: &WaveformStruct) -> f64 {
     let inveta = 1.0 / wf.eta;
     let powers = UsefulPowers::new(wf.mf_ref);
@@ -286,7 +284,7 @@ impl Setup {
                         // LAL's powers of Mf (IMRPhenomX_Initialize_Powers)
                         let h22 = mode.h22(i, mf, &UsefulPowers::new(mf));
                         let (alpha, epsilon, cos_beta) =
-                            prec.msa_angles((std::f64::consts::PI * mf).libm_cbrt());
+                            prec.msa_angles((std::f64::consts::PI * mf).cbrt());
                         (hp[i], hc[i]) = twist_up_22(h22, alpha, cos_beta, epsilon, y2);
                     }
                 }

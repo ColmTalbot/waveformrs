@@ -87,7 +87,7 @@ fn imrphenomxhm_122019_modes_match_lalsimulation() {
                 case.chi_1,
                 case.chi_2
             );
-            // the cross-build tolerances of the IMRPhenomXHM modes
+            // the tolerances of the IMRPhenomXHM modes, which amplify rounding
             let suite = if (mode.ell, mode.emm.abs()) == (3, 2) {
                 "imrphenomxhm_modes_32"
             } else {

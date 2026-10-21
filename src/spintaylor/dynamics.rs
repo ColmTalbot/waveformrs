@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2024-2026 Colm Talbot. Parts of waveformrs are translated
-// from LALSuite, GSL, glibc and fdlibm: see NOTICE.md for their authors.
+// from LALSuite, GSL and fdlibm: see NOTICE.md for their authors.
 //! Orbit-averaged SpinTaylorT4 equations of motion.
 //!
 //! Ports of `XLALSimSpinTaylorEnergySpinDerivativeSetup`,
@@ -20,7 +20,6 @@ use super::coefficients::*;
 use super::fp::{cross, dot, fma, fnms};
 use super::integrator::OdeSystem;
 use super::SpinTaylorError;
-use crate::cmath::LibmCbrt;
 use crate::constants::{MSUN_SI, MTSUN_SI, REAL4_EPS};
 use std::f64::consts::PI;
 
@@ -600,7 +599,7 @@ impl SpinTaylorT4Coefficients {
             return ST_DERIVATIVE_OMEGANONPOS;
         }
 
-        let v = omega.libm_cbrt();
+        let v = omega.cbrt();
         let v2 = v * v;
         let v11 = omega * omega * omega * v2;
 
@@ -729,7 +728,7 @@ impl SpinTaylorT4Coefficients {
         prev_domega: &mut f64,
     ) -> i32 {
         let omega = values[1];
-        let v = omega.libm_cbrt();
+        let v = omega.cbrt();
         let lnh = [values[2], values[3], values[4]];
         let s1 = [values[5], values[6], values[7]];
         let s2 = [values[8], values[9], values[10]];
@@ -833,10 +832,6 @@ pub(crate) fn mass_in_seconds(m_si: f64) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    /// Whether LAL reference values from the osx-arm64 lalsimulation build
-    /// can be reproduced bit for bit (same FMA contraction and libm).
-    const EXACT: bool = crate::reference::BIT_EXACT;
 
     struct Case {
         /// m1_SI, m2_SI, fStart, fEnd, quadparam1, quadparam2, lambda1, lambda2
@@ -982,15 +977,10 @@ mod tests {
             assert_eq!(status, case.status);
             for (value, expected) in dvalues.iter().zip(case.expected) {
                 let expected = f64::from_bits(expected);
-                if EXACT {
-                    assert_eq!(
-                        value.to_bits(),
-                        expected.to_bits(),
-                        "{value:e} != {expected:e}"
-                    );
-                } else {
-                    assert!((value - expected).abs() <= 1e-12 * expected.abs());
-                }
+                assert!(
+                    (value - expected).abs() <= 1e-12 * expected.abs(),
+                    "{value:e} != {expected:e}"
+                );
             }
         }
     }

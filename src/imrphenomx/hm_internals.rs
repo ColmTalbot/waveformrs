@@ -1,16 +1,17 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2024-2026 Colm Talbot. Parts of waveformrs are translated
-// from LALSuite, GSL, glibc and fdlibm: see NOTICE.md for their authors.
+// from LALSuite, GSL and fdlibm: see NOTICE.md for their authors.
 //! Mode-dependent variables and coefficients of IMRPhenomXHM,
 //! `LALSimIMRPhenomXHM_internals.c`, for the default model versions
 //! (`PhenomXHMReleaseVersion` 122022 with the 122019 phase).
 //!
-//! Every coefficient is computed operation by operation as in LALSimulation,
-//! including its fused multiply-adds (see [`fma`]), so that they agree with
-//! LAL to the last bit. This matters for the (3,2) mode, whose intermediate
-//! phase is fixed by a second derivative computed by finite differences with
-//! a step of 1e-7 (amplifying rounding differences by ~1e14), and for the
-//! numerical derivatives of the amplitude at the region boundaries.
+//! Every coefficient is computed operation by operation as in LALSimulation
+//! (with fused multiply-adds where the hardware has them, see [`fma`]). The
+//! (3,2) mode's intermediate phase is fixed by a second derivative computed
+//! by finite differences with a step of 1e-7 (`FSTEP_MIXING`), which
+//! amplifies rounding differences by ~1e14, as do the numerical derivatives
+//! of the amplitude at the region boundaries: these parts differ between
+//! platforms, and from LAL, far more than the rest of the model.
 
 use std::f64::consts::{FRAC_PI_4, PI};
 
@@ -24,7 +25,7 @@ use crate::imrphenomx::phase::{
 };
 use crate::imrphenomx::utilities::psi4_to_strain;
 use crate::imrphenomx::{
-    hm_amp_122019, hm_inspiral, hm_intermediate, hm_qnm, hm_ringdown, libm, ringdown,
+    hm_amp_122019, hm_inspiral, hm_intermediate, hm_qnm, hm_ringdown, ringdown,
 };
 
 /// `FALSE_ZERO`: value replacing negative amplitudes.
@@ -459,7 +460,7 @@ impl HMMode {
             self.wfhm.timeshift * mf,
         ) + self.wfhm.phaseshift
             + self.wfhm.phiref22;
-        let rotation = libm::cexp_i(phi22);
+        let rotation = crate::complex::cexp_i(phi22);
         let mut wf22r = Complex::new(amp22 * rotation.re, amp22 * rotation.im);
         if self.wfhm.ringdown_amp_version != 0 {
             // Rescale with the leading order (the 122019 release keeps both
@@ -566,7 +567,7 @@ impl HMMode {
         // conj(mix3) * amplm * exp(i philm)
         let b_re = amplm * mix3.re;
         let b_im = -(mix3.im * amplm);
-        let rotation = libm::cexp_i(philm);
+        let rotation = crate::complex::cexp_i(philm);
         let c_re = b_re * rotation.re - b_im * rotation.im;
         let c_im = b_re * rotation.im + b_im * rotation.re;
         Complex::new(a_re + c_re, a_im + c_im)

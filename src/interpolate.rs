@@ -1,15 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2024-2026 Colm Talbot. Parts of waveformrs are translated
-// from LALSuite, GSL, glibc and fdlibm: see NOTICE.md for their authors.
+// from LALSuite, GSL and fdlibm: see NOTICE.md for their authors.
 //! Natural cubic spline interpolation.
 //!
 //! This reproduces `gsl_interp_cspline` (natural boundary conditions) as used
 //! throughout LALSimulation, including the order of floating point operations
 //! in the tridiagonal solve, so that interpolated values agree with LAL to
-//! rounding precision. Like the SpinTaylor integrator, the fused
-//! multiply-adds that clang emits for the arm64 builds of GSL are mirrored
-//! (see [`crate::spintaylor::fp`]), which makes the spline values and
-//! derivatives agree bit for bit on that platform.
+//! rounding precision (with fused multiply-adds where the hardware has them,
+//! [`crate::spintaylor::fp`]).
 
 use crate::spintaylor::fp::{fma, fms, fnms};
 

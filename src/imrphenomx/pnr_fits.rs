@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2024-2026 Colm Talbot. Parts of waveformrs are translated
-// from LALSuite, GSL, glibc and fdlibm: see NOTICE.md for their authors.
+// from LALSuite, GSL and fdlibm: see NOTICE.md for their authors.
 //! Parameter-space fits of the PNR angles and of the PhenomXCP
 //! co-precessing deviations of IMRPhenomXPNR:
 //!
@@ -11,8 +11,8 @@
 //! - the deviations of the (2,2) co-precessing model,
 //!   `LALSimIMRPhenomX_PNR_deviations.c` (`XLALSimIMRPhenomXCP_*_l2m2`).
 //!
-//! The expressions mirror clang's contraction into fused multiply-adds (see
-//! [`crate::spintaylor::fp`]).
+//! Products and sums are fused where the hardware has fused multiply-adds
+//! (see [`crate::spintaylor::fp`]).
 
 use crate::spintaylor::fp::{fma, fnms};
 

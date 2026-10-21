@@ -6,8 +6,6 @@
 # Options
 #   --platform arm64|amd64   container platform (default: the Docker host's;
 #                            amd64 runs emulated on Apple silicon)
-#   --fma on|off             build with --cfg waveformrs_fma="on"|"off",
-#                            overriding the platform's FMA mirroring
 #   --target-cpu CPU         build with -C target-cpu=CPU (e.g. native,
 #                            x86-64-v3)
 #   Builds with options use their own target directory under /target.
@@ -46,19 +44,13 @@ while [[ $# -gt 0 ]]; do
         platform=${2#linux/}
         shift 2
         ;;
-    --fma)
-        [[ $2 == on || $2 == off ]] || { echo "--fma on|off" >&2; exit 2; }
-        rustflags="$rustflags --cfg waveformrs_fma=\"$2\""
-        variant="$variant-fma-$2"
-        shift 2
-        ;;
     --target-cpu)
         rustflags="$rustflags -C target-cpu=$2"
         variant="$variant-$2"
         shift 2
         ;;
     -h | --help)
-        sed -n '2,32p' "${BASH_SOURCE[0]}"
+        sed -n '2,30p' "${BASH_SOURCE[0]}"
         exit 0
         ;;
     *) break ;;

@@ -31,10 +31,5 @@ serde_json = { version = "1", features = ["float_roundtrip"] }
 # Whole-program optimisation recovers ~30% for IMRPhenomXAS; it applies to
 # binaries built from this package (examples, tests, benchmarks). Downstream
 # crates should enable `lto = "fat"` in their own release profile.
-# `--cfg waveformrs_fma="on"|"off"` overrides the platform's choice of fused
-# multiply-adds in src/spintaylor/fp.rs (see docs/linux.md).
-[lints.rust]
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(waveformrs_fma, values("on", "off"))'] }
-
 [profile.release]
 lto = "fat"

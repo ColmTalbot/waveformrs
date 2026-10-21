@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2024-2026 Colm Talbot. Parts of waveformrs are translated
-// from LALSuite, GSL, glibc and fdlibm: see NOTICE.md for their authors.
+// from LALSuite, GSL and fdlibm: see NOTICE.md for their authors.
 //! Conditioned waveforms and conversions between the time and frequency
 //! domains, following `XLALSimInspiralTD` and `XLALSimInspiralFD` of
 //! LALSimulation 6.2.0 (`LALSimInspiralGeneratorConditioning.c`,
@@ -108,7 +108,7 @@
 //! # Accuracy
 //!
 //! The bounds, tapers, filter, epochs and lengths reproduce LAL exactly
-//! (the Butterworth filter bit for bit for identical input). The Fourier
+//! (the Butterworth filter to rounding for identical input). The Fourier
 //! transforms are not FFTW's and differ from it by a few `1e-16` of the
 //! largest value. Transforms to the frequency domain (NRSur7dq4) therefore
 //! agree with LAL to `~3e-16`. Transforms to the time domain are high-pass

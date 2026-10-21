@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2024-2026 Colm Talbot. Parts of waveformrs are translated
-// from LALSuite, GSL, glibc and fdlibm: see NOTICE.md for their authors.
+// from LALSuite, GSL and fdlibm: see NOTICE.md for their authors.
 //! The NRSur7dq4 waveform: `PrecessingNRSur_core` and the LAL drivers
 //! `XLALSimInspiralPrecessingNRSurPolarizations`,
 //! `XLALSimInspiralPrecessingNRSurModes` and `XLALPrecessingNRSurDynamics`.
@@ -9,15 +9,14 @@ use std::f64::consts::{FRAC_PI_2, PI};
 
 use num_complex::Complex;
 
+use crate::complex::cexp_i;
 use crate::constants::{C_SI, MSUN_SI, MTSUN_SI, PC_SI};
-use crate::imrphenomx::libm::cexp_i;
 use crate::imrphenomx::PrecessingBinary;
 use crate::nrsur::data::{mode_index, DataPiece, NRSur7dq4Data, LMAX, N_MODES};
 use crate::nrsur::dynamics::{Dynamics, State, N_STATE};
 use crate::nrsur::fit::MassRatioParameters;
 use crate::nrsur::frames::coorbital_to_inertial;
 use crate::nrsur::spline::{cubic, FixedKnots};
-use crate::nrsur::trig::{separate_cos, separate_sin, sincos};
 use crate::nrsur::NRSurError;
 use crate::spintaylor::fp::{fma, fms, fnms};
 
@@ -248,10 +247,7 @@ fn gps_epoch(t: f64) -> f64 {
 }
 
 /// `XLALSpinWeightedSphericalHarmonic(theta, phi, -2, ell, m)` for `ell <=
-/// 4`, with the expressions contracted as in LAL's arm64 build. Each case
-/// of LAL's switch is a basic block of its own, in which clang combines
-/// `sin(x)` and `cos(x)` of the same argument into `__sincos_stret` (see
-/// [`crate::nrsur::trig`]); the other calls stay separate.
+/// 4`.
 pub(crate) fn spin_weighted_spherical_harmonic(
     theta: f64,
     phi: f64,
@@ -259,15 +255,15 @@ pub(crate) fn spin_weighted_spherical_harmonic(
     m: i32,
 ) -> Complex<f64> {
     let half = theta / 2.0;
-    let sin = separate_sin;
-    let cos = separate_cos;
+    let sin = f64::sin;
+    let cos = f64::cos;
     let fac = match (ell, m) {
         (2, -2) => {
             let c = cos(theta);
             (5.0 / (64.0 * PI)).sqrt() * (1.0 - c) * (1.0 - c)
         }
         (2, -1) => {
-            let (s, c) = sincos(theta);
+            let (s, c) = f64::sin_cos(theta);
             (5.0 / (16.0 * PI)).sqrt() * s * (1.0 - c)
         }
         (2, 0) => {
@@ -275,7 +271,7 @@ pub(crate) fn spin_weighted_spherical_harmonic(
             (15.0 / (32.0 * PI)).sqrt() * s * s
         }
         (2, 1) => {
-            let (s, c) = sincos(theta);
+            let (s, c) = f64::sin_cos(theta);
             (5.0 / (16.0 * PI)).sqrt() * s * (1.0 + c)
         }
         (2, 2) => {
@@ -283,7 +279,7 @@ pub(crate) fn spin_weighted_spherical_harmonic(
             (5.0 / (64.0 * PI)).sqrt() * (1.0 + c) * (1.0 + c)
         }
         (3, -3) => {
-            let (sh, ch) = sincos(half);
+            let (sh, ch) = f64::sin_cos(half);
             (21.0 / (2.0 * PI)).sqrt() * ch * sh.powf(5.0)
         }
         (3, -2) => (7.0 / (4.0 * PI)).sqrt() * fma(3.0, cos(theta), 2.0) * sin(half).powf(4.0),
@@ -292,7 +288,7 @@ pub(crate) fn spin_weighted_spherical_harmonic(
             (35.0 / (2.0 * PI)).sqrt() * fma(-3.0, s3, fma(4.0, s2, s)) / 32.0
         }
         (3, 0) => {
-            let (s, c) = sincos(theta);
+            let (s, c) = f64::sin_cos(theta);
             ((105.0 / (2.0 * PI)).sqrt() * c * (s * s)) / 4.0
         }
         (3, 1) => {
@@ -301,15 +297,15 @@ pub(crate) fn spin_weighted_spherical_harmonic(
         }
         (3, 2) => (7.0 / PI).sqrt() * cos(half).powf(4.0) * fma(3.0, cos(theta), -2.0) / 2.0,
         (3, 3) => {
-            let (sh, ch) = sincos(half);
+            let (sh, ch) = f64::sin_cos(half);
             -(21.0 / (2.0 * PI)).sqrt() * ch.powf(5.0) * sh
         }
         (4, -4) => {
-            let (sh, ch) = sincos(half);
+            let (sh, ch) = f64::sin_cos(half);
             3.0 * (7.0 / PI).sqrt() * (ch * ch) * sh.powf(6.0)
         }
         (4, -3) => {
-            let (sh, ch) = sincos(half);
+            let (sh, ch) = f64::sin_cos(half);
             3.0 * (7.0 / (2.0 * PI)).sqrt() * ch * fma(2.0, cos(theta), 1.0) * sh.powf(5.0)
         }
         (4, -2) => {
@@ -335,11 +331,11 @@ pub(crate) fn spin_weighted_spherical_harmonic(
             (3.0 * ch.powf(4.0) * fma(7.0, c2, fma(-14.0, c, 9.0))) / (4.0 * PI.sqrt())
         }
         (4, 3) => {
-            let (sh, ch) = sincos(half);
+            let (sh, ch) = f64::sin_cos(half);
             -3.0 * (7.0 / (2.0 * PI)).sqrt() * ch.powf(5.0) * fma(2.0, cos(theta), -1.0) * sh
         }
         (4, 4) => {
-            let (sh, ch) = sincos(half);
+            let (sh, ch) = f64::sin_cos(half);
             3.0 * (7.0 / PI).sqrt() * ch.powf(6.0) * (sh * sh)
         }
         _ => panic!("spin-weighted spherical harmonic ({ell}, {m}) not implemented"),
@@ -614,16 +610,14 @@ impl<'a> NRSur7dq4<'a> {
         // PrecessingNRSur_rotate_spins, and cos(m phi), sin(m phi) for the
         // transformation to the coprecessing frame.
         for t in 0..n {
-            // separate calls in TransformModesCoorbitalToInertial
             let mut cos_m = [0.0; LMAX];
             let mut sin_m = [0.0; LMAX];
             for (k, (c, s)) in cos_m.iter_mut().zip(sin_m.iter_mut()).enumerate() {
                 let arg = (k + 1) as f64 * phi[t];
-                *c = separate_cos(arg);
-                *s = separate_sin(arg);
+                *c = f64::cos(arg);
+                *s = f64::sin(arg);
             }
-            // __sincos_stret in PrecessingNRSur_rotate_spins
-            let (sp, cp) = sincos(phi[t]);
+            let (sp, cp) = f64::sin_cos(phi[t]);
             for chi in [&mut *chi_a, &mut *chi_b] {
                 let tmp = chi[t];
                 let y = chi[n + t];
@@ -1073,8 +1067,7 @@ mod tests {
         }
     }
 
-    /// Bit for bit against `XLALSpinWeightedSphericalHarmonic`, including
-    /// angles where `__sincos_stret` and `sin` differ.
+    /// Against `XLALSpinWeightedSphericalHarmonic`, to a few ulp.
     #[test]
     fn harmonics_match_lal() {
         #[derive(serde::Deserialize)]
@@ -1098,12 +1091,8 @@ mod tests {
                     let &(l, mm, re, im) = values.next().unwrap();
                     assert_eq!((l, mm), (ell, m));
                     let y = spin_weighted_spherical_harmonic(theta, phi, ell, m);
-                    let matches = if crate::reference::same_platform() {
-                        y.re.to_bits() == re.to_bits() && y.im.to_bits() == im.to_bits()
-                    } else {
-                        // another libm: |Y| <= 1.3, so to a few ulp
-                        (y.re - re).abs().max((y.im - im).abs()) <= 4.0 * f64::EPSILON
-                    };
+                    // |Y| <= 1.3, so to a few ulp
+                    let matches = (y.re - re).abs().max((y.im - im).abs()) <= 4.0 * f64::EPSILON;
                     if !matches {
                         mismatches.push(format!("({ell}, {m}) theta={theta}"));
                     }

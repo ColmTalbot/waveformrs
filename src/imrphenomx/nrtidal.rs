@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2024-2026 Colm Talbot. Parts of waveformrs are translated
-// from LALSuite, GSL, glibc and fdlibm: see NOTICE.md for their authors.
+// from LALSuite, GSL and fdlibm: see NOTICE.md for their authors.
 //! The NRTidal corrections of IMRPhenomXAS_NRTidalv2/v3 and
 //! IMRPhenomXP_NRTidalv2/v3: `IMRPhenomXGetTidalPhaseCoefficients`,
 //! `IMRPhenomX_TidalPhase` and `IMRPhenomX_TidalPhaseDerivative` in
@@ -411,7 +411,7 @@ impl Tidal {
             let four_thirds_in_lal = 1.0;
             let dpn_poly = (2. / 3.) * mf.powf(-1.0 / 3.0) * c_1 * pi.two_thirds
                 + c_3over2 * PI
-                + four_thirds_in_lal * mf.powf(1.0 / 3.0) * c_2 * pi.four_thirds
+                + four_thirds_in_lal * mf.cbrt() * c_2 * pi.four_thirds
                 + (5. / 3.) * powers.two_thirds * c_5over2 * pi.five_thirds;
             let factor = -c_newt * kappa;
             terms.dpn += factor

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2024-2026 Colm Talbot. Parts of waveformrs are translated
-// from LALSuite, GSL, glibc and fdlibm: see NOTICE.md for their authors.
+// from LALSuite, GSL and fdlibm: see NOTICE.md for their authors.
 //! Dense linear solve for the small collocation systems of IMRPhenomX.
 //!
 //! LALSimulation solves these with `gsl_linalg_LU_decomp` followed by
@@ -119,7 +119,7 @@ mod tests {
     }
 
     #[test]
-    fn matches_gsl_openblas_bitwise() {
+    fn matches_gsl_openblas() {
         // gsl_linalg_LU_decomp + gsl_linalg_LU_solve (GSL 2.8, OpenBLAS
         // 0.3.34) for a collocation-like system.
         let a = [
@@ -131,25 +131,20 @@ mod tests {
         ];
         let b = [0.3, -1.7, 2.9, 4.1, -0.6];
         let x = lu_solve(a, b);
-        let expected = if crate::spintaylor::fp::FUSED_MULTIPLY_ADD {
-            // osx-arm64 and linux-aarch64 (OpenBLAS neoversen1 kernels)
-            [
-                -3.873704390847249,
-                8.711915069057929,
-                0.6889095031952177,
-                -3.2225520511234795,
-                0.7734157905586476,
-            ]
-        } else {
-            // linux-64 with OpenBLAS's kernels without FMA (e.g. Nehalem)
-            [
-                -3.8737043908472497,
-                8.71191506905793,
-                0.6889095031952147,
-                -3.222552051123481,
-                0.7734157905586483,
-            ]
-        };
-        assert_eq!(x, expected);
+        // (osx-arm64; the solution differs between OpenBLAS's kernels by
+        // ~1e-14, a condition number of ~100 times rounding)
+        let expected = [
+            -3.873704390847249,
+            8.711915069057929,
+            0.6889095031952177,
+            -3.2225520511234795,
+            0.7734157905586476,
+        ];
+        for (x, expected) in x.iter().zip(expected) {
+            assert!(
+                (x - expected).abs() <= 1e-14 * expected.abs(),
+                "{x} != {expected}"
+            );
+        }
     }
 }

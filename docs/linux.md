@@ -1,9 +1,10 @@
 # waveformrs on Linux
 
-The crate reproduces the conda-forge **osx-arm64** build of lalsimulation
-6.2.0 to rounding, for most models bit for bit, and that build produced the
-committed reference data
-in `tests/data`. This page covers Linux. It describes the Docker containers
+The committed reference data in `tests/data` come from the conda-forge
+**osx-arm64** build of lalsimulation 6.2.0. The crate does not copy that
+build, or any other, operation by operation: it uses Rust's elementary
+functions and fuses multiply-adds wherever the hardware has the
+instruction (see "Floating-point decisions" below). This page covers Linux. It describes the Docker containers
 that test and benchmark the crate against the conda-forge **linux-aarch64**
 and **linux-64** builds of the same lalsimulation, what agrees with what and
 how closely, and what was changed for Linux.
@@ -57,8 +58,8 @@ Options for every command: `--fma on|off` builds with
 
 | | macOS arm64 (host) | linux/arm64 | linux/amd64 (emulated) |
 |---|---|---|---|
-| `cargo test --release`, committed data | pass, strict | pass, cross-build tolerances | pass, cross-build tolerances |
-| against the container's own LAL (`reference`) | — | pass, cross-build tolerances | pass, cross-build tolerances |
+| `cargo test --release`, committed data | pass | pass | pass |
+| against the container's own LAL (`reference`) | — | pass | pass |
 | `--no-default-features` (lib and tests) | pass | pass | pass |
 | build warnings / clippy / rustfmt | clean | clean¹ | clean¹ |
 | `-C target-cpu=x86-64-v3` | — | — | not testable² |
@@ -69,8 +70,8 @@ have.
 
 ² Any build with AVX enabled gives wrong results under Rosetta. That covers
 `-C target-feature=+avx`, which `+fma` and `x86-64-v3` imply. With `+avx`
-alone, the crate's arithmetic is unchanged (no FMA, unfused `fp.rs`), and
-still the IMRPhenomXAS duration test is off by 6%. An `+sse4.1` build
+alone, the crate's arithmetic is unchanged (no FMA), and still the
+IMRPhenomXAS duration test is off by 6%. An `+sse4.1` build
 passes. These builds need real x86-64 hardware to be validated.
 
 The doctests of `src/conversions` fail with `--no-default-features` on every
@@ -80,14 +81,9 @@ configuration.
 
 ### How the tests decide their tolerances
 
-The crate mirrors one build of LAL operation by operation: osx-arm64 (clang
-contractions, Apple's libm). `tests/common::mirrored_build()` is true only on
-macOS arm64, and the strict tolerances (and the bit-for-bit checks) apply
-only there.
-
-Everywhere else, `tests/common::tolerances(suite, strict)` looks the suite up
-in `CROSS_BUILD_TOLERANCES`. That table covers only the suites that amplify
-last-bit differences:
+The tolerances are the same on every platform. `tests/common::tolerances(suite,
+strict)` looks the suite up in `AMPLIFYING_SUITE_TOLERANCES`, which covers
+only the suites that amplify last-bit differences:
 
 * the IMRPhenomXHM (3,±2) mode, the l = 3 modes of XPHM, and every XHM/XPHM
   polarisation (relative 1e-3 to 2e-1; the (3,±2) modes differ more on
@@ -97,14 +93,13 @@ last-bit differences:
 * the SpinTaylor orbit and angles;
 * the long-waveform and conversion tests of these models.
 
-Each value is about ten times the largest difference seen on Linux arm64 and
-amd64, against either the osx-arm64 or the Linux LAL. Those differences are
-the size of the differences between LAL's own builds (next section). Every
-other suite keeps its strict tolerance on every platform.
+Each value is about ten times the largest difference seen on macOS, Linux
+arm64 and Linux amd64, against either the osx-arm64 or the Linux LAL. Those
+differences are the size of the differences between LAL's own builds (next
+section). Every other suite has its strict tolerance.
 
-Unit tests with hard-coded LAL values use `src/reference.rs`: bit for bit on
-macOS arm64, a few ulp elsewhere (up to 1e4 ulp for the QNM fits, whose
-denominators amplify rounding).
+Unit tests with hard-coded LAL values use `src/reference.rs`: a few ulp (up
+to 1e4 ulp for the QNM fits, whose denominators amplify rounding).
 
 `WAVEFORMRS_REFERENCE_DATA=<dir>` makes the tests read the reference suites
 from `<dir>` instead of `tests/data`. `scripts/linux/reference.sh` generates
@@ -138,56 +133,31 @@ finite-difference second derivative with a step of 1e-7.
 
 ## Floating-point decisions
 
-### Fused multiply-adds (`src/spintaylor/fp.rs`)
+The crate used to copy LAL's arithmetic per platform: clang's or GCC's
+choice of fused multiply-adds, a port of glibc's `cbrt` on Linux, and the C
+library's `cexp`, `cpow`, `csqrt` and Darwin's `__sincos_stret` through FFI.
+With the causes of the differences understood (the previous section), it now
+uses the best available operations instead, and the tests allow for the
+differences on every platform.
 
-`FUSED_MULTIPLY_ADD` depends only on the architecture. The choice was made
-from the disassembly of the conda-forge binaries and from the random-draw
-validation:
-
-* **aarch64, macOS: fused.** Clang (`-ffp-contract=on`) builds LAL and GSL,
-  and the crate mirrors it bit for bit.
-* **aarch64, Linux: fused.** GCC 14.4 builds LAL and GSL with
-  `-ffp-contract=fast`, which fuses every product that clang fuses inside an
-  expression, with the same choice of operand. It also fuses products and
-  sums that sit in different statements, so `liblalsimulation.so` has about
-  11% more fused instructions than the osx-arm64 dylib (46,824 against
-  42,090). Mirroring clang's subset is not bit for bit, but it is much
-  closer than not fusing (table below). OpenBLAS's neoversen1 kernels fuse
-  exactly as mirrored, so the GSL LU solves are bit-identical.
-* **x86-64: not fused.** The conda-forge linux-64 builds use
-  `-march=nocona`, and `liblalsimulation.so`, `liblal.so` and `libgsl.so`
-  contain no FMA instruction. The IMRPhenomX remnant and PN fits and the
-  GSL LU solves agree bit for bit. The LU solves were checked against the
-  Nehalem kernels that OpenBLAS selects under Rosetta. On Haswell and later,
-  OpenBLAS's kernels fuse and the LU solves agree only to rounding.
-
-`--cfg waveformrs_fma="on"|"off"` (`docker/run.sh --fma on|off`) overrides
-the choice, for example for a LAL built with clang on Linux or with
-`-march=haswell`.
-
-On Linux arm64, median relative errors against the container's LAL over the
-same draws:
-
-| | FMA mirrored (default) | not fused |
-|---|---|---|
-| IMRPhenomXHM | 9.7e-9 | 4.5e-7 |
-| IMRPhenomXPHM, NNLO / MSA / SpinTaylor | 1.4e-8 / 3.9e-8 / 3.7e-7 | 5.1e-7 / 4.8e-7 / 6.1e-7 |
-| NRSur7dq4 | 1.3e-14 | 9.5e-14 |
-
-### glibc's `cbrt` (`src/cmath.rs`)
-
-On linux-gnu, Rust links its `compiler-builtins` ahead of libm.
-`compiler-builtins` defines a correctly rounded `cbrt`, so `f64::cbrt` is
-not the glibc `cbrt` that LAL calls. The two differ in the last bit for 57%
-of arguments. That was the largest source of differences on Linux.
-
-The crate now uses `cmath::LibmCbrt::libm_cbrt` wherever LAL calls `cbrt`.
-On linux-gnu this is an inlined port of glibc's algorithm, with the
-polynomial fused on aarch64. It is checked bit for bit against glibc's own
-`cbrt`, through its versioned symbol, on 2 million arguments on both
-architectures. It is also 10–20% faster than the libm call in the
-per-frequency paths of TaylorF2, IMRPhenomD and IMRPhenomXAS. On linux-64,
-LAL's IMRPhenomXHM modes then agree bit for bit, and IMRPhenomXP to ~4e-16.
+* **Fused multiply-adds** (`src/spintaylor/fp.rs`): `fma`, `fms` and `fnms`
+  fuse wherever the target has the instruction (aarch64, and x86-64 with the
+  `fma` target feature, e.g. `-C target-cpu=native` on Haswell and later).
+  A fused product and sum is at least as accurate as a separately rounded
+  one. Baseline x86-64 rounds them separately, as `f64::mul_add` would be a
+  slow software call there. The `--cfg waveformrs_fma` override and
+  `docker/run.sh --fma` are gone.
+* **Cube roots**: `f64::cbrt` everywhere, and `cbrt` instead of
+  `powf(1.0 / 3.0)`. On linux-gnu this is the correctly rounded `cbrt` of
+  Rust's `compiler-builtins`; on macOS it is Apple's. glibc's, which LAL
+  calls on Linux, differs from the correctly rounded value in the last bit
+  for 57% of arguments.
+* **Complex functions** (`src/complex.rs`): `exp(i phi)` from `sin_cos`, the
+  principal square root by C99's cancellation-free algorithm, and the
+  principal cube root as `cbrt(|z|) exp(i arg(z) / 3)` instead of
+  `exp(log(z) / 3)`. None of them goes through FFI any more.
+* **NRSur7dq4**: `f64::sin_cos`, `sin` and `cos` rather than the calls that
+  matched clang's combination into `__sincos_stret` on Darwin.
 
 ## Accuracy against the container's lalsimulation
 
@@ -196,34 +166,41 @@ LAL's IMRPhenomXHM modes then agree bit for bit, and IMRPhenomXP to ~4e-16.
 OMP_NUM_THREADS=1. The arm64 runs use 200 draws per model and the emulated
 amd64 runs use 100 (NRSur7dq4: 200 and 50). The table gives the largest and
 median of max|h_rs − h_lal| / max|h_lal|. Data:
-`report/data/linux_validation_{arm64,amd64}.json`. For comparison,
-osx-arm64 agrees bit for bit or to ~1e-15 for all models but TaylorF2,
-IMRPhenomD and IMRPhenomXAS, which are at ~1e-11 everywhere because they
-evaluate powers of the frequency differently from LAL.
+`report/data/linux_validation_{arm64,amd64}.json`. On osx-arm64 every
+model agrees with LAL to ~1e-14 or better, except TaylorF2, IMRPhenomD and
+IMRPhenomXAS, which are at ~1e-11 everywhere because they evaluate powers of
+the frequency differently from LAL.
 
 | model | linux/arm64 max | median | linux/amd64 max | median |
 |---|---|---|---|---|
-| TaylorF2 | 4.9e-11 | 7.9e-13 | 6.2e-11 | 9.8e-13 |
-| IMRPhenomD | 4.1e-11 | 6.4e-13 | 5.7e-11 | 6.1e-13 |
-| IMRPhenomXAS | 6.2e-11 | 1.0e-12 | 1.0e-10 | 7.0e-13 |
-| IMRPhenomXHM | 1.6e-5 | 9.7e-9 | 3.8e-7 | 0 (56/100 identical) |
-| IMRPhenomXP, NNLO | 2.9e-12 | 3.5e-14 | 1.6e-15 | 3.6e-16 |
-| IMRPhenomXP, MSA | 9.4e-9 | 6.8e-14 | 1.8e-15 | 3.7e-16 |
-| IMRPhenomXP, SpinTaylor | 9.3e-7 | 1.1e-12 | 2.1e-15 | 3.7e-16 |
-| IMRPhenomXPHM, NNLO | 8.8e-6 | 1.4e-8 | 3.4e-7 | 3.8e-16 |
-| IMRPhenomXPHM, MSA | 2.0e-5 | 3.9e-8 | 5.5e-7 | 3.9e-16 |
-| IMRPhenomXPHM, SpinTaylor | 1.3e-4 | 3.7e-7 | 4.8e-7 | 3.8e-16 |
+| TaylorF2 | 2.9e-11 | 8.0e-13 | 2.9e-11 | 8.8e-13 |
+| IMRPhenomD | 3.6e-11 | 4.5e-13 | 2.9e-11 | 5.4e-13 |
+| IMRPhenomXAS | 4.6e-11 | 5.7e-13 | 4.4e-11 | 4.0e-13 |
+| IMRPhenomXHM | 9.9e-6 | 1.9e-7 | 2.7e-5 | 2.5e-7 |
+| IMRPhenomXP, NNLO | 3.0e-12 | 5.5e-14 | 5.6e-13 | 3.7e-14 |
+| IMRPhenomXP, MSA | 5.8e-8 | 1.2e-13 | 5.3e-9 | 7.9e-14 |
+| IMRPhenomXP, SpinTaylor | 1.1e-5 | 2.0e-12 | 5.6e-6 | 1.8e-12 |
+| IMRPhenomXPHM, NNLO | 3.4e-5 | 3.6e-7 | 7.6e-5 | 3.0e-7 |
+| IMRPhenomXPHM, MSA | 7.5e-5 | 4.1e-7 | 1.1e-4 | 4.3e-7 |
+| IMRPhenomXPHM, SpinTaylor | 1.1e-4 | 6.3e-7 | 6.9e-5 | 6.1e-7 |
+| IMRPhenomXPNR | 5.1e-5 | 4.9e-7 | 1.5e-5 | 4.6e-7 |
 | NRSur7dq4 | 1.5e-13 | 1.3e-14 | 1.0e-15 | 5.5e-16 |
 
-All mismatches are below 1e-8 on arm64 and below 1e-12 on amd64.
+All mismatches are below 4e-8. Before the crate stopped copying LAL's
+arithmetic, linux-64 agreed with LAL to ~1e-15 for most models (it then
+mirrored that build's unfused arithmetic and glibc's `cbrt`), and the
+higher-mode models on linux-aarch64 to ~1e-8 (median). The higher-mode and
+SpinTaylor models now differ from both Linux builds of LAL by ~1e-7
+(median) to ~1e-4 (max), the size of LAL's own differences between its
+builds, and are closer than before to the committed osx-arm64 data (e.g.
+IMRPhenomXPHM 7e-4 -> 4e-4, IMRPhenomXP_NRTidal 6e-8 -> 5e-9 on linux/arm64).
 
-* **linux-64:** apart from the frequency powers of TaylorF2, D and XAS, the
-  crate agrees with LAL at the rounding level, as it does on macOS. The
-  remaining (3,2)-mode differences (up to 4e-7) come from a few last-bit
-  differences that have not been traced.
-* **linux-aarch64:** the cross-statement contractions of GCC are not
-  mirrored. The higher-mode models agree to ~1e-8 typically and to 1e-4 at
-  worst, which is the size of LAL's own difference between its builds.
+The crate's own builds differ from each other (`examples/lal_validation` on
+the same 20 binaries per model on macOS arm64, Linux arm64 and Linux
+amd64) by at most ~1e-12 for TaylorF2, IMRPhenomD, IMRPhenomXAS and
+IMRPhenomXP with NNLO angles (TaylorF2 and IMRPhenomD are identical on the
+two Linux builds), ~1e-11 to ~1e-9 for IMRPhenomXP with SpinTaylor and MSA
+angles, and ~1e-6 (median) to ~2e-5 (max) for the higher-mode models.
 
 ## Performance on Linux arm64
 
@@ -269,20 +246,20 @@ half of the time is in glibc's libm, mostly
 `sincos` (16%), `cbrt` with its `frexp`/`scalbn` (15%), `atan` (5%) and
 `log`/`exp` (6%). glibc's `sin`/`cos` are ~1.5× slower than Apple's and its
 `cbrt` ~3×, while its `exp`, `log` and `pow` are faster, which is why LAL,
-built on `pow`, does not slow down. The crate calls the functions LAL
-calls, so that it rounds as LAL does. Two changes help:
-
-* the inlined glibc `cbrt` (above) cut these per-frequency paths by 10–20%
-  (TaylorF2 185 → 164 µs, IMRPhenomD 219 → 177 µs, IMRPhenomXAS 205 → 177
-  µs);
-* for many waveforms on the same frequencies, the grid paths avoid libm
-  for the phase (TaylorF2, IMRPhenomD and IMRPhenomXAS on grids: 42, 119
-  and 118 µs per waveform in `examples/grid_benchmark.rs`, as on macOS).
+built on `pow`, does not slow down. The crate calls the corresponding
+functions, now Rust's correctly rounded `cbrt` (an out-of-line call) rather
+than an inlined port of glibc's: these per-frequency paths are 6–18% slower
+for it than with the port (`examples/benchmark.rs`, best of two runs:
+TaylorF2 166 → 185 µs, IMRPhenomD 188 → 223 µs, IMRPhenomXAS 186 → 198
+µs), while the other models are within ±6%. For many waveforms on the same
+frequencies, the grid paths avoid libm for the phase and are unaffected
+(TaylorF2, IMRPhenomD and IMRPhenomXAS on grids: 42, 110 and 118 µs per
+waveform in `examples/grid_benchmark.rs`, as on macOS).
 
 No allocator effects showed up in the profiles of these models:
 `malloc`/`free` are not among the top symbols. The other models were not
 profiled. `-C target-cpu=native` made no measurable difference on arm64,
-where NEON is baseline; this was measured before the `cbrt` change.
+where NEON is baseline.
 
 ## x86-64
 
@@ -296,13 +273,12 @@ where NEON is baseline; this was measured before the `cbrt` change.
   * the polynomials multiply and add separately;
   * rounding uses the 1.5·2^52 shift.
 
-  The QNM fit sums now go through `fp::fma`, so they are unfused on x86-64
-  like LAL's.
+  The QNM fit sums go through `fp::fma`, so they are unfused on baseline
+  x86-64.
 * `-C target-cpu=x86-64-v3` (`docker/run.sh --platform amd64 --target-cpu
-  x86-64-v3`) is an opt-in. It turns on hardware FMA and AVX2 for
-  `fastmath`'s vectorised grid loops, while `fp.rs` and `cmath.rs` still
-  mirror LAL's and glibc's unfused arithmetic. The FMA variants of
-  `fastmath` pass their tests everywhere, because aarch64 uses them. Whole
+  x86-64-v3`) is an opt-in. It turns on hardware FMA (in `fp.rs` as well
+  as in `fastmath`) and AVX2 for the vectorised grid loops. The FMA
+  variants pass their tests everywhere, because aarch64 uses them. Whole
   AVX builds can't be validated under Rosetta, though (note ² above).
 * The linux/amd64 container runs under Rosetta. Its timings are not
   meaningful as absolute numbers, so this page reports correctness only
@@ -311,15 +287,16 @@ where NEON is baseline; this was measured before the `cbrt` change.
 
 ## Open ends
 
-* **Bit-for-bit agreement with GCC builds.** On linux-aarch64 this would
-  need a mirror of GCC's cross-statement contractions, a second `fp.rs`
-  contraction rule derived from the disassembly. On linux-64 a few
-  differences remain to be traced: up to 4e-7 in the (3,2) mode, and
-  SpinTaylor angles that differ by 1e-6 rad after 900 s.
+* **Platform-independent higher modes.** The crate's own builds differ by
+  ~1e-6 (median) to ~1e-5 (max) in IMRPhenomXHM, XPHM and XPNR, as LAL's
+  do, because the (3,2) mode's intermediate phase uses a numerical second
+  derivative with a step of 1e-7. The analytic derivative would remove
+  most of this, at the cost of a difference from LAL of the size of the
+  finite-difference error.
 * **Faster per-frequency paths on Linux.** glibc's `sincos` and `atan` are
-  slower than Apple's. The per-frequency paths of TaylorF2, D and XAS call
-  them as LAL does. A vectorised `sin_cos`, which the grid paths already
-  use, would speed them up at the cost of last-bit differences from LAL.
+  slower than Apple's. A vectorised `sin_cos`, which the grid paths already
+  use, would speed up the per-frequency paths of TaylorF2, D and XAS, at
+  an accuracy of a few ulp instead of under one.
 * **Real x86-64 hardware.** Nothing here was measured on it: not the
   timings, not OpenBLAS's Haswell+ kernels, and not the AVX/FMA builds
   that Rosetta miscomputes.

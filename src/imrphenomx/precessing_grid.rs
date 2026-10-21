@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2024-2026 Colm Talbot. Parts of waveformrs are translated
-// from LALSuite, GSL, glibc and fdlibm: see NOTICE.md for their authors.
+// from LALSuite, GSL and fdlibm: see NOTICE.md for their authors.
 //! Evaluation of IMRPhenomXP, IMRPhenomXPHM and IMRPhenomXPNR on a prepared
 //! [`crate::grid::FrequencyGrid`], in passes over the grid. (IMRPhenomXPNR
 //! evaluates its PNR angles for each co-precessing mode, since they depend

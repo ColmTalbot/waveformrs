@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2024-2026 Colm Talbot. Parts of waveformrs are translated
-// from LALSuite, GSL, glibc and fdlibm: see NOTICE.md for their authors.
+// from LALSuite, GSL and fdlibm: see NOTICE.md for their authors.
 //! The J-frame modes `(2, m)` of IMRPhenomXP: its co-precessing (2,2) mode
 //! twisted up mode by mode with the Euler angles of its polarizations, in
 //! the conventions of the J-frame modes of IMRPhenomXPHM. LALSimulation has
@@ -11,9 +11,8 @@ use std::f64::consts::PI;
 use num_complex::Complex;
 
 use super::{frequency_bounds, IMRPhenomXP, Mode22, Setup};
-use crate::cmath::LibmCbrt;
+use crate::complex::cexp_i;
 use crate::imrphenomx::internals::{IMRPhenomXError, UsefulPowers};
-use crate::imrphenomx::libm::cexp_i;
 use crate::imrphenomx::precession::PrecessionVersion;
 use crate::imrphenomx::wigner::half_angles;
 use crate::imrphenomx::xphm::jframe::EpsilonFactors;
@@ -53,7 +52,7 @@ impl Setup {
                     -(angles.gamma[i] - gamma_ref) + prec.epsilon0,
                 ),
                 None if prec.msa.is_some() => {
-                    let (alpha, epsilon, cos_beta) = prec.msa_angles((PI * mf).libm_cbrt());
+                    let (alpha, epsilon, cos_beta) = prec.msa_angles((PI * mf).cbrt());
                     (alpha, cos_beta, epsilon)
                 }
                 None => {

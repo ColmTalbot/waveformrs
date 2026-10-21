@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2024-2026 Colm Talbot. Parts of waveformrs are translated
-// from LALSuite, GSL, glibc and fdlibm: see NOTICE.md for their authors.
+// from LALSuite, GSL and fdlibm: see NOTICE.md for their authors.
 //! Numerical "SpinTaylor" Euler angles of IMRPhenomXP/XPHM
 //! (`PhenomXPrecVersion` 320, arXiv:2412.16721), following
 //! `LALSimIMRPhenomX_precession.c`:
@@ -21,11 +21,8 @@
 //! - [`SpinTaylorAngles::angles_imr`] ports `IMRPhenomXPSpinTaylorAnglesIMR`,
 //!   the angles on the frequency grid of the waveform.
 //!
-//! Like the SpinTaylor integrator, the arithmetic mirrors the fused
-//! multiply-adds of the arm64 builds of LALSimulation and GSL (see
-//! [`crate::spintaylor::fp`]): on that platform all intermediate quantities
-//! (PN solution, splines, final spin, merger-ringdown coefficients, `gamma`)
-//! agree with LALSimulation bit for bit.
+//! Like the SpinTaylor integrator, products and sums are fused where the
+//! hardware has fused multiply-adds (see [`crate::spintaylor::fp`]).
 
 use std::f64::consts::PI;
 
@@ -428,8 +425,8 @@ pub(crate) fn inspiral_angles_spintaylor_with(
 }
 
 /// `evaluate_QNMfit_fdamp21` of `LALSimIMRPhenomXHM_qnm.c`, the damping
-/// frequency of the (2,1) mode (accumulated with fused multiply-adds like
-/// the arm64 builds of LALSimulation, see `qnm.rs`).
+/// frequency of the (2,1) mode (accumulated with fused multiply-adds, see
+/// `qnm.rs`).
 fn fdamp21(af: f64) -> f64 {
     let x2 = af * af;
     let x3 = x2 * af;
@@ -486,8 +483,8 @@ impl AlphaMrd {
         let alpha1 = -spline.eval(f1);
         let dalpha1 = -spline.derivative(f1);
         let alpha2 = -spline.eval(f2);
-        // The expressions of LAL with clang's contraction into fused
-        // multiply-adds (see `crate::spintaylor::fp`).
+        // The expressions of LAL (see `crate::spintaylor::fp` for the fused
+        // multiply-adds).
         let f1_4 = f1.powf(4.);
         let f2_4 = f2.powf(4.);
         let den = 2. * (f1sq - f2sq).powf(2.);
@@ -601,8 +598,8 @@ impl BetaMrd {
             let dbeta2 = -dcosbeta2 / (if sqrtarg <= 0. { 1. } else { sqrtarg }).sqrt();
             let off = if cosbetamax < 0. { PI } else { 0. };
             let den = (f1 - f2).powf(2.);
-            // The expressions of LAL with clang's contraction into fused
-            // multiply-adds (see `crate::spintaylor::fp`).
+            // The expressions of LAL (see `crate::spintaylor::fp` for the
+            // fused multiply-adds).
             let f1_4 = f1.powf(4.);
             let f2_3 = f2.powf(3.);
             let f2_4 = f2.powf(4.);
@@ -1363,10 +1360,10 @@ mod tests {
         for f_min in [25.0, wf.f_ref] {
             let arrays = match inspiral_angles_spintaylor(&wf, &prec, f_min) {
                 Ok(arrays) => arrays,
-                // With glibc's cbrt (less accurate than Apple's) the single
-                // run from f_ref = f_min can start an ulp above f_min, which
-                // LAL's check (mirrored here) turns into the MSA fallback.
-                Err(_) if f_min == wf.f_ref && !crate::reference::BIT_EXACT => continue,
+                // The single run from f_ref = f_min can start an ulp above
+                // f_min (depending on the rounding of the cube roots), which
+                // LAL's check turns into the MSA fallback.
+                Err(_) if f_min == wf.f_ref => continue,
                 Err(err) => panic!("{err:?}"),
             };
             let reference = reference_pn_arrays(&wf, &prec, f_min);

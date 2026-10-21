@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2024-2026 Colm Talbot. Parts of waveformrs are translated
-// from LALSuite, GSL, glibc and fdlibm: see NOTICE.md for their authors.
+// from LALSuite, GSL and fdlibm: see NOTICE.md for their authors.
 //! The PNR ("phenomenological and numerical-relativity") machinery of
 //! IMRPhenomXPNR in lalsimulation 6.2.0, following
 //! `LALSimIMRPhenomX_PNR.c`, `LALSimIMRPhenomX_PNR_internals.c`,
@@ -29,12 +29,11 @@
 //! - [`PnrPrecession::antisymmetric_waveform`] is the antisymmetric (2,2)
 //!   co-precessing mode of Ghosh et al. 2024 (arXiv:2310.16980).
 //!
-//! As in the rest of the crate, the arithmetic mirrors the fused
-//! multiply-adds of the arm64 clang build of LALSimulation.
+//! As in the rest of the crate, products and sums are fused where the
+//! hardware has fused multiply-adds ([`crate::spintaylor::fp`]).
 
 use std::f64::consts::{FRAC_PI_2, FRAC_PI_4, PI};
 
-use crate::cmath::LibmCbrt;
 use crate::constants::{C_SI, G_SI, MTSUN_SI};
 use crate::grid::{FrequencyGrid, ScalePowers};
 use crate::imrphenomx::amplitude::AmpCoefficients;
@@ -700,12 +699,12 @@ impl PnrPrecession {
         let omega_ref = wf.pi_m * wf.f_ref * 2. / 2.;
         (prec.alpha_offset, prec.epsilon_offset) = match &prec.msa {
             Some(msa) => {
-                let angles = msa.phi_zeta_costhetal(omega_ref.libm_cbrt());
+                let angles = msa.phi_zeta_costhetal(omega_ref.cbrt());
                 (angles.phiz - prec.alpha0, angles.zeta - prec.epsilon0)
             }
             None => {
                 let logomega_ref = omega_ref.ln();
-                let omega_ref_cbrt = omega_ref.libm_cbrt();
+                let omega_ref_cbrt = omega_ref.cbrt();
                 let omega_ref_cbrt2 = omega_ref_cbrt * omega_ref_cbrt;
                 let (alpha, epsilon) =
                     prec.nnlo
@@ -1098,7 +1097,7 @@ impl PnrPrecession {
                 (self.l, msa.psi_terms())
             };
             let (g0, deltam, psi1, psi2) = terms;
-            let v0 = (PI * mf).libm_cbrt();
+            let v0 = (PI * mf).cbrt();
             let v02 = v0 * v0;
             let v06 = v02 * v02 * v02;
             let dpsi = g0 * deltam * PI / (4.0 * v06) * fma(psi2, v02, fma(2.0 * psi1, v0, 3.0));
@@ -1240,7 +1239,7 @@ impl PnrPrecession {
     /// SpinTaylor).
     fn pn_alpha(&self, mf: f64) -> Result<f64, IMRPhenomXError> {
         let omega = PI * mf;
-        let omega_cbrt = omega.libm_cbrt();
+        let omega_cbrt = omega.cbrt();
         match self.version {
             102 => {
                 let omega_cbrt2 = omega_cbrt * omega_cbrt;
@@ -1271,7 +1270,7 @@ impl PnrPrecession {
         single: Option<&SingleSpin>,
     ) -> Result<f64, IMRPhenomXError> {
         let omega = PI * mf;
-        let omega_cbrt = omega.libm_cbrt();
+        let omega_cbrt = omega.cbrt();
         let beta_full = match self.version {
             102 => return Ok(self.nnlo_beta(omega_cbrt)),
             223 => {
@@ -1304,7 +1303,7 @@ impl PnrPrecession {
     /// `IMRPhenomX_PNR_GetPNBetaAtFreq_fulltwospin`.
     fn pn_beta_fulltwospin(&self, mf: f64, bp: &BetaParams) -> Result<f64, IMRPhenomXError> {
         let omega = PI * mf;
-        let omega_cbrt = omega.libm_cbrt();
+        let omega_cbrt = omega.cbrt();
         match self.version {
             102 => Ok(self.nnlo_beta(omega_cbrt)),
             223 => {
@@ -1337,7 +1336,7 @@ impl PnrPrecession {
         let m1 = wf.m1 * big_m;
         let m2 = wf.m2 * big_m;
         let chi_parr = (m1 + m2) * wf.chi_eff / m1;
-        let v = (PI * mf).libm_cbrt();
+        let v = (PI * mf).cbrt();
         let l_norm = wf.eta / v;
         let l_3pn = big_m * big_m * self.l.ansatz(v, l_norm);
         let chi_temp = chi_calc(m1, l_3pn, self.j0_norm, self.l_ref, chi_parr, pn_beta);
@@ -1493,8 +1492,8 @@ impl PnrPrecession {
             .then(|| MsaSystem::new_unchecked(&self.msa_inputs(wf, self.chi1, self.chi2)));
         let msa_beta = |x: f64| match &main_msa {
             // evaluated with the precession struct of version 330
-            Some(msa) => msa.cos_theta_l_with(x.libm_cbrt(), &self.l).acos(),
-            None => single.expect("single-spin system").beta(x.libm_cbrt()),
+            Some(msa) => msa.cos_theta_l_with(x.cbrt(), &self.l).acos(),
+            None => single.expect("single-spin system").beta(x.cbrt()),
         };
         let bb1 = msa_beta(omega - domega);
         let bb = msa_beta(omega);
@@ -2096,7 +2095,7 @@ impl PnrPrecession {
     /// (`Get_alpha_beta_epsilon`, including the reference offsets).
     pub(crate) fn nnlo_angles(&self, omega: f64) -> (f64, f64, f64) {
         let logomega = omega.ln();
-        let omega_cbrt = omega.libm_cbrt();
+        let omega_cbrt = omega.cbrt();
         let omega_cbrt2 = omega_cbrt * omega_cbrt;
         let (alpha, epsilon) = self.nnlo.evaluate(omega, logomega, omega_cbrt, omega_cbrt2);
         let v = omega_cbrt;
@@ -2144,7 +2143,7 @@ impl PnrPrecession {
                 );
             num / den * fma(b, v5, 1.0)
         };
-        let kappa_rd = kappa_at((PI * wf.f_ring).libm_cbrt());
+        let kappa_rd = kappa_at((PI * wf.f_ring).cbrt());
         (kappa_at, kappa_rd)
     }
 
@@ -2158,7 +2157,7 @@ impl PnrPrecession {
             .map(|&f| {
                 let mf = hz_to_mf(f, wf.m_tot);
                 if mf < wf.f_ring {
-                    kappa_at((PI * mf).libm_cbrt())
+                    kappa_at((PI * mf).cbrt())
                 } else {
                     kappa_rd
                 }

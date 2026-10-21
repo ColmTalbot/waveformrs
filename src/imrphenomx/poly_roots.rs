@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2024-2026 Colm Talbot. Parts of waveformrs are translated
-// from LALSuite, GSL, glibc and fdlibm: see NOTICE.md for their authors.
+// from LALSuite, GSL and fdlibm: see NOTICE.md for their authors.
 //! Roots of a real polynomial as GSL's `gsl_poly_complex_solve`
 //! (`poly/zsolve.c`): the eigenvalues of the balanced companion matrix from
 //! the Francis double-shift QR algorithm. The roots are returned in the

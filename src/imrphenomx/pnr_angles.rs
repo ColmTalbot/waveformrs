@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2024-2026 Colm Talbot. Parts of waveformrs are translated
-// from LALSuite, GSL, glibc and fdlibm: see NOTICE.md for their authors.
+// from LALSuite, GSL and fdlibm: see NOTICE.md for their authors.
 //! The model-independent parts of the PNR precession angles of
 //! IMRPhenomXPNR (Hamilton et al. 2021, arXiv:2107.08876), following
 //! `LALSimIMRPhenomX_PNR_alpha.c`, `LALSimIMRPhenomX_PNR_beta.c` and
@@ -15,11 +15,11 @@
 //!   region and switch off the co-precessing deviations;
 //! - the linear frequency map of the angles of the higher modes.
 //!
-//! The arithmetic mirrors clang's contraction into fused multiply-adds (see
-//! [`crate::spintaylor::fp`]); the inflection points of the MR `beta` are
-//! computed with C's complex arithmetic in LAL, which is emulated here
-//! (`__divdc3` of compiler-rt, `csqrt`, and the implicit conversion of
-//! complex arguments of `acos` and `cos` to their real parts).
+//! Products and sums are fused where the hardware has fused multiply-adds
+//! (see [`crate::spintaylor::fp`]). LAL computes the inflection points of the
+//! MR `beta` in complex arithmetic and passes complex arguments to `acos` and
+//! `cos`, which C converts to their real parts; the same is done here, with
+//! a scaled complex division and the principal square root.
 
 use std::f64::consts::PI;
 
@@ -501,8 +501,8 @@ pub(crate) fn attach_mr_beta(p: &BetaParams) -> bool {
         || p.beta_upper > 5.0 * (p.b0 + 0.1))
 }
 
-/// A complex number with C's `double complex` arithmetic as compiled in
-/// LAL (no fused multiply-adds, divisions through `__divdc3`).
+/// A complex number with the arithmetic of C's `double complex` (scaled
+/// divisions, the algorithm of compiler-rt's `__divdc3`).
 #[derive(Clone, Copy, Debug)]
 struct Cplx {
     re: f64,
@@ -835,7 +835,7 @@ pub(crate) fn pn_waveform_beta(
     let delta = (m1 - m2) / m;
     let theta = costheta.acos();
     let w_orb = PI * mf;
-    let v = w_orb.powf(1.0 / 3.0);
+    let v = w_orb.cbrt();
     let v2 = v * v;
     let v3 = v * v2;
     let cos_iota = iota.cos();

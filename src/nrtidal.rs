@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2024-2026 Colm Talbot. Parts of waveformrs are translated
-// from LALSuite, GSL, glibc and fdlibm: see NOTICE.md for their authors.
+// from LALSuite, GSL and fdlibm: see NOTICE.md for their authors.
 //! The NRTidal corrections for binary neutron stars, NRTidalv2 (Dietrich et
 //! al. 2019, arXiv:1905.06011) and NRTidalv3 (Abac et al. 2024,
 //! arXiv:2311.07456), following `LALSimNRTunedTides.c`, with the
@@ -17,9 +17,8 @@
 
 use std::f64::consts::PI;
 
-use crate::cmath::LibmCbrt;
 use crate::constants::{MSUN_SI, MTSUN_SI};
-use crate::spintaylor::fp::{fma, fnms};
+use crate::spintaylor::fp::fma;
 
 /// The version of the NRTidal corrections (LAL's `NRTidal_version_type`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -309,7 +308,7 @@ fn tidal_phase_v3(f_hz: f64, mtot: f64, c: &[f64; 20], pn: &[f64; 10]) -> f64 {
         - ((s1 - 1.0) / (1.0 + exps2s3))
         - 2.0 * m_omega * (s1 - 1.) * s2 * exps2s3 / ((1.0 + exps2s3) * (1.0 + exps2s3));
 
-    let pn_x = m_omega / m_omega.libm_cbrt();
+    let pn_x = m_omega / m_omega.cbrt();
     let pn_x_2 = pn_x * pn_x;
     let pn_x_3 = pn_x * pn_x_2;
     let pn_x_3over2 = pn_x * pn_x.sqrt();
@@ -349,7 +348,7 @@ fn tidal_phase_pn(
 ) -> f64 {
     let m_omega = PI * f_hz * (mtot * MTSUN_SI);
     let xb = 1.0 - xa;
-    let pn_x = m_omega / m_omega.libm_cbrt();
+    let pn_x = m_omega / m_omega.cbrt();
     let pn_x_2 = pn_x * pn_x;
     let pn_x_3over2 = pn_x * pn_x.sqrt();
     let pn_x_5over2 = pn_x_3over2 * pn_x;
@@ -466,14 +465,14 @@ pub fn quadparam_from_lambda(lambda: f64) -> f64 {
     if lambda < 5e-1 {
         1.0
     } else {
-        // with the fused multiply-adds of LAL's arm64 build (see
-        // crate::spintaylor::fp): the value enters the SpinTaylor angles,
-        // whose start is sensitive to its last bit
+        // 0.194 + 0.0936 L + 0.0474 L^2 - 0.00421 L^3 + 0.000123 L^4 in
+        // Horner's form (the value enters the SpinTaylor angles, whose start
+        // is sensitive to its last bit)
         let loglam = lambda.ln();
-        let mut q = fma(0.0474 * loglam, loglam, fma(0.0936, loglam, 0.194));
-        q = fnms(0.00421 * loglam * loglam, loglam, q);
-        q = fma(0.000123 * loglam * loglam * loglam, loglam, q);
-        q.exp()
+        let q = fma(0.000123, loglam, -0.00421);
+        let q = fma(q, loglam, 0.0474);
+        let q = fma(q, loglam, 0.0936);
+        fma(q, loglam, 0.194).exp()
     }
 }
 

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2024-2026 Colm Talbot. Parts of waveformrs are translated
-// from LALSuite, GSL, glibc and fdlibm: see NOTICE.md for their authors.
+// from LALSuite, GSL and fdlibm: see NOTICE.md for their authors.
 //! The precessing higher-mode model IMRPhenomXPNR of lalsimulation 6.2.0,
 //! with the parity fix of lalsuite master.
 //!
@@ -56,11 +56,11 @@ mod jframe;
 
 use num_complex::Complex;
 
+use crate::complex::cexp_i;
 use crate::constants::{MSUN_SI, PC_SI};
 use crate::fastmath;
 use crate::grid::{FrequencyGrid, ScalePowers};
 use crate::imrphenomx::internals::{IMRPhenomXError, UsefulPowers, WaveformStruct};
-use crate::imrphenomx::libm::cexp_i;
 use crate::imrphenomx::phase::PhaseCoefficients;
 use crate::imrphenomx::pnr::{ringdown_frequency, ModeRange, PnrPrecession, PnrSplines};
 use crate::imrphenomx::pnr_angles::{

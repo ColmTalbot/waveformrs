@@ -2,16 +2,16 @@
 
 The crate's tests compare against stored LALSimulation 6.2.0 output to a
 relative error (max |difference| / max |LAL|) of 1e-10 (TaylorF2, IMRPhenomD)
-or 1e-9 (IMRPhenomX) and a mismatch of 1e-12 on the conda-forge macOS arm64
-build that it mirrors. Elsewhere the higher-mode models are compared with the
-crate's cross-build tolerances (docs/linux.md).
+or 1e-9 (IMRPhenomX) and a mismatch of 1e-12, except for the models whose
+ill-conditioned parts amplify rounding errors, which have looser tolerances
+on every platform (docs/linux.md).
 """
 
 import numpy as np
 import pytest
 
 import waveformrs as wf
-from conftest import MIRRORED_BUILD, compare, requires_nrsur
+from conftest import compare, requires_nrsur
 
 BINARY = dict(
     mass_1=36.0,
@@ -81,8 +81,8 @@ FD_CASES = [
     ("IMRPhenomXP_NRTidalv3", BNS_PRECESSING, dict(precession_version=223), (1e-9, 1e-12)),
 ]
 
-# the crate's tolerances where it does not mirror the reference build
-CROSS_BUILD = {
+# the tolerances of the models that amplify rounding (the crate's tests/common)
+AMPLIFYING = {
     "IMRPhenomXHM": (1e-3, 1e-6),
     "IMRPhenomXPHM": (1e-3, 1e-6),
     "IMRPhenomXP": (1e-7, 1e-12),
@@ -93,9 +93,7 @@ CROSS_BUILD = {
 
 
 def tolerances(approximant, strict):
-    if MIRRORED_BUILD:
-        return strict
-    return CROSS_BUILD.get(approximant, strict)
+    return AMPLIFYING.get(approximant, strict)
 
 
 def case_id(case):
@@ -266,9 +264,9 @@ def test_choose_fd_modes(lal, case):
         np.testing.assert_array_equal(
             frequencies, (np.arange(len(reference)) - half) * series.deltaF
         )
-        # the l = 3 modes of the higher-mode models amplify rounding off the
-        # mirrored build (the crate's choose_fd_modes_l3 tolerances)
-        rel, mismatch = (1e-9, 1e-12) if MIRRORED_BUILD else ((2e-2, 4e-5) if key[0] == 3 else (1e-8, 1e-12))
+        # the l = 3 modes of the higher-mode models amplify rounding (the
+        # crate's choose_fd_modes_l3 tolerances)
+        rel, mismatch = (2e-2, 4e-5) if key[0] == 3 else (1e-8, 1e-12)
         error, mm = compare(modes[key], reference)
         assert error <= rel and mm <= mismatch, (key, error, mm)
 
@@ -435,7 +433,7 @@ def test_simulate_td(lal, approximant, binary, options):
     delta_t = 1.0 / 2048
     result = wf.simulate_td(approximant, delta_t, 20.0, **binary, **options)
     lp, lc = lal_simulate_td(lal_mod, lalsim, approximant, binary, delta_t, 20.0, options)
-    tolerance = 1e-10 if MIRRORED_BUILD or approximant in ("IMRPhenomXAS", "TaylorF2") else 1e-3
+    tolerance = 1e-10 if approximant in ("IMRPhenomXAS", "TaylorF2") else 1e-3
     check_series(result, lp, lc, tolerance)
 
 

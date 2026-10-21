@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2024-2026 Colm Talbot. Parts of waveformrs are translated
-// from LALSuite, GSL, glibc and fdlibm: see NOTICE.md for their authors.
+// from LALSuite, GSL and fdlibm: see NOTICE.md for their authors.
 //! Amplitude of the (2,2) mode: `IMRPhenomXAmpCoefficients`,
 //! `IMRPhenomXGetAmplitudeCoefficients` and `IMRPhenomX_Amplitude_22` from
 //! `LALSimIMRPhenomX_internals.c`.

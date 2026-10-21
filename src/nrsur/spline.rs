@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2024-2026 Colm Talbot. Parts of waveformrs are translated
-// from LALSuite, GSL, glibc and fdlibm: see NOTICE.md for their authors.
+// from LALSuite, GSL and fdlibm: see NOTICE.md for their authors.
 //! Interpolation as done by `gsl_interp_cspline` and `gsl_interp_polynomial`,
 //! specialised to the fixed knots of the surrogate.
 //!
@@ -9,7 +9,7 @@
 //! (when the surrogate data are loaded); fitting a spline to new values then
 //! only needs the right-hand side and the two substitution sweeps, with the
 //! same floating-point operations as `gsl_spline_init`, so the spline
-//! values agree bit for bit with GSL (see [`crate::interpolate`] for the
+//! values agree with GSL to rounding (see [`crate::interpolate`] for the
 //! general spline and [`crate::spintaylor::fp`] for the fused multiply-adds).
 
 use crate::spintaylor::fp::{fma, fms, fnms};

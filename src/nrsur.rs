@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2024-2026 Colm Talbot. Parts of waveformrs are translated
-// from LALSuite, GSL, glibc and fdlibm: see NOTICE.md for their authors.
+// from LALSuite, GSL and fdlibm: see NOTICE.md for their authors.
 //! The precessing numerical-relativity surrogate NRSur7dq4 (Varma et al.
 //! 2019, arXiv:1905.09300), a port of `LALSimIMRPrecessingNRSur.c` from
 //! LALSimulation 6.2.0.
@@ -26,16 +26,12 @@
 //!
 //! # Accuracy
 //!
-//! Every operation of the C code is reproduced in the same order, with the
-//! fused multiply-adds of clang's arm64 build (see [`crate::spintaylor::fp`]),
-//! the GSL splines and polynomial interpolation operation by operation, the
-//! fused column-by-column accumulation of the OpenBLAS `dgemv` kernel for
-//! the empirical interpolants, Darwin's `__sincos_stret` where clang combines
-//! `sin` and `cos` (`trig`) and the C library's `cexp` in the spherical
-//! harmonics. On Apple silicon the polarizations, modes and dynamics agree
-//! bit for bit with the conda-forge build of lalsimulation 6.2.0 (all
-//! reference cases and 200 random draws); elsewhere expect agreement to
-//! rounding (`~1e-15`).
+//! The operations of the C code are done in the same order, with fused
+//! multiply-adds where the hardware has them (see
+//! [`crate::spintaylor::fp`]), the GSL splines and polynomial interpolation,
+//! and a column-by-column accumulation for the empirical interpolants. The
+//! polarizations, modes and dynamics agree with the conda-forge build of
+//! lalsimulation 6.2.0 to rounding (`~1e-15`).
 //!
 //! # Repeated evaluation
 //!
@@ -90,7 +86,6 @@ mod frames;
 mod model;
 mod simd;
 mod spline;
-mod trig;
 
 use std::fmt;
 use std::path::PathBuf;

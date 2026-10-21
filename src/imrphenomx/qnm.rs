@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2024-2026 Colm Talbot. Parts of waveformrs are translated
-// from LALSuite, GSL, glibc and fdlibm: see NOTICE.md for their authors.
+// from LALSuite, GSL and fdlibm: see NOTICE.md for their authors.
 //! Quasi-normal mode fits for the (2,2) mode, `LALSimIMRPhenomX_qnm.c`
 //! (`QNMfits == 1`, the default build of LALSimulation).
 //!

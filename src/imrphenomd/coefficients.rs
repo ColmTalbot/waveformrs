@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2024-2026 Colm Talbot. Parts of waveformrs are translated
-// from LALSuite, GSL, glibc and fdlibm: see NOTICE.md for their authors.
+// from LALSuite, GSL and fdlibm: see NOTICE.md for their authors.
 pub const RHO_COEFFS: [[[f64; 3]; 4]; 3] = [RHO_1_COEFFS, RHO_2_COEFFS, RHO_3_COEFFS];
 pub const GAMMA_COEFFS: [[[f64; 3]; 4]; 3] = [GAMMA_1_COEFFS, GAMMA_2_COEFFS, GAMMA_3_COEFFS];
 pub const ALPHA_COEFFS: [[[f64; 3]; 4]; 5] = [

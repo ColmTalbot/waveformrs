@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2024-2026 Colm Talbot. Parts of waveformrs are translated
-// from LALSuite, GSL, glibc and fdlibm: see NOTICE.md for their authors.
+// from LALSuite, GSL and fdlibm: see NOTICE.md for their authors.
 //! The amplitude of the IMRPhenomXHM higher modes in the original release,
 //! `PhenomXHMReleaseVersion = 122019` (arXiv:2001.10914), as used by
 //! IMRPhenomXPNR: the parts of `IMRPhenomXHM_SetHMWaveformVariables`,
@@ -19,12 +19,13 @@
 //! the 122022 release, except that the (3,2) ringdown phase follows from the
 //! spheroidal-to-spherical rotation of the amplitude.
 //!
-//! As in the rest of the crate every operation follows LAL, including its
-//! fused multiply-adds (see [`fma`]) and the C complex arithmetic (no
-//! contraction; `cpow`, `csqrt` from the C library).
+//! As in the rest of the crate the operations follow LAL (with fused
+//! multiply-adds where the hardware has them, see [`fma`]); the complex
+//! square and cube roots are those of [`crate::complex`].
 
 use num_complex::Complex;
 
+use crate::complex::{csqrt, principal_cbrt};
 use crate::imrphenomx::hm_fits_122018 as fits;
 use crate::imrphenomx::hm_internals::{HMAmpCoefficients, HMWaveformStruct};
 use crate::imrphenomx::hm_poly_122019::{self as poly, PolyInputs};
@@ -561,46 +562,8 @@ fn inside_interval(ftest: f64, fmin: f64, fmax: f64) -> bool {
     ftest >= fmin && ftest <= fmax
 }
 
-/// The C library's complex functions used by `CrossZeroP3` and
-/// `CrossZeroP4`.
-mod clib {
-    use num_complex::Complex;
-
-    /// C `double complex`.
-    #[repr(C)]
-    #[derive(Clone, Copy)]
-    struct CComplex {
-        re: f64,
-        im: f64,
-    }
-
-    extern "C" {
-        fn cpow(x: CComplex, y: CComplex) -> CComplex;
-        fn csqrt(z: CComplex) -> CComplex;
-    }
-
-    /// `cpow(x, y)`
-    pub(super) fn pow(x: Complex<f64>, y: Complex<f64>) -> Complex<f64> {
-        // SAFETY: `cpow` is a pure function of its arguments.
-        let z = unsafe {
-            cpow(
-                CComplex { re: x.re, im: x.im },
-                CComplex { re: y.re, im: y.im },
-            )
-        };
-        Complex::new(z.re, z.im)
-    }
-
-    /// `csqrt(z)`
-    pub(super) fn sqrt(z: Complex<f64>) -> Complex<f64> {
-        // SAFETY: `csqrt` is a pure function of its argument.
-        let w = unsafe { csqrt(CComplex { re: z.re, im: z.im }) };
-        Complex::new(w.re, w.im)
-    }
-}
-
-/// Complex division `(a + ib) / (c + id)` as compiler-rt's `__divdc3`, which
-/// clang calls for C complex divisions.
+/// Complex division `(a + ib) / (c + id)`, scaled by a power of two to
+/// avoid overflow and underflow (the algorithm of compiler-rt's `__divdc3`).
 fn divdc3(a: f64, b: f64, c: f64, d: f64) -> Complex<f64> {
     let mut c = c;
     let mut d = d;
@@ -651,12 +614,12 @@ fn cmul_real(x: f64, z: Complex<f64>) -> Complex<f64> {
     Complex::new(x * z.re, x * z.im)
 }
 
-/// Product of two complex numbers as clang emits it (no contraction).
+/// Product of two complex numbers.
 fn cmul(a: Complex<f64>, b: Complex<f64>) -> Complex<f64> {
     Complex::new(a.re * b.re - a.im * b.im, a.re * b.im + a.im * b.re)
 }
 
-/// Complex division as clang emits it (`__divdc3`).
+/// Complex division ([`divdc3`]).
 fn cdiv(a: Complex<f64>, b: Complex<f64>) -> Complex<f64> {
     divdc3(a.re, a.im, b.re, b.im)
 }
@@ -688,15 +651,12 @@ fn cross_zero_p3(a: &[f64; 6], fstart: f64, fend: f64) -> bool {
     let q2 = p3_q2(a1, a2, a3);
     let q3 = p3_q3(a0, a1, a2, a3);
     let discri = p3_discri(q2, q3);
-    let root = clib::sqrt(Complex::new(discri, 0.));
-    let onethirdpower = clib::pow(
-        Complex::new(q3 + root.re, root.im),
-        Complex::new(1. / 3., 0.),
-    );
-    let twothird = 2f64.powf(1. / 3.);
+    let root = csqrt(Complex::new(discri, 0.));
+    let onethirdpower = principal_cbrt(Complex::new(q3 + root.re, root.im));
+    let twothird = 2f64.cbrt();
     let sqrt3 = 3f64.sqrt();
-    let z1 = Complex::new(1. + 0.0 * sqrt3, 1.0 * sqrt3);
-    let z2 = Complex::new(1. - 0.0 * sqrt3, -(1.0 * sqrt3));
+    let z1 = Complex::new(1., sqrt3);
+    let z2 = Complex::new(1., -sqrt3);
     let real = |x: f64| Complex::new(x, 0.);
     // q1 - q2*twothird/(3*a3*onethirdpower) + onethirdpower/(3.*a3*twothird)
     let t = cdiv(real(q2 * twothird), cmul_real(3. * a3, onethirdpower));
@@ -728,12 +688,9 @@ fn cross_zero_p4(a: &[f64; 6], fstart: f64, fend: f64) -> bool {
     let q1b = 2. * q1;
     let q2 = p4_q2(a0, a1, a2, a3, a4);
     let q3 = p4_q3(a0, a1, a2, a3, a4);
-    let squareroot = clib::sqrt(Complex::new(p4_sqrt_arg(q2, q3), 0.));
-    let onethird = clib::pow(
-        Complex::new(q3 + squareroot.re, squareroot.im),
-        Complex::new(1. / 3., 0.),
-    );
-    let twothird = 2f64.powf(1. / 3.);
+    let squareroot = csqrt(Complex::new(p4_sqrt_arg(q2, q3), 0.));
+    let onethird = principal_cbrt(Complex::new(q3 + squareroot.re, squareroot.im));
+    let twothird = 2f64.cbrt();
     // twothird*q2/(3*a4*onethird)
     let frac1 = cdiv(
         Complex::new(twothird * q2, 0.),
@@ -745,12 +702,12 @@ fn cross_zero_p4(a: &[f64; 6], fstart: f64, fend: f64) -> bool {
     let s = Complex::new(q1 + frac1.re + frac2.re, frac1.im + frac2.im);
     let bigdenom = Complex::new(4. * s.re.sqrt(), 0.);
     let bignum = p4_bignum(a1, a2, a3, a4);
-    let sqrt_s = clib::sqrt(s);
+    let sqrt_s = csqrt(s);
     let ratio = cdiv(Complex::new(bignum, 0.), bigdenom);
     // q1b - frac1 - frac2 -+ bignum/bigdenom
     let base = Complex::new(q1b - frac1.re - frac2.re, -frac1.im - frac2.im);
-    let minus = clib::sqrt(Complex::new(base.re - ratio.re, base.im - ratio.im));
-    let plus = clib::sqrt(Complex::new(base.re + ratio.re, base.im + ratio.im));
+    let minus = csqrt(Complex::new(base.re - ratio.re, base.im - ratio.im));
+    let plus = csqrt(Complex::new(base.re + ratio.re, base.im + ratio.im));
     let half_s = cmul_real(0.5, sqrt_s);
     let half_minus = cmul_real(0.5, minus);
     let half_plus = cmul_real(0.5, plus);

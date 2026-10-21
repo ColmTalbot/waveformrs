@@ -8,8 +8,6 @@
 """
 
 import os
-import platform
-import sys
 from pathlib import Path
 
 # before lalsimulation (and its OpenMP runtime) is loaded
@@ -41,12 +39,6 @@ if NRSUR_DATA is not None:
     paths = [p for p in os.environ.get("LAL_DATA_PATH", "").split(os.pathsep) if p]
     if str(NRSUR_DATA.parent) not in paths:
         os.environ["LAL_DATA_PATH"] = os.pathsep.join([str(NRSUR_DATA.parent), *paths])
-
-#: Whether this is the build of lalsimulation that the crate mirrors
-#: operation by operation (conda-forge, macOS arm64): elsewhere the
-#: ill-conditioned parts of the higher-mode models amplify last-bit
-#: differences (see docs/linux.md of the crate).
-MIRRORED_BUILD = sys.platform == "darwin" and platform.machine() == "arm64"
 
 requires_nrsur = pytest.mark.skipif(
     NRSUR_DATA is None,

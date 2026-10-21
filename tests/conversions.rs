@@ -29,8 +29,8 @@ use waveformrs::{Approximant, Binary, WaveformOptions};
 /// Tolerance on `max |rust - lal| / max |lal|`.
 const TOLERANCE: f64 = 1e-10;
 
-/// [`TOLERANCE`], or the cross-build tolerance of the higher-mode models on
-/// builds the crate does not mirror (tests/common).
+/// [`TOLERANCE`], or the looser tolerance of the higher-mode models, which
+/// amplify rounding (tests/common).
 fn tolerance(approximant: &str) -> f64 {
     common::tolerances(&format!("conversions {approximant}"), (TOLERANCE, 0.0)).0
 }

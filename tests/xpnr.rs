@@ -255,7 +255,7 @@ fn compare_modes(
             case.label()
         );
         // the (3,+-2) mode of IMRPhenomXHM, spread to every l = 3 mode by
-        // the twisting up, amplifies rounding on the builds not mirrored
+        // the twisting up, amplifies rounding
         let suite = if mode.ell == 3 {
             "imrphenomxpnr_modes_l3"
         } else {
@@ -783,11 +783,11 @@ fn lal_unit_test_of_lalsuite_master() {
         let statistics = lal_unit_test_statistics(modes, parity_fix);
         println!("{modes:?} parity fix {parity_fix}: {statistics:?}");
         for ((value, lal), expected) in statistics.iter().zip(no_multibanding).zip(expected) {
-            // elsewhere the (3,2) mode amplifies rounding (tests/common)
-            let (tolerance, rtol) = match (common::mirrored_build(), modes == [(3, 2)]) {
-                (true, _) => (1e-12, rtol),
-                (false, false) => (1e-3, rtol + 1e-3),
-                (false, true) => (2e-2, rtol + 2e-2),
+            // the (3,2) mode amplifies rounding (tests/common)
+            let (tolerance, rtol) = if modes == [(3, 2)] {
+                (2e-2, rtol + 2e-2)
+            } else {
+                (1e-3, rtol + 1e-3)
             };
             assert!(
                 (value / lal - 1.0).abs() < tolerance,

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2024-2026 Colm Talbot. Parts of waveformrs are translated
-// from LALSuite, GSL, glibc and fdlibm: see NOTICE.md for their authors.
+// from LALSuite, GSL and fdlibm: see NOTICE.md for their authors.
 //! The modes `h_lm` of IMRPhenomXPNR in the inertial J frame, as
 //! `SimInspiralChooseFDModes` returns them: `XLALSimIMRPhenomXPHMOneMode`
 //! (uniform grids) and `XLALSimIMRPhenomXPHMFrequencySequenceOneMode`
@@ -23,9 +23,9 @@
 use num_complex::Complex;
 
 use super::{check_prescription, Caller, IMRPhenomXPNR, ModeAngles, Setup};
+use crate::complex::cexp_i;
 use crate::constants::{MSUN_SI, PC_SI};
 use crate::imrphenomx::internals::{IMRPhenomXError, UsefulPowers, WaveformStruct};
-use crate::imrphenomx::libm::cexp_i;
 use crate::imrphenomx::phase::PhaseCoefficients;
 use crate::imrphenomx::pnr::ModeRange;
 use crate::imrphenomx::wigner::half_angles;

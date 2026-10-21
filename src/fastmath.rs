@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2024-2026 Colm Talbot. Parts of waveformrs are translated
-// from LALSuite, GSL, glibc and fdlibm: see NOTICE.md for their authors.
+// from LALSuite, GSL and fdlibm: see NOTICE.md for their authors.
 //! Inlined, vectorisable elementary functions for the grid evaluation paths.
 //!
 //! The per-frequency evaluation of the models matches LALSimulation, which
@@ -57,7 +57,7 @@ const REDUCTION_LIMIT: f64 = 1.0e9;
 /// Whether `f64::mul_add` is a single instruction on this target. The
 /// functions below take this as their `FUSED` parameter (the tests check
 /// both variants on every target).
-const HARDWARE_FMA: bool = cfg!(any(target_arch = "aarch64", target_feature = "fma"));
+const HARDWARE_FMA: bool = crate::spintaylor::fp::FUSED_MULTIPLY_ADD;
 
 /// `a * b + c`, fused or separately rounded (only used where both are
 /// accurate enough).

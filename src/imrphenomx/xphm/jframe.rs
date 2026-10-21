@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2024-2026 Colm Talbot. Parts of waveformrs are translated
-// from LALSuite, GSL, glibc and fdlibm: see NOTICE.md for their authors.
+// from LALSuite, GSL and fdlibm: see NOTICE.md for their authors.
 //! The modes `h_lm` of IMRPhenomXPHM in the inertial J frame, as
 //! `SimInspiralChooseFDModes` returns them: `XLALSimIMRPhenomXPHMOneMode`
 //! (uniform grids) and `XLALSimIMRPhenomXPHMFrequencySequenceOneMode`
@@ -24,10 +24,9 @@ use std::f64::consts::PI;
 use num_complex::Complex;
 
 use super::{build_modes, spintaylor_angles, wigner_d, AngleCursor, IMRPhenomXPHM, Setup};
-use crate::cmath::LibmCbrt;
+use crate::complex::cexp_i;
 use crate::constants::{MSUN_SI, PC_SI};
 use crate::imrphenomx::internals::{IMRPhenomXError, UsefulPowers, WaveformStruct};
-use crate::imrphenomx::libm::cexp_i;
 use crate::imrphenomx::precession::{PrecessingBinary, PrecessionStruct, PrecessionVersion};
 use crate::imrphenomx::version_fallback::{check_version, forbid_spintaylor_fallback};
 use crate::imrphenomx::wigner::half_angles;
@@ -353,7 +352,7 @@ fn twist_up_modes(
                     &mut cursors[mprime as usize],
                 )?,
                 None if prec.msa.is_some() => {
-                    let v = (PI * mf * (2.0 / mprime as f64)).libm_cbrt();
+                    let v = (PI * mf * (2.0 / mprime as f64)).cbrt();
                     let (alpha, epsilon, cos_beta) = prec.msa_angles(v);
                     (alpha, cos_beta, epsilon)
                 }

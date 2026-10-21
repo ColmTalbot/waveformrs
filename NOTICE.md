@@ -54,15 +54,6 @@ Public License version 3 or (at your option) any later version.
 | `src/imrphenomx/linalg.rs` (LU decomposition) | `linalg/lu.c` | (C) 1996, 1997, 1998, 1999, 2000, 2007, 2009 Gerard Jungman, Brian Gough; (C) 2019, 2021 Patrick Alken |
 | `src/spintaylor/integrator.rs` (Runge-Kutta-Fehlberg integration) | `ode-initval/rkf45.c`, `ode-initval/evolve.c`, `ode-initval/cstd.c` | (C) 2001, 2004, 2007 Brian Gough; (C) 1996, 1997, 1998, 1999, 2000 Gerard Jungman |
 
-### The GNU C Library (glibc)
-
-`glibc_cbrt` in `src/cmath.rs` is a translation of
-`sysdeps/ieee754/dbl-64/s_cbrt.c` of [glibc](https://www.gnu.org/software/libc/),
-the implementation in releases up to at least 2.39. Copyright (C) 1997-2024 Free Software Foundation, Inc.
-Licensed under the GNU Lesser General Public License version 2.1 or (at your
-option) any later version, which allows its use under the GNU General Public
-License.
-
 ### fdlibm
 
 The sine, cosine and logarithm kernels and constants in `src/fastmath.rs`

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2024-2026 Colm Talbot. Parts of waveformrs are translated
-// from LALSuite, GSL, glibc and fdlibm: see NOTICE.md for their authors.
+// from LALSuite, GSL and fdlibm: see NOTICE.md for their authors.
 //! Orbit-averaged SpinTaylorT4 evolution of precessing binaries.
 //!
 //! A port of `XLALSimInspiralSpinTaylorPNEvolveOrbit` from LALSimulation
@@ -10,10 +10,10 @@
 //! used to compute the "SpinTaylor" Euler angles of IMRPhenomXPHM
 //! (`PrecVersion` 310/311/320/321/330).
 //!
-//! The implementation follows the C code operation by operation, including
-//! the fused multiply-adds that clang emits for the arm64 builds of LAL (see
-//! [`fp`]), so that the output agrees with LALSimulation to rounding
-//! precision and has exactly the same length.
+//! The implementation follows the C code operation by operation (with fused
+//! multiply-adds where the hardware has them, see [`fp`]), so that the
+//! output agrees with LALSimulation to rounding precision and, in all but
+//! rare cases, has the same length.
 //!
 //! # Units and conventions
 //!
@@ -50,7 +50,6 @@ use dynamics::{mass_in_seconds, SpinTaylorT4System};
 pub use dynamics::{SpinTaylorT4Coefficients, NUM_VARIABLES};
 use integrator::{adaptive_rk4_hermite_into, HermiteSink, IntegratorSettings};
 
-use crate::cmath::LibmCbrt;
 use crate::constants::MSUN_SI;
 
 /// Absolute tolerance of the adaptive integrator, `LAL_ST4_ABSOLUTE_TOLERANCE`.
@@ -267,7 +266,7 @@ impl Evolution {
     /// `v = (M omega)^(1/3)`.
     #[inline]
     pub(crate) fn v(omega: f64) -> f64 {
-        omega.libm_cbrt()
+        omega.cbrt()
     }
 
     /// The unit Newtonian orbital angular momentum of a state.

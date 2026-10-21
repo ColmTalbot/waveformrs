@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2024-2026 Colm Talbot. Parts of waveformrs are translated
-// from LALSuite, GSL, glibc and fdlibm: see NOTICE.md for their authors.
+// from LALSuite, GSL and fdlibm: see NOTICE.md for their authors.
 //! Coefficients of the intermediate amplitude polynomial of the IMRPhenomXHM
 //! 122019 release, `IMRPhenomXHM_Intermediate_Amp_delta0` ...
 //! `IMRPhenomXHM_Intermediate_Amp_delta5` in

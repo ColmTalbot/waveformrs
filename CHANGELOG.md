@@ -9,7 +9,7 @@ All notable changes to `waveformrs` are recorded here.
 - **waveformrs is licensed under the GNU General Public License version 3
   or later** (`LICENSE`), as the code it is translated from requires:
   LALSuite (GPL-2.0-or-later) and GSL (GPL-3.0-or-later), with parts of
-  glibc (LGPL-2.1-or-later) and fdlibm. `NOTICE.md` lists the original files
+  fdlibm. `NOTICE.md` lists the original files
   and their authors; the library sources carry SPDX headers, and the crates
   and the Python package declare `GPL-3.0-or-later`. The crate had no
   license before.
@@ -30,6 +30,47 @@ All notable changes to `waveformrs` are recorded here.
   or IMRPhenomXAS (or halve the value you passed). TaylorF2 is unchanged.
   The waveforms are bit for bit those of the old calls with twice the
   phase, so the agreement with LALSimulation is unchanged.
+
+### Changed
+
+- **The best available floating-point operations instead of LAL's.** The
+  crate no longer copies the arithmetic of a particular build of LAL:
+  - `f64::cbrt` replaces the port of glibc's `cbrt` on linux-gnu (removed
+    with `src/cmath.rs`; correctly rounded there, Apple's on macOS), and
+    `cbrt` replaces `powf(1.0 / 3.0)`;
+  - fused multiply-adds wherever the target has the instruction (aarch64,
+    x86-64 with the `fma` target feature), instead of the choice of the LAL
+    build; the `--cfg waveformrs_fma` override and `docker/run.sh --fma` are
+    removed;
+  - `exp(i phi)`, the complex square root and the principal cube root in
+    Rust (`src/complex.rs`) instead of the C library's `cexp`, `csqrt` and
+    `cpow` through FFI, and `f64::sin_cos` instead of Darwin's
+    `__sincos_stret` in NRSur7dq4;
+  - the quadrupole-monopole parameter of NRTidal in Horner's form.
+
+  The results are mathematically unchanged. Against lalsimulation 6.2.0 on
+  macOS arm64 (200 draws per model) they are as before to ~1e-14 (the
+  largest change, IMRPhenomXPNR: max relative error 3e-15 -> 2e-14), and
+  NRSur7dq4 is bit-identical in 155 of 200 draws instead of all. On Linux
+  arm64 against the container's lalsimulation, the higher-mode models move
+  further from LAL's glibc-based build (median relative errors ~1e-8 -> ~4e-7
+  for IMRPhenomXHM and XPHM, maxima unchanged at ~1e-4) and closer to the
+  committed osx-arm64 data (e.g. IMRPhenomXPHM 7e-4 -> 4e-4,
+  IMRPhenomXP_NRTidal 6e-8 -> 5e-9); the aligned-spin models are slightly
+  closer to both. The crate's own builds (macOS arm64, Linux arm64 and
+  amd64) agree to ~1e-12 for the models without higher modes (TaylorF2 and
+  IMRPhenomD are now identical on Linux arm64 and amd64) and to ~1e-6
+  (median) for the higher-mode models, whose (3,2) mode amplifies rounding.
+  On Linux the per-frequency paths of TaylorF2, IMRPhenomD and IMRPhenomXAS
+  are 6-18% slower without the inlined `cbrt`; the other models and the
+  grid paths are unchanged or a few per cent faster, on macOS as well.
+- **No Accelerate link on macOS.** `.cargo/config.toml` no longer links
+  Apple's Accelerate framework, from which nothing was used.
+- **The same test tolerances on every platform.** `tests/common` and the
+  Python tests no longer treat macOS arm64 as a mirrored build: the suites
+  that amplify rounding (`AMPLIFYING_SUITE_TOLERANCES`) have their looser
+  tolerances everywhere, every other suite its strict one, and the unit
+  tests compare with LAL's values to a few ulp instead of bit for bit.
 
 ### Added
 

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2024-2026 Colm Talbot. Parts of waveformrs are translated
-// from LALSuite, GSL, glibc and fdlibm: see NOTICE.md for their authors.
+// from LALSuite, GSL and fdlibm: see NOTICE.md for their authors.
 //! Ringdown region of the IMRPhenomXHM higher modes,
 //! `LALSimIMRPhenomXHM_ringdown.c`: parameter-space fits of the amplitude
 //! (version 122022) and phase (version 122019), the ringdown amplitude

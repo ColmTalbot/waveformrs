@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2024-2026 Colm Talbot. Parts of waveformrs are translated
-// from LALSuite, GSL, glibc and fdlibm: see NOTICE.md for their authors.
+// from LALSuite, GSL and fdlibm: see NOTICE.md for their authors.
 //! LALSimulation's generic waveform conditioning.
 //!
 //! The bounds on the duration of a signal, the tapers, the Butterworth
@@ -27,16 +27,14 @@
 //!
 //! Masses are in solar masses; they are converted to kilograms as
 //! `m * MSUN_SI` for each body (as callers of LAL do) before LAL's
-//! expressions are evaluated, with the fused multiply-adds of clang's arm64
-//! build (see [`crate::spintaylor::fp`]). Everything here except the filter
-//! coefficients is bit for bit identical to LAL on Apple silicon; the
-//! filter agrees to rounding.
+//! expressions are evaluated (with fused multiply-adds where the hardware
+//! has them, [`crate::spintaylor::fp`]). The results agree with LAL to
+//! rounding.
 
 use std::f64::consts::PI;
 
 use num_complex::Complex;
 
-use crate::cmath::LibmCbrt;
 use crate::constants::{C_SI, G_SI, MRSUN_SI, MSUN_SI, MTSUN_SI};
 use crate::series::{FrequencySeries, GpsTime, TimeSeries};
 use crate::spintaylor::fp::{fma, fms};
@@ -81,7 +79,7 @@ pub fn chirp_time_bound(f_start: f64, mass_1: f64, mass_2: f64, spin_1: f64, spi
         eta,
         fma(54.29 / 5.04, eta, 30.58673 / 5.08032),
     );
-    let v = (PI * G_SI * m * f_start).libm_cbrt() / C_SI;
+    let v = (PI * G_SI * m * f_start).cbrt() / C_SI;
     let inner = fma(fma(c4, v, c3), v, c2);
     c0 * v.powf(-8.0) * fma(inner * v, v, 1.0)
 }
@@ -595,8 +593,8 @@ fn high_pass_sections(
 ///
 /// The conditioning routines use `attenuation = 0.99` and `order = 8`. If
 /// `attenuation` is not in (0, 1), `frequency` is the characteristic
-/// frequency of the filter, as in LAL. The result is bit for bit that of
-/// LAL on Apple silicon.
+/// frequency of the filter, as in LAL. The result agrees with LAL's to
+/// rounding.
 pub fn high_pass(
     series: &mut TimeSeries,
     frequency: f64,
@@ -750,10 +748,10 @@ pub fn time_shift_pair(
     hcross.epoch = hcross.epoch.add_seconds(t_shift);
 }
 
-/// `cexp(I phase)` as the C library computes it.
+/// `exp(i phase)`.
 #[inline]
 fn phase_factor(phase: f64) -> Complex<f64> {
-    crate::imrphenomx::libm::cexp_i(phase)
+    crate::complex::cexp_i(phase)
 }
 
 /// The index of the largest `h_+^2 + h_x^2`, the last one among equal

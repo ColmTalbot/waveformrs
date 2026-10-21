@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2024-2026 Colm Talbot. Parts of waveformrs are translated
-// from LALSuite, GSL, glibc and fdlibm: see NOTICE.md for their authors.
+// from LALSuite, GSL and fdlibm: see NOTICE.md for their authors.
 //! Waveform variables and useful powers, the parts of
 //! `LALSimIMRPhenomX_internals.c` that do not depend on the mode.
 
@@ -119,16 +119,10 @@ impl fmt::Display for IMRPhenomXError {
 
 impl std::error::Error for IMRPhenomXError {}
 
-use crate::cmath::LibmCbrt;
-/// `a * b + c` as compiled from the C expression, see
-/// [`crate::spintaylor::fp`].
-///
-/// LALSimulation's arm64 builds contract `a * b + c` and `c +- a * b`
-/// within a single C expression into fused multiply-adds (clang's default
-/// `-ffp-contract=on`). The parameter-space fits and the coefficient
-/// computations use `fma` at exactly those places so that they agree with
-/// LAL to the last bit: several IMRPhenomXHM coefficients are computed by
-/// finite differences that amplify rounding differences by up to 1e14.
+/// `a * b + c`, fused where the hardware can (see
+/// [`crate::spintaylor::fp`]). Several IMRPhenomXHM coefficients are computed
+/// by finite differences that amplify rounding differences by up to 1e14,
+/// so they differ from LAL's more than the rest of the model.
 pub(crate) use crate::spintaylor::fp::fma;
 
 /// Cached powers of a number, `IMRPhenomX_UsefulPowers`.
@@ -224,7 +218,7 @@ impl UsefulPowers {
     /// `sqrt`, one `ln` and a single division.
     #[inline]
     pub(crate) fn fast(number: f64) -> Self {
-        let one_third = number.libm_cbrt();
+        let one_third = number.cbrt();
         Self::from_roots(
             number,
             one_third,
@@ -533,8 +527,7 @@ impl WaveformStruct {
 
         // Symmetric mass ratio
         let delta = ((m1 - m2) / (m1 + m2)).abs();
-        // use fabs to prevent negative sign due to roundoff; 1 - delta^2 is
-        // contracted to a fused multiply-add like LAL's arm64 build.
+        // use fabs to prevent negative sign due to roundoff
         let mut eta = (0.25 * crate::spintaylor::fp::fnms(delta, delta, 1.0)).abs();
         let mut q = if m1 > m2 { m1 / m2 } else { m2 / m1 };
         if eta > 0.25 {
@@ -612,7 +605,7 @@ impl WaveformStruct {
             phif_ref: 0.0,
             mf_ref: hz_to_mf(f_ref, m_tot),
             pi_m,
-            v_ref: (pi_m * f_ref).libm_cbrt(),
+            v_ref: (pi_m * f_ref).cbrt(),
             m_sec,
             delta_f,
             delta_mf: hz_to_mf(delta_f, m_tot),
@@ -719,7 +712,7 @@ impl WaveformStruct {
     pub(crate) fn set_reference_frequency(&mut self, f_ref: f64) {
         self.f_ref = if f_ref == 0.0 { self.f_min } else { f_ref };
         self.mf_ref = hz_to_mf(self.f_ref, self.m_tot);
-        self.v_ref = (self.pi_m * self.f_ref).libm_cbrt();
+        self.v_ref = (self.pi_m * self.f_ref).cbrt();
     }
 
     /// Effective maximum frequency for a requested maximum frequency
@@ -778,7 +771,7 @@ mod tests {
                 (a.sqrt, b.sqrt),
             ];
             for (i, (a, b)) in pairs.iter().enumerate() {
-                // a few ulp: glibc's cbrt (linux-gnu) is within 1 ulp
+                // a few ulp
                 assert!(((a - b) / a).abs() < 4e-15, "{i}: {a} != {b} at {x}");
             }
         }

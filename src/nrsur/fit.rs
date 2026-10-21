@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2024-2026 Colm Talbot. Parts of waveformrs are translated
-// from LALSuite, GSL, glibc and fdlibm: see NOTICE.md for their authors.
+// from LALSuite, GSL and fdlibm: see NOTICE.md for their authors.
 //! Parameter-space fits of the precessing NR surrogates.
 //!
 //! A fit is `sum_i c_i prod_j B_j(k_ij; x_j)` where `B_j` are monomials of
@@ -10,8 +10,8 @@
 //! built once per parameter point ([`PowerTable`]) and shared by all fits
 //! evaluated there, and the basis-function orders are turned into indices
 //! into that table when the data are loaded. The arithmetic (the product
-//! order and the fused `res += c * prod` of clang's arm64 build) is the
-//! same, so the fits agree with LAL bit for bit.
+//! order, and `res += c * prod` fused where the hardware can) is that of
+//! LAL, so the fits agree with LAL to rounding.
 
 use crate::spintaylor::fp::{fma, fnms};
 
