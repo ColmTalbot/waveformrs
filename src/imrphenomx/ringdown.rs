@@ -159,9 +159,14 @@ pub(crate) fn amp_22_ansatz(mf: f64, amp: &AmpCoefficients) -> f64 {
 }
 
 /// `XLALSimIMRPhenomXRingdownAmplitude22AnsatzAnalytical`: the ringdown
-/// amplitude ansatz evaluated operation by operation as in LALSimulation
-/// (including its fused multiply-add), from the coefficients `gamma1..3`.
-pub(crate) fn amp_22_ansatz_exact(mf: f64, f_ring: f64, f_damp: f64, amp: &AmpCoefficients) -> f64 {
+/// amplitude ansatz from the coefficients `gamma1..3` (before the derived
+/// coefficients of [`amp_22_ansatz`] are set).
+pub(crate) fn amp_22_ansatz_from_gammas(
+    mf: f64,
+    f_ring: f64,
+    f_damp: f64,
+    amp: &AmpCoefficients,
+) -> f64 {
     let gamma_d13 = f_damp * amp.gamma1 * amp.gamma3;
     let gamma_r = amp.gamma2 / (amp.gamma3 * f_damp);
     let gamma_d2 = (f_damp * amp.gamma3) * (f_damp * amp.gamma3);
@@ -494,14 +499,9 @@ pub(crate) fn phase_22_d54(eta: f64, s: f64, dchi: f64, delta: f64) -> f64 {
     no_spin + eq_spin + uneq_spin
 }
 
-/// `IMRPhenomX_Ringdown_Phase_22_Ansatz` evaluated operation by operation
-/// as in LALSimulation (including its fused multiply-adds), for the
-/// coefficient computations that must agree with LAL to the last bit.
-pub(crate) fn phase_22_ansatz_exact(
-    mf: f64,
-    powers: &UsefulPowers,
-    phase: &PhaseCoefficients,
-) -> f64 {
+/// `IMRPhenomX_Ringdown_Phase_22_Ansatz`, the phase derivative, with fused
+/// multiply-adds.
+pub(crate) fn phase_22_ansatz(mf: f64, powers: &UsefulPowers, phase: &PhaseCoefficients) -> f64 {
     let fda = phase.f_damp;
     let dfr = mf - phase.f_ring;
     let mut phase_rd = fma(phase.c1, powers.m_one_third, phase.c0);
@@ -510,11 +510,10 @@ pub(crate) fn phase_22_ansatz_exact(
     phase_rd + phase.c_l / fma(fda, fda, dfr * dfr)
 }
 
-/// `IMRPhenomX_Ringdown_Phase_22_AnsatzInt` evaluated operation by
-/// operation as in LALSimulation, see [`phase_22_ansatz_exact`]; also
-/// used for the phase at each frequency.
+/// `IMRPhenomX_Ringdown_Phase_22_AnsatzInt`, the phase (see
+/// [`phase_22_ansatz`]).
 #[inline]
-pub(crate) fn phase_22_ansatz_int_exact(
+pub(crate) fn phase_22_ansatz_int(
     mf: f64,
     powers: &UsefulPowers,
     phase: &PhaseCoefficients,

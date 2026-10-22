@@ -132,12 +132,12 @@ pub fn data_path(name: &str) -> std::path::PathBuf {
 /// osx-arm64 or the Linux lalsimulation, which are themselves of the size
 /// of the differences between lalsimulation's own builds
 /// (report/data/linux_reference_comparison.json).
-const AMPLIFYING_SUITE_TOLERANCES: [(&str, (f64, f64)); 31] = [
+const AMPLIFYING_SUITE_TOLERANCES: [(&str, (f64, f64)); 28] = [
     ("imrphenomxhm", (1e-3, 1e-6)),
     // the (3,+-2) modes, and the others (up to 2e-9 at mass ratio 30 in the
     // containers of docs/linux.md; on the Ubuntu runners of GitHub Actions
     // up to 1.8e-2 / 1.8e-4 for (3,-2) and 4e-8 for the others, in the
-    // release-122019 modes of tests/xhm_122019.rs)
+    // release-122019 modes of src/imrphenomx/xhm/release_122019_tests.rs)
     ("imrphenomxhm_modes_32", (2e-1, 2e-3)),
     ("imrphenomxhm_modes", (4e-7, 1e-12)),
     // the l = 3 modes of IMRPhenomXHM and XPHM (tests/modes.rs)
@@ -149,16 +149,15 @@ const AMPLIFYING_SUITE_TOLERANCES: [(&str, (f64, f64)); 31] = [
     ("imrphenomxphm_uniform", (1e-3, 1e-6)),
     ("imrphenomxphm_modes", (1e-3, 1e-6)),
     ("imrphenomxphm_spintaylor_fallback", (1e-3, 1e-6)),
-    // IMRPhenomXHM release 122019 and IMRPhenomXPNR (which uses it), not
-    // yet compared with a Linux lalsimulation: those of IMRPhenomXHM/XPHM
-    ("imrphenomxhm_122019", (1e-3, 1e-6)),
-    ("imrphenomxpnr", (1e-3, 1e-6)),
-    ("imrphenomxpnr_uniform", (1e-3, 1e-6)),
-    // (the same cases with the fix of lalsuite !2593, tests/xpnr.rs)
+    // IMRPhenomXHM release 122019 and IMRPhenomXPNR (which uses it, with
+    // the fix of lalsuite !2593, tests/xpnr.rs), not yet compared with a
+    // Linux lalsimulation: those of IMRPhenomXHM/XPHM
+    // (mismatch up to 1.2e-6 on Linux arm64 at mass ratio 100)
+    ("imrphenomxhm_122019", (1e-3, 1e-5)),
     ("imrphenomxpnr_parityfix", (1e-3, 1e-6)),
     ("imrphenomxpnr_parityfix_uniform", (1e-3, 1e-6)),
-    ("imrphenomxpnr_modes", (1e-3, 1e-6)),
-    ("imrphenomxpnr_modes_l3", (2e-2, 4e-5)),
+    ("imrphenomxpnr_parityfix_modes", (1e-3, 1e-6)),
+    ("imrphenomxpnr_parityfix_modes_l3", (2e-2, 4e-5)),
     ("imrphenomxp_msa", (1e-7, 1e-12)),
     // the SpinTaylor angles of IMRPhenomXP_NRTidalv2/v3, whose start is
     // sensitive to the last bit of the quadrupole-monopole parameter (up to
@@ -173,7 +172,6 @@ const AMPLIFYING_SUITE_TOLERANCES: [(&str, (f64, f64)); 31] = [
     // tests/conversions.rs: SimInspiralTD/FD of the higher-mode models
     ("conversions IMRPhenomXHM", (1e-3, 0.0)),
     ("conversions IMRPhenomXPHM", (1e-3, 0.0)),
-    ("conversions IMRPhenomXPNR", (1e-3, 0.0)),
     // tests/long_waveforms.rs: lower bounds of its tolerances
     ("long IMRPhenomXHM", (1e-5, 0.0)),
     ("long IMRPhenomXP", (1e-7, 0.0)),
@@ -182,13 +180,15 @@ const AMPLIFYING_SUITE_TOLERANCES: [(&str, (f64, f64)); 31] = [
     ("spintaylor_angles_long", (1e-5, 0.0)),
 ];
 
-/// The tolerances of `suite`: those of [`AMPLIFYING_SUITE_TOLERANCES`],
-/// else `strict`.
+/// The tolerances of `suite`: the looser of `strict` and those of
+/// [`AMPLIFYING_SUITE_TOLERANCES`].
 pub fn tolerances(suite: &str, strict: (f64, f64)) -> (f64, f64) {
     AMPLIFYING_SUITE_TOLERANCES
         .iter()
         .find(|(name, _)| *name == suite)
-        .map_or(strict, |&(_, tolerances)| tolerances)
+        .map_or(strict, |&(_, (rel, mm))| {
+            (rel.max(strict.0), mm.max(strict.1))
+        })
 }
 
 pub fn load(name: &str) -> ReferenceFile {

@@ -11,7 +11,7 @@ use std::f64::consts::PI;
 
 use num_complex::Complex;
 
-/// `pPrec->sqrt6` as hard-coded in LAL (`2.44948974278317788`).
+/// `sqrt(6)` (LAL hard-codes `2.44948974278317788`, the same double).
 const SQRT6: f64 = 2.449_489_742_783_178;
 
 /// The `s = -2` spin-weighted spherical harmonics with `l = 2, 3, 4` at

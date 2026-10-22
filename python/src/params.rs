@@ -42,11 +42,10 @@ pub const BINARY_NAMES: [&str; 8] = [
 ];
 
 /// The options that can be given as keyword arguments.
-pub const OPTION_NAMES: [&str; 6] = [
+pub const OPTION_NAMES: [&str; 5] = [
     "precession_version",
     "mode_array",
     "version_fallback",
-    "pnr_parity_fix",
     "lambda_1",
     "lambda_2",
 ];
@@ -74,7 +73,6 @@ fn apply_option(
             }
         }
         "version_fallback" => current.with_version_fallback(extract_bool(value, name)?),
-        "pnr_parity_fix" => current.with_pnr_parity_fix(extract_bool(value, name)?),
         "lambda_1" => {
             let lambda_2 = current.lambda_2;
             current.with_tidal_deformabilities(extract_f64(value, name)?, lambda_2)
@@ -114,14 +112,6 @@ fn option_items<'py>(
             "version_fallback",
             options
                 .version_fallback
-                .into_pyobject(py)?
-                .to_owned()
-                .into_any(),
-        ),
-        (
-            "pnr_parity_fix",
-            options
-                .pnr_parity_fix
                 .into_pyobject(py)?
                 .to_owned()
                 .into_any(),
@@ -332,11 +322,6 @@ pub fn parse_request(kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<(Binary, Wa
 ///   precession version automatically as LALSimulation does (default
 ///   ``True``); with ``False`` they raise ``PrecessionVersionUnavailableError``
 ///   instead.
-/// * ``pnr_parity_fix``: whether IMRPhenomXPNR applies the fix of lalsuite
-///   merge request !2593 to the phase of its antisymmetric (2,2) mode, which
-///   restores the mirror symmetry of the waveform (default ``True``, as
-///   LALSimulation master after 6.2.1); ``False`` reproduces LALSimulation
-///   6.2.0 and 6.2.1.
 /// * ``lambda_1``, ``lambda_2``: LAL's ``lambda1``, ``lambda2``, the
 ///   dimensionless tidal deformabilities of the bodies of ``mass_1`` and
 ///   ``mass_2`` (default 0), used by the NRTidal approximants
@@ -359,7 +344,7 @@ impl PyWaveformOptions {
     #[pyo3(
         signature = (**kwargs),
         text_signature = "(*, precession_version=320, mode_array=None, version_fallback=True, \
-                          pnr_parity_fix=True, lambda_1=0.0, lambda_2=0.0)"
+                          lambda_1=0.0, lambda_2=0.0)"
     )]
     fn new(kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<Self> {
         let keywords = match kwargs {
@@ -375,8 +360,7 @@ impl PyWaveformOptions {
     }
 
     /// The defaults of LALSimulation 6.2.0 for an empty ``LALDict``: the MSA
-    /// Euler angles (223), all modes and IMRPhenomXPNR without the parity fix
-    /// of lalsuite !2593.
+    /// Euler angles (223) and all modes.
     #[staticmethod]
     fn lalsimulation_defaults() -> Self {
         Self {
@@ -415,12 +399,6 @@ impl PyWaveformOptions {
     #[getter]
     fn version_fallback(&self) -> bool {
         self.inner.version_fallback
-    }
-
-    /// Whether IMRPhenomXPNR applies the parity fix of lalsuite !2593.
-    #[getter]
-    fn pnr_parity_fix(&self) -> bool {
-        self.inner.pnr_parity_fix
     }
 
     /// The tidal deformability of the body of ``mass_1`` (LAL's ``lambda1``).

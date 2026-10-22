@@ -32,14 +32,16 @@ use crate::nrtidal::NRTidalVersion;
 
 pub(super) mod jframe;
 
-/// `pPrec->sqrt*` as hard-coded in `IMRPhenomXGetAndSetPrecessionVariables`
-/// (`sqrt10` is only accurate to 15 digits there).
-// LAL's literal 1.4142135623730951 is the double nearest to sqrt(2).
+/// The square roots of `pPrec->sqrt*` (`IMRPhenomXGetAndSetPrecessionVariables`),
+/// to full double precision (LAL's literal for `sqrt10` has 15 digits and
+/// is one ulp off; the others round to the same doubles).
 const SQRT2: f64 = std::f64::consts::SQRT_2;
-const SQRT5: f64 = 2.236_067_977_499_79;
+#[allow(clippy::excessive_precision)]
+const SQRT5: f64 = 2.236_067_977_499_789_696_4;
 const SQRT6: f64 = 2.449_489_742_783_178;
 const SQRT7: f64 = 2.645_751_311_064_590_7;
-const SQRT10: f64 = 3.162_277_660_168_38;
+#[allow(clippy::excessive_precision)]
+const SQRT10: f64 = 3.162_277_660_168_379_332;
 const SQRT14: f64 = 3.741_657_386_773_941_3;
 const SQRT15: f64 = 3.872_983_346_207_417;
 const SQRT30: f64 = 5.477_225_575_051_661;

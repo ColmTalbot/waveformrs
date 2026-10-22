@@ -21,6 +21,8 @@ use crate::imrphenomx::xas::IMRPhenomXAS;
 use crate::model::Extrinsic;
 
 pub(super) mod modes;
+#[cfg(test)]
+mod release_122019_tests;
 
 /// The modes of IMRPhenomXHM, `(l, m)` with `m > 0`.
 pub const IMRPHENOMXHM_MODES: [(u32, u32); 5] = [(2, 2), (2, 1), (3, 3), (3, 2), (4, 4)];
@@ -171,20 +173,14 @@ impl IMRPhenomXHM {
         self
     }
 
-    /// Select LAL's `PhenomXHMReleaseVersion`: 122022 (the default, with
-    /// the recalibrated higher-mode amplitudes) or 122019 (the original
-    /// release of arXiv:2001.10914, used internally by IMRPhenomXPNR). The
+    /// Select LAL's `PhenomXHMReleaseVersion` (for the tests): 122022 (the
+    /// default, with the recalibrated higher-mode amplitudes) or 122019 (the
+    /// original release of arXiv:2001.10914, which IMRPhenomXPNR uses). The
     /// phases are the same in both releases except for the ringdown of the
     /// (3,2), which follows from its amplitude.
-    ///
-    /// # Panics
-    ///
-    /// If `version` is neither 122019 nor 122022.
-    pub fn with_release_version(mut self, version: u32) -> Self {
-        assert!(
-            version == 122019 || version == 122022,
-            "IMRPhenomXHM: PhenomXHMReleaseVersion {version} is not valid (122019 or 122022)"
-        );
+    #[cfg(test)]
+    pub(crate) fn with_release_version(mut self, version: u32) -> Self {
+        assert!(version == 122019 || version == 122022);
         self.hm_release = version;
         self
     }

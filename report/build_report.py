@@ -49,8 +49,7 @@ MODELS = [
     ("IMRPhenomXPHM_NNLO", "IMRPhenomXPHM (102)", "IMRPhenomXPHM, NNLO (102)", "new"),
     ("IMRPhenomXPHM_MSA", "IMRPhenomXPHM (223)", "IMRPhenomXPHM, MSA (223)", "new"),
     ("IMRPhenomXPHM", "IMRPhenomXPHM (320)", "IMRPhenomXPHM, SpinTaylor (320)", "new"),
-    ("IMRPhenomXPNR", "IMRPhenomXPNR", "IMRPhenomXPNR (6.2.0, no parity fix)", "new"),
-    ("IMRPhenomXPNR_parityfix", "IMRPhenomXPNR", "IMRPhenomXPNR with the parity fix (patched LAL)", "new"),
+    ("IMRPhenomXPNR", "IMRPhenomXPNR", "IMRPhenomXPNR with the parity fix (patched LAL)", "new"),
     ("NRSur7dq4", "NRSur7dq4", "NRSur7dq4 (time domain)", "new"),
 ]
 # Rows of the serial-evaluation table: (serial benchmark name, label)
@@ -98,11 +97,10 @@ TEST_LABELS = {
     "hdf5_reader_matches_h5py": "HDF5 reader against h5py (datasets)",
     "imrphenomxhm_122019_matches_lalsimulation": "IMRPhenomXHM release 122019 polarizations",
     "imrphenomxhm_122019_modes_match_lalsimulation": "IMRPhenomXHM release 122019 modes",
-    "imrphenomxpnr_matches_lalsimulation": "IMRPhenomXPNR polarizations (incl. every regime switch)",
-    "imrphenomxpnr_parity_fix_matches_patched_lalsimulation": "IMRPhenomXPNR with the parity fix (6.2.0 + lalsuite !2593)",
-    "imrphenomxpnr_uniform_matches_lalsimulation": "IMRPhenomXPNR, uniform grids (with and without the fix)",
-    "imrphenomxpnr_choose_fd_modes_matches_lalsimulation": "IMRPhenomXPNR modes (ChooseFDModes)",
-    "imrphenomxpnr_sequence_modes_match_lalsimulation": "IMRPhenomXPNR modes on frequency sequences",
+    "imrphenomxpnr_matches_patched_lalsimulation": "IMRPhenomXPNR polarizations (6.2.0 + lalsuite !2593, incl. every regime switch)",
+    "imrphenomxpnr_uniform_matches_patched_lalsimulation": "IMRPhenomXPNR, uniform grids",
+    "imrphenomxpnr_choose_fd_modes_matches_patched_lalsimulation": "IMRPhenomXPNR modes (ChooseFDModes)",
+    "imrphenomxpnr_sequence_modes_match_patched_lalsimulation": "IMRPhenomXPNR modes on frequency sequences",
     "choose_fd_modes_matches_lalsimulation": "Modes of IMRPhenomXHM/XPHM (ChooseFDModes)",
     "modes_on_frequency_sequences_match_lalsimulation": "Modes on frequency sequences",
     "choose_fd_model_matches_lalsimulation": "Common interface against the reference suites",
@@ -115,7 +113,6 @@ TEST_LABELS = {
     "imrphenomxhm_td_matches_lalsimulation": "SimInspiralTD, IMRPhenomXHM",
     "imrphenomxp_td_matches_lalsimulation": "SimInspiralTD, IMRPhenomXP",
     "imrphenomxphm_td_matches_lalsimulation": "SimInspiralTD, IMRPhenomXPHM",
-    "imrphenomxpnr_td_matches_lalsimulation": "SimInspiralTD, IMRPhenomXPNR",
 }
 
 
@@ -456,13 +453,18 @@ def build(args):
 
     # IMRPhenomXPNR
     xpnr_cases = 0
-    for name in ["imrphenomxpnr", "imrphenomxpnr_uniform", "imrphenomxpnr_modes", "imrphenomxpnr_sequence_modes"]:
+    for name in [
+        "imrphenomxpnr_parityfix",
+        "imrphenomxpnr_parityfix_uniform",
+        "imrphenomxpnr_parityfix_modes",
+        "imrphenomxpnr_parityfix_sequence_modes",
+    ]:
         xpnr_cases += len(json.loads((ROOT / "tests" / "data" / f"{name}.json").read_text())["cases"])
     values["xpnr_cases"] = str(xpnr_cases)
     values["xpnr_rust"] = duration(rust["IMRPhenomXPNR"])
     values["xpnr_lal"] = duration(lal_seq["IMRPhenomXPNR"])
     values["xpnr_lal_mb"] = duration(lal_uni["IMRPhenomXPNR (uniform, default multibanding)"])
-    fixed = json.loads((DATA / "validation_IMRPhenomXPNR_parityfix.json").read_text())
+    fixed = json.loads((DATA / "validation_IMRPhenomXPNR.json").read_text())
     values["xpnr_fix_n"] = str(fixed["n_compared"])
     values["xpnr_fix_rel"] = sci(fixed["max_relative_error"])
     values["xpnr_fix_mm"] = sci(fixed["max_mismatch"])

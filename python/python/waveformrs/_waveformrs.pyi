@@ -30,9 +30,6 @@ class WaveformOptions:
       all modes.
     * ``version_fallback``: whether IMRPhenomXP/XPHM/XPNR may change the
       precession version as LALSimulation does (default ``True``).
-    * ``pnr_parity_fix``: whether IMRPhenomXPNR applies the fix of lalsuite
-      !2593, which restores the mirror symmetry of the waveform (default
-      ``True``, as LALSimulation master); ``False`` reproduces 6.2.0/6.2.1.
     * ``lambda_1``, ``lambda_2``: LAL's ``lambda1``, ``lambda2``, the tidal
       deformabilities of the bodies of ``mass_1`` and ``mass_2`` (default 0)
       of the NRTidal approximants; the others reject non-zero values.
@@ -44,15 +41,13 @@ class WaveformOptions:
         precession_version: PrecessionVersion = 320,
         mode_array: Optional[Sequence[Sequence[int]]] = None,
         version_fallback: bool = True,
-        pnr_parity_fix: bool = True,
         lambda_1: float = 0.0,
         lambda_2: float = 0.0,
         **options: Any,
     ) -> None: ...
     @staticmethod
     def lalsimulation_defaults() -> WaveformOptions:
-        """LALSimulation 6.2.0's defaults: MSA angles (223), all modes, no
-        IMRPhenomXPNR parity fix."""
+        """LALSimulation 6.2.0's defaults: MSA angles (223) and all modes."""
     def replace(self, **options: Any) -> WaveformOptions:
         """A copy with the given options changed."""
     @property
@@ -61,8 +56,6 @@ class WaveformOptions:
     def mode_array(self) -> Optional[List[Mode]]: ...
     @property
     def version_fallback(self) -> bool: ...
-    @property
-    def pnr_parity_fix(self) -> bool: ...
     @property
     def lambda_1(self) -> float: ...
     @property

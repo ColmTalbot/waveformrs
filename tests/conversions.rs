@@ -82,8 +82,7 @@ impl Parameters {
     }
 
     /// The `LALDict` of the case: the Euler angles (multibanding is always
-    /// off in the reference data), and IMRPhenomXPNR as in LALSimulation
-    /// 6.2.0 (without the fix of lalsuite !2593).
+    /// off in the reference data).
     fn options(&self) -> WaveformOptions {
         let version = match self.lal_flags.get("PhenomXPrecVersion").map(|&v| v as u32) {
             Some(102) => PrecessionVersion::Nnlo,
@@ -91,9 +90,7 @@ impl Parameters {
             Some(320) | None => PrecessionVersion::SpinTaylor,
             Some(other) => panic!("PhenomXPrecVersion {other}"),
         };
-        WaveformOptions::default()
-            .with_precession_version(version)
-            .with_pnr_parity_fix(false)
+        WaveformOptions::default().with_precession_version(version)
     }
 
     fn label(&self) -> String {
@@ -320,11 +317,6 @@ fn imrphenomxphm_td_matches_lalsimulation() {
 }
 
 #[test]
-fn imrphenomxpnr_td_matches_lalsimulation() {
-    check_td_suite("conversions_td_imrphenomxpnr");
-}
-
-#[test]
 fn taylorf2_td_matches_lalsimulation() {
     check_td_suite("conversions_td_taylorf2");
 }
@@ -397,7 +389,7 @@ fn nrsur7dq4_fd_matches_lalsimulation() {
     report(name, &reference.lalsimulation_version, failures);
 }
 
-/// `SimInspiralTD` for NRSur7dq4: the tapered waveform, bit for bit.
+/// `SimInspiralTD` for NRSur7dq4: the tapered waveform, to rounding.
 #[test]
 fn nrsur7dq4_td_matches_lalsimulation() {
     let Some(data) = nrsur_data() else {
@@ -411,20 +403,6 @@ fn nrsur7dq4_td_matches_lalsimulation() {
         match nrsur7dq4_td(&model, case.delta_t, case.binary.f_min) {
             Ok(h) => {
                 failures.extend(check_td(case, &h.hplus, &h.hcross));
-                if cfg!(target_arch = "aarch64") && cfg!(target_vendor = "apple") {
-                    for (series, reference) in [(&h.hplus, &case.hplus), (&h.hcross, &case.hcross)]
-                    {
-                        let same = series
-                            .data
-                            .iter()
-                            .step_by(case.stride)
-                            .zip(reference)
-                            .all(|(a, b)| a.to_bits() == b.to_bits());
-                        if !same {
-                            failures.push(format!("not bit for bit | {}", case.binary.label()));
-                        }
-                    }
-                }
             }
             Err(err) => failures.push(format!("error {err} | {}", case.binary.label())),
         }

@@ -18,10 +18,9 @@ Frequency domain:
   SpinTaylor precession angles.
 - **IMRPhenomXPHM**: precessing spins with higher modes, with the same
   choice of precession angles.
-- **IMRPhenomXPNR**: precessing spins tuned to numerical relativity. By
-  default it includes the parity fix from the development version of
-  LALSuite; the behaviour of the LALSimulation releases is available as an
-  option.
+- **IMRPhenomXPNR**: precessing spins tuned to numerical relativity. It
+  includes the parity fix from the development version of LALSuite, so it
+  differs from the IMRPhenomXPNR of the LALSimulation releases.
 
 Binary neutron stars, with the NRTidal tidal corrections:
 
@@ -69,6 +68,8 @@ cd python && maturin develop --release   # the Python package
 - [CHANGELOG.md](CHANGELOG.md): what has changed.
 - [python/README.md](python/README.md): the Python package.
 - [docs/linux.md](docs/linux.md): running on Linux.
+- [docs/lal-quirks.md](docs/lal-quirks.md): where waveformrs differs from
+  LALSimulation, and the oddities of LALSimulation it keeps.
 - [report/waveformrs-report.html](report/waveformrs-report.html): the
   technical report, with validation and performance details.
 

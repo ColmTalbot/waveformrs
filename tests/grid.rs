@@ -265,7 +265,7 @@ fn spintaylor_fallback_on_grids() {
     }
 }
 
-/// IMRPhenomXPNR with and without the parity fix, also with a mode array,
+/// IMRPhenomXPNR, also with a mode array,
 /// and the binaries for which LAL changes its angles: in-plane spins below
 /// `1e-7` (no PNR angles nor antisymmetric mode), the transition region of
 /// the PNR angles, the SpinTaylor integration failing (MSA angles) and
@@ -289,26 +289,19 @@ fn imrphenomxpnr_on_grids() {
         edge(30.0, 30.0, [0.3, 0.2, 0.1], [0.3, 0.2, 0.1], 20.0),
     ];
     for binary in binaries {
-        for parity_fix in [true, false] {
-            let model = IMRPhenomXPNR::new(&binary)
-                .unwrap()
-                .with_parity_fix(parity_fix);
-            let restricted = model
-                .clone()
-                .with_mode_array(&[(2, 2), (3, 2), (4, 4)])
-                .unwrap();
-            for grid in grids() {
-                for model in [&model, &restricted] {
-                    check_precessing(
-                        &format!(
-                            "IMRPhenomXPNR {binary:?} fix {parity_fix} {:?}",
-                            model.modes()
-                        ),
-                        &grid,
-                        model.polarizations(grid.frequencies()).unwrap(),
-                        |grid, hp, hc| model.polarizations_on_grid(grid, hp, hc).unwrap(),
-                    );
-                }
+        let model = IMRPhenomXPNR::new(&binary).unwrap();
+        let restricted = model
+            .clone()
+            .with_mode_array(&[(2, 2), (3, 2), (4, 4)])
+            .unwrap();
+        for grid in grids() {
+            for model in [&model, &restricted] {
+                check_precessing(
+                    &format!("IMRPhenomXPNR {binary:?} {:?}", model.modes()),
+                    &grid,
+                    model.polarizations(grid.frequencies()).unwrap(),
+                    |grid, hp, hc| model.polarizations_on_grid(grid, hp, hc).unwrap(),
+                );
             }
         }
     }

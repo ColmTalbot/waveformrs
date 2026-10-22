@@ -30,6 +30,34 @@ All notable changes to `waveformrs` are recorded here.
   or IMRPhenomXAS (or halve the value you passed). TaylorF2 is unchanged.
   The waveforms are bit for bit those of the old calls with twice the
   phase, so the agreement with LALSimulation is unchanged.
+- **IMRPhenomXPNR always includes the parity fix of lalsuite !2593; the
+  option to reproduce the parity bug of LALSimulation 6.2.0 is removed.**
+  Removed: `IMRPhenomXPNR::with_parity_fix` and `IMRPhenomXPNR::parity_fix`,
+  the field `WaveformOptions::pnr_parity_fix` and
+  `WaveformOptions::with_pnr_parity_fix` (and
+  `WaveformOptions::lalsimulation_defaults()` no longer switches the fix
+  off: it now only selects the MSA angles), and the Python keyword and
+  property `pnr_parity_fix` (passing it raises `TypeError`; options
+  pickled with it no longer load). IMRPhenomXPNR is therefore always the
+  model of lalsuite master (merge request !2593, commit 64d2004def), which
+  restores the mirror symmetry of the waveform, and differs from the
+  IMRPhenomXPNR of lalsimulation 6.2.0 and 6.2.1 by up to a few per cent.
+  The tests compare it only with lalsimulation 6.2.0 built with the fix
+  (the `imrphenomxpnr_parityfix*` suites); the reference suites of the
+  unfixed model (`imrphenomxpnr`, `imrphenomxpnr_uniform`,
+  `imrphenomxpnr_modes`, `imrphenomxpnr_sequence_modes` and
+  `conversions_td_imrphenomxpnr`) and the Python comparisons of XPNR with
+  lalsimulation 6.2.0 are removed. There is no patched counterpart of the
+  `SimInspiralTD` suite, so `simulate_td` for IMRPhenomXPNR is no longer
+  compared with LAL. `scripts/validate_against_lalsimulation.py` now
+  needs `--lalsimulation-library` for `IMRPhenomXPNR`, which replaces
+  `IMRPhenomXPNR_parityfix`.
+- **IMRPhenomXHM no longer offers release 122019.**
+  `IMRPhenomXHM::with_release_version` is removed: IMRPhenomXHM and
+  IMRPhenomXPHM always use the recalibrated amplitudes of release 122022
+  (LAL's default). The 122019 amplitudes stay inside the crate for
+  IMRPhenomXPNR, which LAL builds on them; their tests against
+  lalsimulation are now unit tests (`src/imrphenomx/xhm/release_122019_tests.rs`).
 
 ### Changed
 
@@ -66,6 +94,39 @@ All notable changes to `waveformrs` are recorded here.
   grid paths are unchanged or a few per cent faster, on macOS as well.
 - **No Accelerate link on macOS.** `.cargo/config.toml` no longer links
   Apple's Accelerate framework, from which nothing was used.
+- **Fixes of LAL quirks** (`docs/lal-quirks.md` lists every difference
+  from LAL and the quirks that are kept, with their effects):
+  - the (3,2) mixing coefficients of IMRPhenomXHM in double precision
+    (LAL stores them as `COMPLEX8`: ~1e-7 in the (3,2) ringdown);
+  - `I/3` in double precision in the (2,1) PN amplitude of the 122019
+    amplitudes (single precision in LAL);
+  - the (2,1) high-spin intermediate phase from the continuous 22 phase
+    derivative (LAL takes it before the 22 connection coefficients exist);
+  - `4/3` in the NRTidalv3 phase derivative (an integer division in LAL;
+    no effect on the waveforms);
+  - every spline evaluation of the PNR and SpinTaylor `beta` connections
+    is checked, not only the last.
+  - the zero-crossing test of the quintic intermediate amplitude of the
+    122019 amplitudes (`CrossZeroP5`) tests every root: LAL's indices skip
+    the third root and pair the fourth and fifth with the wrong imaginary
+    parts. This changes the polynomial order, and the amplitude by ~1e-3,
+    for ~2% of binaries in IMRPhenomXPNR, which uses these amplitudes.
+  - the antisymmetric amplitude ratio of IMRPhenomXPNR is smoothed with
+    the moving average of Ghosh et al. 2024 (Eq. 17 of arXiv:2310.16980):
+    the plain mean of 81 unsmoothed samples centred on each one. LAL
+    averages in place, so later windows reuse smoothed values, and weights
+    by the frequency step. IMRPhenomXPNR moves from LAL by up to 2e-3 on
+    uniform grids and 7e-3 on non-uniform ones (`tests/xpnr.rs`); unit
+    tests compare the rest of the model with LAL's average at the strict
+    tolerances.
+- **More of LAL's arithmetic replaced by the most accurate equivalent**:
+  the IMRPhenomX frequency powers (`UsefulPowers`) from `cbrt` and `sqrt`
+  instead of repeated products of `pow(x, 1/6)`; one form of each
+  IMRPhenomX ansatz instead of a copy of LAL's operations next to a fast
+  one; exact pi/2 and sqrt(10) in IMRPhenomXP/XPHM (LAL's literals are 2
+  and 1 ulp off); fused multiply-adds in the NRSur7dq4 frame rotation; and
+  no copies of OpenBLAS's kernels in the NRSur7dq4 interpolants and the
+  IMRPhenomX LU solves.
 - **The same test tolerances on every platform.** `tests/common` and the
   Python tests no longer treat macOS arm64 as a mirrored build: the suites
   that amplify rounding (`AMPLIFYING_SUITE_TOLERANCES`) have their looser
@@ -139,13 +200,12 @@ All notable changes to `waveformrs` are recorded here.
   `SimInspiralChooseFDModes` (`choose_fd_modes`) and of the single-mode
   functions (`FrequencyDomainModel::modes`), `simulate_td`, and
   `with_version_fallback(false)`. Tested against LALSimulation 6.2.0
-  (`tests/xpnr.rs`, worst relative difference ~1e-15).
+  (`tests/xpnr.rs`, worst relative difference ~1e-15; now against 6.2.0
+  with the parity fix, see below).
 - **The IMRPhenomXPNR parity fix of lalsuite master** (merge request
-  !2593, merged after lalsimulation 6.2.1), on by default:
-  `IMRPhenomXPNR::with_parity_fix(false)` and
-  `WaveformOptions::pnr_parity_fix = false` (`with_pnr_parity_fix`, also
-  set by `WaveformOptions::lalsimulation_defaults()`) reproduce
-  lalsimulation 6.2.0 and 6.2.1. The phase of the antisymmetric (2,2)
+  !2593, merged after lalsimulation 6.2.1), always applied (an option to
+  reproduce lalsimulation 6.2.0 and 6.2.1 was removed again, see Breaking
+  changes). The phase of the antisymmetric (2,2)
   co-precessing mode is referred to `-alpha(f_ref) - pi / 2` and the
   azimuth of `J` instead of `alpha_offset` and the polarization angle,
   which depend on the line of sight, and the spins at the end of the
@@ -167,8 +227,8 @@ All notable changes to `waveformrs` are recorded here.
   average of the antisymmetric amplitude ratio no longer recomputes windows
   whose inputs repeat those of the previous window (the same values, on
   both paths).
-- **IMRPhenomXHM release 122019** (`with_release_version(122019)`), the
-  original higher-mode amplitudes used by IMRPhenomXPNR.
+- **IMRPhenomXHM release 122019**, the original higher-mode amplitudes
+  used by IMRPhenomXPNR (internal only, see Breaking changes).
 - **Python bindings** (`python/`, the package `waveformrs` built with
   maturin; PyO3 0.29 and rust-numpy 0.29, stable ABI for CPython >= 3.9):
   the approximants by LAL's names, `WaveformOptions` as keyword arguments
@@ -183,7 +243,7 @@ All notable changes to `waveformrs` are recorded here.
   while computing; `Error` maps to `waveformrs.WaveformError` subclasses
   that also derive from `ValueError`, `RuntimeError` or `OSError`. Tested
   against lalsimulation's Python API (`python/tests`); see
-  `python/README.md`. `pnr_parity_fix` is one of the options.
+  `python/README.md`.
 - **NRTidal binary-neutron-star models**: the approximants
   `IMRPhenomD_NRTidalv2`, `IMRPhenomXAS_NRTidalv2`, `IMRPhenomXAS_NRTidalv3`,
   `IMRPhenomXP_NRTidalv2` and `IMRPhenomXP_NRTidalv3`, every model of
@@ -227,11 +287,11 @@ All notable changes to `waveformrs` are recorded here.
     precession versions), with mismatches below 1e-15. The start of the
     SpinTaylor angles is sensitive to the last bit of the
     quadrupole-monopole parameter (a change of one ulp in the
-    deformability moves the phase at `f_min` by ~1e-8), so it is computed
-    with the fused multiply-adds of LAL's arm64 build.
-  - `docs/lal-nrtidalv3-integer-division.md`: LAL's NRTidalv3 phase
-    derivative contains `(4/3)`, an integer division (= 1); it has no
-    effect on LAL's waveforms and is kept here to match.
+    deformability moves the phase at `f_min` by ~1e-8), so it is
+    evaluated in Horner's form with fused multiply-adds.
+  - LAL's NRTidalv3 phase derivative contains `(4/3)`, an integer
+    division (= 1), which has no effect on LAL's waveforms
+    (`docs/lal-quirks.md`).
 
 - **Continuous integration** (`.github/workflows/ci.yml`): build warnings,
   clippy and rustfmt; `cargo test --release` on macOS arm64 (strict

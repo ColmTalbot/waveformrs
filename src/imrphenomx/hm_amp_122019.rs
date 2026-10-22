@@ -301,8 +301,10 @@ fn pn21_coefficients(wf: &WaveformStruct) -> Pn21Coefficients {
     let i_a = Complex::new(0.0 * a, 1.0 * a);
     let w = fma(-2., logof2, -0.5);
     let pi_plus_iw = Complex::new(lalpi.itself + 0.0 * w, 1.0 * w);
-    // `I/3` is evaluated in single precision (complex float / int).
-    let i_third = (1.0f32 / 3.0f32) as f64;
+    // (LAL's `I/3` is a single-precision `complex float` divided by an int,
+    // so 1/3 to ~3e-8; it is 1/3 in double precision here, see
+    // docs/lal-quirks.md.)
+    let i_third = 1.0 / 3.0;
     let i_third_delta = Complex::new(0.0 * delta, i_third * delta);
     let product = mul(i_third_delta, pi_plus_iw);
     let x2 = scale(
@@ -724,11 +726,13 @@ fn cross_zero_p4(a: &[f64; 6], fstart: f64, fend: f64) -> bool {
 }
 
 /// `CrossZeroP5`: whether the quintic polynomial crosses zero in
-/// `[fstart, fend]`, from the roots of `gsl_poly_complex_solve`.
+/// `[fstart, fend]`, from the roots of `gsl_poly_complex_solve` (packed as
+/// `z[2k]` real, `z[2k + 1]` imaginary part).
 ///
-/// LAL tests the roots with shifted indices into the packed array of
-/// roots (`z[4]` for the imaginary part of the third root, `z[5]` and
-/// `z[7]` for the fourth and fifth); this is reproduced.
+/// LAL tests the third to fifth roots with shifted indices (`z[4]` as the
+/// imaginary part of the third root, `z[5]` and `z[7]` for the fourth and
+/// fifth) and so can miss a real root or take a complex one for a crossing;
+/// every root is tested with its own parts here (docs/lal-quirks.md).
 fn cross_zero_p5(a: &[f64; 6], fstart: f64, fend: f64) -> bool {
     let z = match poly_roots::complex_solve(a) {
         Some(z) => z,
@@ -736,7 +740,7 @@ fn cross_zero_p5(a: &[f64; 6], fstart: f64, fend: f64) -> bool {
         None => panic!("IMRPhenomXHM: gsl_poly_complex_solve failed in CrossZeroP5"),
     };
     let test = |im: f64, re: f64| im.abs() < ROOT_THRESHOLD && inside_interval(re, fstart, fend);
-    test(z[1], z[0]) || test(z[3], z[2]) || test(z[4], z[4]) || test(z[5], z[6]) || test(z[7], z[8])
+    (0..5).any(|k| test(z[2 * k + 1], z[2 * k]))
 }
 
 /// `ChoosePolOrder`: lower the order of the intermediate polynomial until
@@ -1979,19 +1983,19 @@ mod tests {
         }
     }
 
-    /// The root tests of `ChoosePolOrder`, including the indexing of the
-    /// roots in `CrossZeroP5`.
+    /// The root tests of `ChoosePolOrder`; `CrossZeroP5` finds every real
+    /// root, including the third that LAL's indexing misses.
     #[test]
     fn polynomial_roots_in_interval() {
         // (f - 0.05)(f - 0.2)(f + 1) = f^3 + 0.75 f^2 - 0.24 f + 0.01
         let cubic = [0.01, -0.24, 0.75, 1.0, 0.0, 0.0];
         assert!(super::cross_zero_p3(&cubic, 0.04, 0.06));
         assert!(!super::cross_zero_p3(&cubic, 0.06, 0.15));
-        // times (f^2 + 1): GSL returns the roots -1, 0.2, 0.05, i, -i and,
-        // like LAL, CrossZeroP5 misses the third root.
+        // times (f^2 + 1): GSL returns the roots -1, 0.2, 0.05, i, -i (LAL
+        // misses the third, 0.05)
         let quintic = [0.01, -0.24, 0.76, 0.76, 0.75, 1.0];
         assert!(super::cross_zero_p5(&quintic, 0.15, 0.25));
-        assert!(!super::cross_zero_p5(&quintic, 0.04, 0.06));
+        assert!(super::cross_zero_p5(&quintic, 0.04, 0.06));
         assert!(!super::cross_zero_p5(&quintic, 0.06, 0.15));
         // cubic times (f - 0.3)
         let quartic = [-0.003, 0.082, -0.465, 0.45, 1.0, 0.0];

@@ -8,12 +8,14 @@
 //! LAL computes every intermediate quantity as a separate pass of GSL
 //! vector operations over all coorbital times. Each time sample is
 //! independent, so this implementation processes the samples in small
-//! blocks with all intermediate values kept in registers or L1 cache,
-//! while performing the same floating-point operations (each GSL vector
-//! operation rounds, so no operations are fused here) in the same order.
+//! blocks with all intermediate values kept in registers or L1 cache. The
+//! products and sums are fused where the hardware can (see
+//! [`crate::spintaylor::fp`]); the blocked and the per-sample paths do the
+//! same operations, so they agree bit for bit.
 
 use crate::nrsur::data::{mode_index, LMAX, N_MODES};
 use crate::nrsur::simd::F64x4;
+use crate::spintaylor::fp::fma;
 
 /// `|ra|^2` or `|rb|^2` below which LAL treats the quaternion component as
 /// zero.
@@ -131,13 +133,13 @@ fn complex_powers(x: f64, y: f64) -> ([f64; N_COMPLEX_POWERS], [f64; N_COMPLEX_P
     re[zero + 1] = x;
     im[zero + 1] = y;
     for i in zero + 1..N_COMPLEX_POWERS - 1 {
-        re[i + 1] = re[i] * x - im[i] * y;
-        im[i + 1] = re[i] * y + im[i] * x;
+        re[i + 1] = fma(re[i], x, -(im[i] * y));
+        im[i + 1] = fma(re[i], y, im[i] * x);
     }
     for power in 1..=2 * LMAX {
         let i = zero + power;
         let j = zero - power;
-        let mag = re[i] * re[i] + im[i] * im[i];
+        let mag = fma(re[i], re[i], im[i] * im[i]);
         re[j] = re[i] / mag;
         im[j] = -im[i] / mag;
     }
@@ -159,7 +161,6 @@ fn real_powers(x: f64) -> [f64; N_REAL_POWERS] {
 /// The Wigner-D matrices for the quaternion `quat` of one sample, in the
 /// order of [`WignerTables`] (`WignerDMatrices_Compute`).
 fn wigner_d(tables: &WignerTables, quat: [f64; 4], d_re: &mut [f64], d_im: &mut [f64]) {
-    use crate::spintaylor::fp::fma;
     // ra = q0 - i q3, rb = -q2 - i q1
     let mut index_type = 0;
     let rb_abs_sqr = fma(quat[2], quat[2], quat[1] * quat[1]);
@@ -186,18 +187,15 @@ fn wigner_d(tables: &WignerTables, quat: [f64; 4], d_re: &mut [f64], d_im: &mut 
         let (a_re, a_im) = (ra_pow_re[e.ra_power], ra_pow_im[e.ra_power]);
         let (b_re, b_im) = (rb_pow_re[e.rb_power], rb_pow_im[e.rb_power]);
         // complex_vector_mult, then scale by coef and |ra|^(2(ell-m))
-        let mut re = a_re * b_re - a_im * b_im;
-        let mut im = a_im * b_re + a_re * b_im;
-        re *= e.coef;
-        im *= e.coef;
-        re *= abs_ra_pow[e.abs_ra_power];
-        im *= abs_ra_pow[e.abs_ra_power];
+        let re = fma(a_re, b_re, -(a_im * b_im));
+        let im = fma(a_im, b_re, a_re * b_im);
         let mut sum = 0.0;
         for (i, &c) in e.c[..e.n_rho].iter().enumerate() {
-            sum += ratio_pow[e.rho_min + i] * c;
+            sum = fma(ratio_pow[e.rho_min + i], c, sum);
         }
-        d_re[k] = re * sum;
-        d_im[k] = im * sum;
+        let scale = e.coef * abs_ra_pow[e.abs_ra_power] * sum;
+        d_re[k] = re * scale;
+        d_im[k] = im * scale;
     }
 
     if index_type != 0 {
@@ -310,7 +308,6 @@ pub(crate) fn coorbital_to_inertial(
 /// Whether LAL treats `ra` or `rb` of this quaternion as zero.
 #[inline]
 fn is_special(quat: [f64; 4]) -> bool {
-    use crate::spintaylor::fp::fma;
     fma(quat[2], quat[2], quat[1] * quat[1]) < EPS_SQR
         || fma(quat[0], quat[0], quat[3] * quat[3]) < EPS_SQR
 }
@@ -354,7 +351,6 @@ struct BlockInput<'a> {
 /// `ra^(m+mp) rb^(m-mp)`, which does not depend on `ell`, is computed once
 /// per `(m, mp)`.
 fn transform_block(input: &mut BlockInput, h_re: &mut [f64], h_im: &mut [f64]) {
-    use crate::spintaylor::fp::fma;
     let (n, t) = (input.n_times, input.t);
     let q = &input.quat;
     let ra_re = V::from_array(q[0]);
@@ -383,7 +379,10 @@ fn transform_block(input: &mut BlockInput, h_re: &mut [f64], h_im: &mut [f64]) {
         let b = zero + m - mp;
         let (a_re, a_im) = (ra_pow_re[a], ra_pow_im[a]);
         let (b_re, b_im) = (rb_pow_re[b], rb_pow_im[b]);
-        (a_re * b_re - a_im * b_im, a_im * b_re + a_re * b_im)
+        (
+            a_re.mul_add(b_re, -(a_im * b_im)),
+            a_im.mul_add(b_re, a_re * b_im),
+        )
     });
 
     // coprecessing modes
@@ -398,7 +397,7 @@ fn transform_block(input: &mut BlockInput, h_re: &mut [f64], h_im: &mut [f64]) {
             let c = V::from_array(std::array::from_fn(|l| input.cos_mphi[l][k]));
             let s = V::from_array(std::array::from_fn(|l| input.sin_mphi[l][k]));
             let s = if m > 0 { s } else { -s };
-            (re * c + im * s, -(re * s) + im * c)
+            (re.mul_add(c, im * s), im.mul_add(c, -(re * s)))
         }
     });
 
@@ -424,10 +423,10 @@ fn transform_block(input: &mut BlockInput, h_re: &mut [f64], h_im: &mut [f64]) {
             let (cr, ci) = copr[base + jp];
             for jm in 0..width {
                 let (d_re, d_im) = input.d[offset + jm * width + jp];
-                re[jm] = re[jm] + cr * d_re;
-                im[jm] = im[jm] + cr * d_im;
-                im[jm] = im[jm] + ci * d_re;
-                re[jm] = re[jm] - ci * d_im;
+                re[jm] = cr.mul_add(d_re, re[jm]);
+                im[jm] = cr.mul_add(d_im, im[jm]);
+                im[jm] = ci.mul_add(d_re, im[jm]);
+                re[jm] = (-ci).mul_add(d_im, re[jm]);
             }
         }
         for jm in 0..width {
@@ -454,10 +453,11 @@ fn wigner_group<const R: usize>(
         let abs = abs_ra_pow[e.abs_ra_power];
         let mut sum = V::splat(0.0);
         for r in 0..R {
-            sum = sum + ratio_pow[e.rho_min + r] * V::splat(e.c[r]);
+            sum = ratio_pow[e.rho_min + r].mul_add(V::splat(e.c[r]), sum);
         }
         let (p_re, p_im) = prod[e.product];
-        d[k] = (p_re * coef * abs * sum, p_im * coef * abs * sum);
+        let scale = coef * abs * sum;
+        d[k] = (p_re * scale, p_im * scale);
     }
 }
 
@@ -471,13 +471,13 @@ fn complex_powers_lanes(x: V, y: V) -> ([V; N_COMPLEX_POWERS], [V; N_COMPLEX_POW
     re[zero + 1] = x;
     im[zero + 1] = y;
     for i in zero + 1..N_COMPLEX_POWERS - 1 {
-        re[i + 1] = re[i] * x - im[i] * y;
-        im[i + 1] = re[i] * y + im[i] * x;
+        re[i + 1] = re[i].mul_add(x, -(im[i] * y));
+        im[i + 1] = re[i].mul_add(y, im[i] * x);
     }
     for power in 1..=2 * LMAX {
         let i = zero + power;
         let j = zero - power;
-        let mag = re[i] * re[i] + im[i] * im[i];
+        let mag = re[i].mul_add(re[i], im[i] * im[i]);
         re[j] = re[i] / mag;
         im[j] = -im[i] / mag;
     }
@@ -529,8 +529,8 @@ fn transform_sample(
                     let k = m.unsigned_abs() as usize - 1;
                     let c = cos_mphi[k];
                     let s = if m > 0 { sin_mphi[k] } else { -sin_mphi[k] };
-                    copr_re[i] = re * c + im * s;
-                    copr_im[i] = -(re * s) + im * c;
+                    copr_re[i] = fma(re, c, im * s);
+                    copr_im[i] = fma(im, c, -(re * s));
                 }
             }
         }
@@ -545,10 +545,10 @@ fn transform_sample(
                 let mut re = 0.0;
                 let mut im = 0.0;
                 for j in base..base + 2 * ell + 1 {
-                    re += copr_re[j] * d_re[k];
-                    im += copr_re[j] * d_im[k];
-                    im += copr_im[j] * d_re[k];
-                    re -= copr_im[j] * d_im[k];
+                    re = fma(copr_re[j], d_re[k], re);
+                    im = fma(copr_re[j], d_im[k], im);
+                    im = fma(copr_im[j], d_re[k], im);
+                    re = fma(-copr_im[j], d_im[k], re);
                     k += 1;
                 }
                 let i = mode_index(ell, m);

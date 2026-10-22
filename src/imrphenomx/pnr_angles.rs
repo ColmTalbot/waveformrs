@@ -478,9 +478,8 @@ pub(crate) fn arctan_window(beta: f64) -> f64 {
     let window_border = 0.01;
     if beta <= window_border || beta >= PI - window_border {
         let p = 0.002;
-        // LAL's literal, two ulps above `FRAC_PI_2`
-        #[allow(clippy::approx_constant)]
-        let pi_by_2 = 1.570796326794897;
+        // (LAL's literal is two ulps above pi/2)
+        let pi_by_2 = std::f64::consts::FRAC_PI_2;
         let pi_by_2_1mp = 1.569378278348018;
         let pi_by_2_1oq = 7.308338225719002e97;
         let sign = if beta < pi_by_2 { -1.0 } else { 1.0 };
@@ -979,10 +978,10 @@ pub(crate) fn boole_step(gamma_prev: f64, t1: f64, t2: f64, f: impl Fn(f64) -> f
     fma(1.0 / 90.0 * (t2 - t1), sum, gamma_prev)
 }
 
-/// `-alpha'(f) cos(beta(f))` with the integrand evaluated as in LAL.
+/// `-alpha'(f) cos(beta(f))`.
 #[inline]
 pub(crate) fn alphadot_cosbeta(alphadot: f64, beta: f64) -> f64 {
-    -1.0 * alphadot * beta.cos()
+    -(alphadot * beta.cos())
 }
 
 /// `sqrt(1 - x^2)` as contracted by clang.

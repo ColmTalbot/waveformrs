@@ -21,7 +21,7 @@ The binary is given by keyword arguments with LAL's parameters in the units of
 
 The settings of LAL's ``LALDict`` are :class:`WaveformOptions`, passed as
 ``options=`` and/or as keyword arguments (``precession_version``,
-``mode_array``, ``version_fallback``, ``pnr_parity_fix``, and the tidal
+``mode_array``, ``version_fallback``, and the tidal
 deformabilities ``lambda_1``, ``lambda_2`` of the NRTidal approximants).
 
 >>> import numpy as np

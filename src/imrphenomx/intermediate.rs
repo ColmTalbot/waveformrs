@@ -688,14 +688,9 @@ pub(crate) fn phase_22_d43(eta: f64, s: f64, dchi: f64, delta: f64) -> f64 {
     no_spin + eq_spin + uneq_spin
 }
 
-/// `IMRPhenomX_Intermediate_Phase_22_Ansatz` evaluated operation by
-/// operation as in LALSimulation (including its fused multiply-adds), for
-/// the coefficient computations that must agree with LAL to the last bit.
-pub(crate) fn phase_22_ansatz_exact(
-    mf: f64,
-    powers: &UsefulPowers,
-    phase: &PhaseCoefficients,
-) -> f64 {
+/// `IMRPhenomX_Intermediate_Phase_22_Ansatz`, the phase derivative, with
+/// fused multiply-adds.
+pub(crate) fn phase_22_ansatz(mf: f64, powers: &UsefulPowers, phase: &PhaseCoefficients) -> f64 {
     let fda = phase.f_damp;
     let dfr = mf - phase.f_ring;
     let lorentzian = (4.0 * phase.c_l_gr) / fma(4.0 * fda, fda, dfr * dfr);
@@ -706,11 +701,10 @@ pub(crate) fn phase_22_ansatz_exact(
     phase_out + lorentzian
 }
 
-/// `IMRPhenomX_Intermediate_Phase_22_AnsatzInt` evaluated operation by
-/// operation as in LALSimulation, see [`phase_22_ansatz_exact`]; also
-/// used for the phase at each frequency.
+/// `IMRPhenomX_Intermediate_Phase_22_AnsatzInt`, the phase (see
+/// [`phase_22_ansatz`]).
 #[inline]
-pub(crate) fn phase_22_ansatz_int_exact(
+pub(crate) fn phase_22_ansatz_int(
     mf: f64,
     powers: &UsefulPowers,
     phase: &PhaseCoefficients,

@@ -1,14 +1,11 @@
-"""IMRPhenomXPNR with and without the parity fix of lalsuite !2593.
+"""IMRPhenomXPNR with the parity fix of lalsuite !2593.
 
 LALSimulation 6.2.0 and 6.2.1 refer the phase of the antisymmetric (2,2)
 mode of IMRPhenomXPNR to the line of sight, which breaks the mirror
-symmetry of the waveform; the fix (on lalsuite master, and the default here)
-restores it. Agreement with 6.2.0 (``pnr_parity_fix=False``) is in
-test_lalsimulation.py; the fixed model is compared with a patched
-LALSimulation in the crate's tests (tests/xpnr.rs).
+symmetry of the waveform; the fix (on lalsuite master, always applied here)
+restores it. The model is compared with a patched LALSimulation in the
+crate's tests (tests/xpnr.rs).
 """
-
-import pickle
 
 import numpy as np
 import pytest
@@ -34,60 +31,39 @@ def mirror(binary):
                 inclination=np.pi - binary["inclination"])
 
 
-def mirror_violation(binary, **options):
+def mirror_violation(binary):
     """max(|h+' - h+|, |hx' + hx|) / max |h| (zero for a symmetric model)."""
-    hp, hc = wf.polarizations("IMRPhenomXPNR", FREQUENCIES, **binary, **options)
-    hp_m, hc_m = wf.polarizations("IMRPhenomXPNR", FREQUENCIES, **mirror(binary), **options)
+    hp, hc = wf.polarizations("IMRPhenomXPNR", FREQUENCIES, **binary)
+    hp_m, hc_m = wf.polarizations("IMRPhenomXPNR", FREQUENCIES, **mirror(binary))
     scale = max(np.abs(hp).max(), np.abs(hc).max())
     return max(np.abs(hp_m - hp).max(), np.abs(hc_m + hc).max()) / scale
 
 
-def test_option_defaults():
-    assert wf.WaveformOptions().pnr_parity_fix
-    assert not wf.WaveformOptions.lalsimulation_defaults().pnr_parity_fix
-    options = wf.WaveformOptions(pnr_parity_fix=False)
-    assert options.as_dict()["pnr_parity_fix"] is False
-    assert pickle.loads(pickle.dumps(options)) == options
-    assert options.replace(pnr_parity_fix=True) == wf.WaveformOptions()
+def test_the_option_is_gone():
+    assert "pnr_parity_fix" not in wf.WaveformOptions().as_dict()
     with pytest.raises(TypeError):
-        wf.WaveformOptions(pnr_parity_fix="yes")
+        wf.WaveformOptions(pnr_parity_fix=False)
 
 
 @pytest.mark.parametrize("index", range(len(BINARIES)))
-def test_parity_fix_restores_the_mirror_symmetry(index):
-    binary = BINARIES[index]
-    assert mirror_violation(binary) < 1e-11
-    assert mirror_violation(binary, pnr_parity_fix=False) > 1e-4
+def test_mirror_symmetry(index):
+    assert mirror_violation(BINARIES[index]) < 1e-11
 
 
-def test_fix_changes_only_xpnr():
-    binary = BINARIES[0]
-    fixed = wf.polarizations("IMRPhenomXPNR", FREQUENCIES, **binary)
-    unfixed = wf.polarizations("IMRPhenomXPNR", FREQUENCIES, **binary, pnr_parity_fix=False)
-    assert np.abs(fixed[0] - unfixed[0]).max() > 1e-4 * np.abs(unfixed[0]).max()
-    for approximant in ["IMRPhenomXP", "IMRPhenomXPHM"]:
-        a = wf.polarizations(approximant, FREQUENCIES, **binary)
-        b = wf.polarizations(approximant, FREQUENCIES, **binary, pnr_parity_fix=False)
-        assert all(np.array_equal(x, y) for x, y in zip(a, b))
-
-
-@pytest.mark.parametrize("fix", [True, False])
-def test_grid_and_batch(fix):
+def test_grid_and_batch():
     """The grid path agrees with the sequence, the batch with single calls."""
     grid = wf.FrequencyGrid.uniform(20.0, 1024.0, 0.25)
     frequencies = np.asarray(grid.frequencies)
-    hp, hc = wf.polarizations("IMRPhenomXPNR", frequencies, **BINARIES[0], pnr_parity_fix=fix)
-    hp_grid, hc_grid = wf.polarizations_on_grid("IMRPhenomXPNR", grid, **BINARIES[0],
-                                                pnr_parity_fix=fix)
+    hp, hc = wf.polarizations("IMRPhenomXPNR", frequencies, **BINARIES[0])
+    hp_grid, hc_grid = wf.polarizations_on_grid("IMRPhenomXPNR", grid, **BINARIES[0])
     scale = np.abs(hp).max()
     assert np.abs(hp_grid - hp).max() < 1e-10 * scale
     assert np.abs(hc_grid - hc).max() < 1e-10 * scale
 
     parameters = {key: np.array([b[key] for b in BINARIES]) for key in BINARIES[0]}
-    result = wf.batch_polarizations("IMRPhenomXPNR", grid, parameters, threads=3,
-                                    pnr_parity_fix=fix)
+    result = wf.batch_polarizations("IMRPhenomXPNR", grid, parameters, threads=3)
     assert result.ok.all()
     for row, binary in enumerate(BINARIES):
-        single = wf.polarizations_on_grid("IMRPhenomXPNR", grid, **binary, pnr_parity_fix=fix)
+        single = wf.polarizations_on_grid("IMRPhenomXPNR", grid, **binary)
         assert np.array_equal(result.hplus[row], single[0])
         assert np.array_equal(result.hcross[row], single[1])

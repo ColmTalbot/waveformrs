@@ -616,18 +616,17 @@ impl PhaseCoefficients {
     /// Phase (without the 1/eta scaling and linear terms) using the region
     /// boundaries of `IMRPhenomXASGenerateFD`: `mf < fPhaseMatchIN` is
     /// inspiral, `mf > fPhaseMatchIM` ringdown, intermediate otherwise.
-    /// Evaluated operation by operation as in LALSimulation (including its
-    /// fused multiply-adds) so that long inspirals, with phases of order
-    /// 1e6 rad, agree to the last bit.
+    /// Long inspirals have phases of order 1e6 rad, so this is evaluated
+    /// in nested form with fused multiply-adds.
     #[inline]
     pub(crate) fn phase_xas(&self, mf: f64, powers: &UsefulPowers) -> f64 {
         if mf < self.f_phase_match_in {
-            inspiral::phase_22_ansatz_int_exact(mf, powers, self)
+            inspiral::phase_22_ansatz_int(mf, powers, self)
         } else if mf > self.f_phase_match_im {
-            let phi = ringdown::phase_22_ansatz_int_exact(mf, powers, self);
+            let phi = ringdown::phase_22_ansatz_int(mf, powers, self);
             fma(self.c2_mrd, mf, phi + self.c1_mrd)
         } else {
-            let phi = intermediate::phase_22_ansatz_int_exact(mf, powers, self);
+            let phi = intermediate::phase_22_ansatz_int(mf, powers, self);
             fma(self.c2_int, mf, phi + self.c1_int)
         }
     }
@@ -641,11 +640,11 @@ pub(crate) fn phase_22_connection_coefficients(phase: &mut PhaseCoefficients) {
 
     // phi_Inspiral(f) = phi_Intermediate(f) + C1 + C2 f at f_ins
     let powers_of_f_ins = UsefulPowers::new(f_ins);
-    let dphi_ins = inspiral::phase_22_ansatz_exact(f_ins, &powers_of_f_ins, phase);
-    let dphi_int = intermediate::phase_22_ansatz_exact(f_ins, &powers_of_f_ins, phase);
+    let dphi_ins = inspiral::phase_22_ansatz(f_ins, &powers_of_f_ins, phase);
+    let dphi_int = intermediate::phase_22_ansatz(f_ins, &powers_of_f_ins, phase);
     phase.c2_int = dphi_ins - dphi_int;
-    let phi_in = inspiral::phase_22_ansatz_int_exact(f_ins, &powers_of_f_ins, phase);
-    let phi_im = intermediate::phase_22_ansatz_int_exact(f_ins, &powers_of_f_ins, phase);
+    let phi_in = inspiral::phase_22_ansatz_int(f_ins, &powers_of_f_ins, phase);
+    let phi_im = intermediate::phase_22_ansatz_int(f_ins, &powers_of_f_ins, phase);
     phase.c1_int = fma(-phase.c2_int, f_ins, phi_in - phi_im);
 
     // phi_Intermediate(f) = phi_Ringdown(f) + C1 + C2 f at f_int
@@ -653,46 +652,43 @@ pub(crate) fn phase_22_connection_coefficients(phase: &mut PhaseCoefficients) {
     let phi_imc = fma(
         phase.c2_int,
         f_int,
-        intermediate::phase_22_ansatz_int_exact(f_int, &powers_of_f_int, phase) + phase.c1_int,
+        intermediate::phase_22_ansatz_int(f_int, &powers_of_f_int, phase) + phase.c1_int,
     );
-    let phi_rd = ringdown::phase_22_ansatz_int_exact(f_int, &powers_of_f_int, phase);
-    let dphi_intc =
-        intermediate::phase_22_ansatz_exact(f_int, &powers_of_f_int, phase) + phase.c2_int;
-    let dphi_rd = ringdown::phase_22_ansatz_exact(f_int, &powers_of_f_int, phase);
+    let phi_rd = ringdown::phase_22_ansatz_int(f_int, &powers_of_f_int, phase);
+    let dphi_intc = intermediate::phase_22_ansatz(f_int, &powers_of_f_int, phase) + phase.c2_int;
+    let dphi_rd = ringdown::phase_22_ansatz(f_int, &powers_of_f_int, phase);
     phase.c2_mrd = dphi_intc - dphi_rd;
     phase.c1_mrd = fma(-phase.c2_mrd, f_int, phi_imc - phi_rd);
 }
 
 /// `IMRPhenomX_Phase_22`: the phase before scaling by 1/eta, with the
-/// region boundaries of LAL (`IMRPhenomX_StepFuncBool`, i.e. `mf >= f`),
-/// evaluated operation by operation as in LALSimulation.
+/// region boundaries of LAL (`IMRPhenomX_StepFuncBool`, i.e. `mf >= f`).
 pub(crate) fn phase_22(mf: f64, powers: &UsefulPowers, phase: &PhaseCoefficients) -> f64 {
     if mf < phase.f_phase_match_in {
-        inspiral::phase_22_ansatz_int_exact(mf, powers, phase)
+        inspiral::phase_22_ansatz_int(mf, powers, phase)
     } else if mf >= phase.f_phase_match_im {
         fma(
             phase.c2_mrd,
             mf,
-            ringdown::phase_22_ansatz_int_exact(mf, powers, phase) + phase.c1_mrd,
+            ringdown::phase_22_ansatz_int(mf, powers, phase) + phase.c1_mrd,
         )
     } else {
         fma(
             phase.c2_int,
             mf,
-            intermediate::phase_22_ansatz_int_exact(mf, powers, phase) + phase.c1_int,
+            intermediate::phase_22_ansatz_int(mf, powers, phase) + phase.c1_int,
         )
     }
 }
 
-/// `IMRPhenomX_dPhase_22`: the phase derivative before scaling by 1/eta,
-/// evaluated operation by operation as in LALSimulation.
+/// `IMRPhenomX_dPhase_22`: the phase derivative before scaling by 1/eta.
 pub(crate) fn dphase_22(mf: f64, powers: &UsefulPowers, phase: &PhaseCoefficients) -> f64 {
     if mf < phase.f_phase_match_in {
-        inspiral::phase_22_ansatz_exact(mf, powers, phase)
+        inspiral::phase_22_ansatz(mf, powers, phase)
     } else if mf >= phase.f_phase_match_im {
-        ringdown::phase_22_ansatz_exact(mf, powers, phase) + phase.c2_mrd
+        ringdown::phase_22_ansatz(mf, powers, phase) + phase.c2_mrd
     } else {
-        intermediate::phase_22_ansatz_exact(mf, powers, phase) + phase.c2_int
+        intermediate::phase_22_ansatz(mf, powers, phase) + phase.c2_int
     }
 }
 

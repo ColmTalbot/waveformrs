@@ -86,8 +86,7 @@ pub(crate) struct HMWaveformStruct {
     pub(crate) phaseshift: f64,
     /// Phase offset `phifRef` of the 22, set with the phase coefficients.
     pub(crate) phiref22: f64,
-    /// Mixing coefficients (rounded to single precision as in LAL's
-    /// `COMPLEX8`): a222, a223, -a322, -a323.
+    /// Mixing coefficients: a222, a223, -a322, -a323.
     pub(crate) mixing_coeffs: [Complex<f64>; 4],
     /// Leading-order normalisation of the 22, `ampNorm`.
     pub(crate) amp_norm: f64,
@@ -177,16 +176,17 @@ impl HMWaveformStruct {
     }
 }
 
-/// `IMRPhenomXHM_Initialize_MixingCoeffs`: the mixing coefficients stored in
-/// single precision, with the signs of the (3,2) ones flipped to match the
-/// conventions of the hybrids.
+/// `IMRPhenomXHM_Initialize_MixingCoeffs`: the mixing coefficients, with the
+/// signs of the (3,2) ones flipped to match the conventions of the hybrids.
+/// LAL stores them in single precision (`COMPLEX8`), which puts a relative
+/// error of ~1e-7 into the (3,2) ringdown; they are kept in double
+/// precision here (docs/lal-quirks.md).
 fn mixing_coefficients(af: f64) -> [Complex<f64>; 4] {
-    let single = |re: f64, im: f64| Complex::new(re as f32 as f64, im as f32 as f64);
     [
-        single(hm_qnm::re_l2m2lp2(af), hm_qnm::im_l2m2lp2(af)),
-        single(hm_qnm::re_l2m2lp3(af), hm_qnm::im_l2m2lp3(af)),
-        -single(hm_qnm::re_l3m2lp2(af), hm_qnm::im_l3m2lp2(af)),
-        -single(hm_qnm::re_l3m2lp3(af), hm_qnm::im_l3m2lp3(af)),
+        Complex::new(hm_qnm::re_l2m2lp2(af), hm_qnm::im_l2m2lp2(af)),
+        Complex::new(hm_qnm::re_l2m2lp3(af), hm_qnm::im_l2m2lp3(af)),
+        -Complex::new(hm_qnm::re_l3m2lp2(af), hm_qnm::im_l3m2lp2(af)),
+        -Complex::new(hm_qnm::re_l3m2lp3(af), hm_qnm::im_l3m2lp3(af)),
     ]
 }
 
@@ -453,7 +453,7 @@ impl HMMode {
             .as_ref()
             .expect("IMRPhenomXHM: spheroidal rotation without mixing data");
         let mf = powers.itself;
-        let amp22 = ringdown::amp_22_ansatz_exact(mf, mix.f_ring22, mix.f_damp22, &mix.amp22);
+        let amp22 = ringdown::amp_22_ansatz_from_gammas(mf, mix.f_ring22, mix.f_damp22, &mix.amp22);
         let phi22 = fma(
             mix.inveta,
             phase_22(mf, powers, &mix.phase22),
@@ -516,7 +516,7 @@ impl HMMode {
             .as_ref()
             .expect("IMRPhenomXHM: spheroidal rotation without mixing data");
         let mf = powers.itself;
-        let amp22 = ringdown::amp_22_ansatz_exact(mf, mix.f_ring22, mix.f_damp22, &mix.amp22);
+        let amp22 = ringdown::amp_22_ansatz_from_gammas(mf, mix.f_ring22, mix.f_damp22, &mix.amp22);
         let phi22 = fma(
             mix.inveta,
             phase_22(mf, powers, &mix.phase22),
@@ -852,9 +852,12 @@ fn get_phase_coefficients(
 
     /* Intermediate-ringdown */
     // For high spins, extend the inspiral of the 21 into the intermediate
-    // region. Like LAL, this uses the 22 phase derivative before the 22
-    // connection coefficients are computed (they are zero).
+    // region with differences of the 22 phase derivative. LAL takes them
+    // before it computes the 22 connection coefficients (still zero), so
+    // its derivative jumps at the 22 region boundaries; the derivative
+    // here is the continuous one (docs/lal-quirks.md).
     if wfhm.mode_tag == 21 && wf.s_tot_r >= 0.8 {
+        phase_22_connection_coefficients(phase22);
         let mut insp_vals = [0.; 3];
         for (i, value) in insp_vals.iter_mut().enumerate() {
             let ff = two_over_m * phase.colloc_freqs_inter[i];

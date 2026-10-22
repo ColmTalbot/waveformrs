@@ -404,14 +404,13 @@ impl Tidal {
                 / (3. * denominator(d_1, d_3over2).powf(2.));
             terms.dnr += dnr1 + dnr2;
 
-            // LAL writes (4/3) here, an integer division that evaluates to
-            // 1: kept to reproduce LAL (it multiplies a term that vanishes
-            // where LAL evaluates the derivative, see
-            // docs/lal-nrtidalv3-integer-division.md).
-            let four_thirds_in_lal = 1.0;
+            // LAL writes (4/3) here, a C integer division that evaluates to
+            // 1; the derivative is (4/3) (it multiplies a term that vanishes
+            // where LAL evaluates the derivative, so the waveforms are the
+            // same, see docs/lal-quirks.md).
             let dpn_poly = (2. / 3.) * mf.powf(-1.0 / 3.0) * c_1 * pi.two_thirds
                 + c_3over2 * PI
-                + four_thirds_in_lal * mf.cbrt() * c_2 * pi.four_thirds
+                + (4. / 3.) * mf.cbrt() * c_2 * pi.four_thirds
                 + (5. / 3.) * powers.two_thirds * c_5over2 * pi.five_thirds;
             let factor = -c_newt * kappa;
             terms.dpn += factor

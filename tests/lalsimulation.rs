@@ -165,8 +165,6 @@ struct AngleCase {
 }
 
 /// The SpinTaylor Euler angles against `SimIMRPhenomXPSpinTaylorAngles`.
-/// On macOS arm64 (where the port mirrors LAL's fused multiply-adds) they
-/// agree bit for bit.
 #[test]
 fn imrphenomxp_spintaylor_angles_match_lalsimulation() {
     let path = common::data_path("imrphenomxp_spintaylor_angles");

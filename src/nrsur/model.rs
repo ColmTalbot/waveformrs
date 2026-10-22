@@ -936,8 +936,8 @@ fn two_rows(buffer: &mut [f64], a: usize, b: usize, n: usize) -> (&mut [f64], &m
 
 /// `PrecessingNRSur_eval_data_piece`: the fits at the empirical nodes
 /// (with the coorbital spins at the node times) and the empirical
-/// interpolant `basis^T nodes` (`gsl_blas_dgemv` with OpenBLAS's fused
-/// column-by-column accumulation), written to `out`.
+/// interpolant `basis^T nodes` (`gsl_blas_dgemv`, accumulated column by
+/// column, which reads the basis contiguously), written to `out`.
 fn eval_data_piece(
     data: &DataPiece,
     params: &MassRatioParameters,
@@ -962,11 +962,11 @@ fn eval_data_piece(
     }
     let out = &mut out[..n];
     let mut rows = nodes.iter().zip(data.basis.chunks_exact(n));
-    // y = 0 (beta = 0), then y += x_j A_j column by column
+    // y = x_0 A_0, then y += x_j A_j column by column
     match rows.next() {
         Some((&a, row)) => {
             for (o, &b) in out.iter_mut().zip(row) {
-                *o = fma(a, b, 0.0);
+                *o = a * b;
             }
         }
         None => out.fill(0.0),

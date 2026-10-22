@@ -479,7 +479,6 @@ pub(crate) fn linb(eta: f64, s: f64, dchi: f64, delta: f64) -> f64 {
 /// `XLALSimIMRPhenomXPsi4ToStrain`: fit of the time difference between the
 /// peaks of the strain and of psi4.
 ///
-/// LAL computes the powers with `pow`, reproduced here with `powf`.
 pub(crate) fn psi4_to_strain(eta: f64, s: f64, dchi: f64) -> f64 {
     let eta2 = eta * eta;
     let eta3 = eta.powf(3.0);

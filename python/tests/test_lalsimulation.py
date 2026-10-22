@@ -5,6 +5,10 @@ relative error (max |difference| / max |LAL|) of 1e-10 (TaylorF2, IMRPhenomD)
 or 1e-9 (IMRPhenomX) and a mismatch of 1e-12, except for the models whose
 ill-conditioned parts amplify rounding errors, which have looser tolerances
 on every platform (docs/linux.md).
+
+IMRPhenomXPNR is not compared here: the crate's model includes the fix of
+lalsuite !2593, which lalsimulation 6.2.0 lacks (test_xpnr.py; the crate's
+tests/xpnr.rs compares it with a patched lalsimulation).
 """
 
 import numpy as np
@@ -71,9 +75,6 @@ FD_CASES = [
         dict(precession_version=320, mode_array=[(2, 2), (3, 3)]),
         (1e-9, 1e-12),
     ),
-    # LALSimulation 6.2.0 has no parity fix (lalsuite !2593, test_xpnr.py)
-    ("IMRPhenomXPNR", PRECESSING, dict(pnr_parity_fix=False), (1e-9, 1e-12)),
-    ("IMRPhenomXPNR", UNEQUAL, dict(pnr_parity_fix=False), (1e-9, 1e-12)),
     ("IMRPhenomD_NRTidalv2", BNS_ALIGNED, {}, (1e-9, 1e-12)),
     ("IMRPhenomXAS_NRTidalv2", BNS_ALIGNED, {}, (1e-9, 1e-12)),
     ("IMRPhenomXAS_NRTidalv3", BNS_ALIGNED, {}, (1e-9, 1e-12)),
@@ -86,7 +87,6 @@ AMPLIFYING = {
     "IMRPhenomXHM": (1e-3, 1e-6),
     "IMRPhenomXPHM": (1e-3, 1e-6),
     "IMRPhenomXP": (1e-7, 1e-12),
-    "IMRPhenomXPNR": (1e-3, 1e-6),
     "IMRPhenomXP_NRTidalv2": (1e-6, 1e-12),
     "IMRPhenomXP_NRTidalv3": (1e-6, 1e-12),
 }

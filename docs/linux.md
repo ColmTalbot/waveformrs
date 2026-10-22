@@ -186,6 +186,12 @@ the frequency differently from LAL.
 | IMRPhenomXPNR | 5.1e-5 | 4.9e-7 | 1.5e-5 | 4.6e-7 |
 | NRSur7dq4 | 1.5e-13 | 1.3e-14 | 1.0e-15 | 5.5e-16 |
 
+The IMRPhenomXPNR row was measured when the crate could still reproduce
+lalsimulation 6.2.0's IMRPhenomXPNR (without the parity fix of lalsuite
+!2593). The crate's IMRPhenomXPNR now always includes the fix, so
+`validate.sh` no longer compares it: the containers have no lalsimulation
+built with the fix.
+
 All mismatches are below 4e-8. Before the crate stopped copying LAL's
 arithmetic, linux-64 agreed with LAL to ~1e-15 for most models (it then
 mirrored that build's unfused arithmetic and glibc's `cbrt`), and the

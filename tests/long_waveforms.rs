@@ -21,11 +21,9 @@
 //! the error of the phase at `f_min` in radians.
 //!
 //! - The per-frequency paths of IMRPhenomXHM, XP and XPHM (`polarizations`,
-//!   `polarizations_uniform`) repeat LAL's operations, including the powers
-//!   of `Mf` derived from `pow(Mf, 1/6)` and the SpinTaylor integration over
-//!   ~2 million output steps. On Apple silicon (where the port also mirrors
-//!   clang's fused multiply-adds) they agree to <= 5e-16 and are held to
-//!   [`EXACT`]; the SpinTaylor angles agree bit for bit.
+//!   `polarizations_uniform`) follow LAL's operations, including the
+//!   SpinTaylor integration over ~2 million output steps, but form the
+//!   powers of `Mf` from `cbrt` rather than `pow(Mf, 1/6)`.
 //! - TaylorF2, IMRPhenomD and IMRPhenomXAS evaluate their powers of `Mf`
 //!   per frequency from `cbrt` and products (and the polynomials in a
 //!   different order), and every grid path forms them as products of powers
@@ -65,9 +63,6 @@ type C64 = Complex<f64>;
 /// Units in the last place of the leading-order phase at `f_min` allowed for
 /// the paths that round the phase differently from LAL.
 const PHASE_ULPS: f64 = 64.0;
-
-/// Tolerance of the paths that repeat LAL's operations, on Apple silicon.
-const EXACT: f64 = 1e-14;
 
 /// The solar mass in seconds, `LAL_MTSUN_SI`.
 const MTSUN_SI: f64 = 4.925490947641267e-6;
@@ -181,17 +176,6 @@ impl LongCase {
     /// Tolerance of the paths that round the phase differently from LAL.
     fn rounding_tolerance(&self) -> f64 {
         PHASE_ULPS * f64::EPSILON * self.phase_scale()
-    }
-
-    /// Tolerance of the paths that repeat LAL's operations: [`EXACT`] on
-    /// Apple silicon, where the port mirrors the fused multiply-adds of
-    /// LAL's builds, and the rounding tolerance elsewhere.
-    fn exact_tolerance(&self) -> f64 {
-        if cfg!(all(target_arch = "aarch64", target_os = "macos")) {
-            EXACT
-        } else {
-            self.rounding_tolerance()
-        }
     }
 
     /// Largest difference from LAL at the stored indices, relative to the
@@ -385,7 +369,7 @@ fn imrphenomxhm_long() {
         .unwrap()
         .with_reference_frequency(case.f_ref);
         let polarizations = model.polarizations(&frequencies, case.phi_ref, case.inclination);
-        failures.check(case, "per-freq", polarizations, case.exact_tolerance());
+        failures.check(case, "per-freq", polarizations, case.rounding_tolerance());
 
         let grid = FrequencyGrid::new(&frequencies);
         let (mut hplus, mut hcross) = buffers(grid.len());
@@ -413,12 +397,12 @@ fn check_precessing(
     let mut failures = Failures::default();
     for case in cases(approximant) {
         if case.generator == "uniform" {
-            failures.check(case, "uniform", uniform(case), case.exact_tolerance());
+            failures.check(case, "uniform", uniform(case), case.rounding_tolerance());
             continue;
         }
         let frequencies = case.sequence();
         let polarizations = per_frequency(case, &frequencies);
-        failures.check(case, "per-freq", polarizations, case.exact_tolerance());
+        failures.check(case, "per-freq", polarizations, case.rounding_tolerance());
 
         let grid = FrequencyGrid::new(&frequencies);
         let (mut hplus, mut hcross) = buffers(grid.len());

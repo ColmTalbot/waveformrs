@@ -61,8 +61,9 @@ FD_MODELS = [
     ("IMRPhenomXPHM (102)", "IMRPhenomXPHM", BINARY, dict(precession_version=102)),
     ("IMRPhenomXPHM (223)", "IMRPhenomXPHM", BINARY, dict(precession_version=223)),
     ("IMRPhenomXPHM (320)", "IMRPhenomXPHM", BINARY, dict(precession_version=320)),
-    # without the parity fix, as lalsimulation 6.2.0 (the cost is the same)
-    ("IMRPhenomXPNR", "IMRPhenomXPNR", BINARY, dict(pnr_parity_fix=False)),
+    # with the parity fix of lalsuite !2593, which lalsimulation 6.2.0 lacks
+    # (the cost is the same)
+    ("IMRPhenomXPNR", "IMRPhenomXPNR", BINARY, {}),
 ]
 
 

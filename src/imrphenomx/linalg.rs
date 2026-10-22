@@ -11,18 +11,11 @@
 //! reference implementation (including scaling the pivot column by the
 //! reciprocal of the pivot).
 //!
-//! GSL delegates the level-2 BLAS operations to the CBLAS it is linked
-//! against (OpenBLAS in the conda-forge builds). Its `dger` rank-one update
-//! accumulates `a_ik += (-l_ij) u_jk` with fused multiply-adds, and its
-//! `dtrsv` subtracts a dot product that is accumulated left to right with
-//! fused multiply-adds starting from zero. Reproducing these (with
-//! [`fma`], fused on the arm64 targets whose LAL builds fuse) makes the
-//! solution agree with LALSimulation to the last bit (verified on random
-//! 4x4 to 8x8 systems against `gsl_linalg_LU_solve`). On x86-64 OpenBLAS
-//! picks its kernels at run time: the unfused operations here match its
-//! kernels for CPUs without FMA (verified with the Nehalem kernels that it
-//! selects under Rosetta), while on Haswell and later its kernels fuse and
-//! the solution agrees to rounding.
+//! The rank-one updates `a_ik += (-l_ij) u_jk` and the dot products of the
+//! substitutions are fused where the hardware can ([`fma`]). The systems
+//! are small (at most 8x8), so the straightforward loops are as fast as a
+//! BLAS call; the solution agrees with LAL's (GSL with OpenBLAS) to
+//! rounding.
 
 use crate::spintaylor::fp::fma;
 

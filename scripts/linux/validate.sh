@@ -28,10 +28,12 @@ export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1
 outdir=${VALIDATION_DIR:-/target/validation/$label}
 mkdir -p "$outdir"
 
+# (not IMRPhenomXPNR: the crate's model includes the fix of lalsuite !2593,
+# so it needs a lalsimulation built with it, which the containers lack)
 python scripts/validate_against_lalsimulation.py --n-draws "$n_draws" --outdir "$outdir" \
     --approximants TaylorF2 IMRPhenomD IMRPhenomXAS IMRPhenomXHM \
     IMRPhenomXP_NNLO IMRPhenomXP_MSA IMRPhenomXP \
-    IMRPhenomXPHM_NNLO IMRPhenomXPHM_MSA IMRPhenomXPHM IMRPhenomXPNR
+    IMRPhenomXPHM_NNLO IMRPhenomXPHM_MSA IMRPhenomXPHM
 if [[ $nrsur_draws -gt 0 && -f lal_data/NRSur7dq4_v1.0.h5 ]]; then
     NRSUR7DQ4_DATA=lal_data/NRSur7dq4_v1.0.h5 LAL_DATA_PATH=lal_data \
         python scripts/validate_nrsur7dq4.py --n-draws "$nrsur_draws" --outdir "$outdir"

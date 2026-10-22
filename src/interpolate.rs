@@ -299,7 +299,7 @@ mod tests {
         c
     }
 
-    /// The fused construction gives GSL's coefficients bit for bit, also
+    /// The fused construction gives GSL's coefficients to rounding, also
     /// for two splines sharing their knots.
     #[test]
     fn constructors_match_gsl() {

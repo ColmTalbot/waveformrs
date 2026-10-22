@@ -9,8 +9,9 @@
 //! `LALSimIMRPhenomX_precession.c` (`IMRPhenomXGetAndSetPrecessionVariables`
 //! and `IMRPhenomX_SetPrecessingRemnantParams` with `PhenomXPrecVersion`
 //! 330 and `PhenomXPFinalSpinMod` 7, and the SpinTaylor angles of version
-//! 330), optionally with the changes of lalsuite merge request !2593 to
-//! the last two files (`parity_fix`):
+//! 330), with the changes of lalsuite merge request !2593 (merged into
+//! lalsuite master as commit 64d2004def) to the last two files, which
+//! restore the mirror symmetry of the waveform:
 //!
 //! - [`PnrPrecession::new`] sets up the precession struct of XPNR: the
 //!   SpinTaylor integration starting at the frequency the PNR angle
@@ -165,8 +166,9 @@ impl BetaMrd330 {
             f64::NAN
         };
         let cosbeta2 = spline.eval(f2);
-        // As in LAL, only the status of the last evaluation is checked.
-        let success = spline.contains(fmax_pn);
+        // LAL checks only the status of the last evaluation; all three
+        // points must be inside the spline (docs/lal-quirks.md).
+        let success = spline.contains(f1) && spline.contains(f2) && spline.contains(fmax_pn);
         let cosbetamax = spline.eval(fmax_pn);
         let mut beta = Self {
             dfdamp,
@@ -391,12 +393,6 @@ pub(crate) struct PnrPrecession {
     pub(crate) ylm: SphericalHarmonics,
     /// `pWF->betaRD`.
     beta_rd: f64,
-    /// The code of lalsuite !2593 (LALSimulation master, not 6.2.0 or
-    /// 6.2.1): the phase of the antisymmetric (2,2) mode referred to
-    /// `alpha(f_ref)` and the azimuth of `J` rather than to `alpha_offset`
-    /// and the polarization angle, and the evolved spins rotated into the
-    /// L frame with the components of `L` rather than `atan2` and `acos`.
-    parity_fix: bool,
 }
 
 /// The effective single-spin binary of the two-spin map
@@ -492,9 +488,7 @@ impl PnrPrecession {
     /// final spin and the (2,2) ringdown frequencies).
     ///
     /// `m1_si`, `m2_si` (kg) and the spins must be ordered with the heavier
-    /// body first (`XLALIMRPhenomXPCheckMassesAndSpins`). `parity_fix`
-    /// selects the code of lalsuite !2593 (LALSimulation master) over that
-    /// of LALSimulation 6.2.0.
+    /// body first (`XLALIMRPhenomXPCheckMassesAndSpins`).
     pub(crate) fn new(
         wf: &mut WaveformStruct,
         m1_si: f64,
@@ -502,7 +496,6 @@ impl PnrPrecession {
         chi1: [f64; 3],
         chi2: [f64; 3],
         range: ModeRange,
-        parity_fix: bool,
     ) -> Result<Self, IMRPhenomXError> {
         let [chi1x, chi1y, chi1z] = chi1;
         let [chi2x, chi2y, chi2z] = chi2;
@@ -621,7 +614,6 @@ impl PnrPrecession {
             epsilon_offset: 0.0,
             ylm: SphericalHarmonics::default(),
             beta_rd: 0.0,
-            parity_fix,
         };
 
         // ---- SpinTaylor set-up (version 330) ----
@@ -861,21 +853,17 @@ impl PnrPrecession {
             Ok(arrays) => {
                 self.fmin_integration = arrays.v[0].powf(3.) / self.pi_gm;
                 self.mfmin_integration = hz_to_mf(self.fmin_integration, wf.m_tot);
-                // the spins at the end of the integration in the L frame
+                // the spins at the end of the integration in the L frame,
+                // rotated with the components of L (lalsuite !2593) rather
+                // than with the atan2 and acos of LALSimulation 6.2.0
                 let last = arrays.len() - 1;
                 let (lx, ly, lz) = (
                     arrays.lnhat[0][last],
                     arrays.lnhat[1][last],
                     arrays.lnhat[2][last],
                 );
-                (self.chi1_evolved, self.chi2_evolved) = if self.parity_fix {
-                    rotate_to_l_frame(lx, ly, lz, arrays.s1_end, arrays.s2_end)
-                } else {
-                    let phi = ly.atan2(lx);
-                    let theta = (lz / fma(lz, lz, fma(lx, lx, ly * ly)).sqrt()).acos();
-                    let evolve = |s: [f64; 3]| rotate_y(-theta, rotate_z(-phi, s));
-                    (evolve(arrays.s1_end), evolve(arrays.s2_end))
-                };
+                (self.chi1_evolved, self.chi2_evolved) =
+                    rotate_to_l_frame(lx, ly, lz, arrays.s1_end, arrays.s2_end);
                 self.pn_arrays = Some(arrays);
             }
             Err(_) => {
@@ -2196,15 +2184,14 @@ impl PnrPrecession {
     /// `IMRPhenomX_PNR_GenerateAntisymmetricWaveform`.
     ///
     /// Below `Mf_T = 0.85 fRING` the phase is `phi_22 / 2 + alpha + A0 Mf +
-    /// phi_A0`, above it follows `phi_22`. In LALSimulation 6.2.0 `phi_A0`
-    /// is `alpha_offset = alpha(f_ref) - alpha0` and the polarization angle
-    /// `zeta` is added; both depend on the direction of the line of sight
-    /// (`alpha0 = pi - kappa`), and neither changes sign under the mirror
-    /// reflection of the binary. With the fix of lalsuite !2593
-    /// (`parity_fix`) the phase is referred to the frame of the binary:
-    /// `phi_A0 = -alpha(f_ref) - pi / 2` and the azimuth `phiJ_Sf` of `J` is
-    /// added, which moves by `pi` (a sign flip of the antisymmetric mode)
-    /// when the in-plane spins are reversed.
+    /// phi_A0`, above it follows `phi_22`. Following the fix of lalsuite
+    /// !2593 (commit 64d2004def) the phase is referred to the frame of the
+    /// binary: `phi_A0 = -alpha(f_ref) - pi / 2` and the azimuth `phiJ_Sf`
+    /// of `J` is added, which moves by `pi` (a sign flip of the
+    /// antisymmetric mode) when the in-plane spins are reversed. (In
+    /// LALSimulation 6.2.0 `phi_A0` is `alpha(f_ref) - alpha0` and the
+    /// polarization angle is added; both depend on the line of sight, so
+    /// the waveform there is not mirror-symmetric.)
     fn antisymmetric_coefficients(
         &self,
         wf: &WaveformStruct,
@@ -2243,48 +2230,39 @@ impl PnrPrecession {
         let powers = UsefulPowers::new(mf_t);
         let (dphi, phi) = if mf_t < phase22.f_phase_match_in {
             (
-                inspiral::phase_22_ansatz_exact(mf_t, &powers, &phase22),
-                inspiral::phase_22_ansatz_int_exact(mf_t, &powers, &phase22),
+                inspiral::phase_22_ansatz(mf_t, &powers, &phase22),
+                inspiral::phase_22_ansatz_int(mf_t, &powers, &phase22),
             )
         } else if mf_t > phase22.f_phase_match_im {
             (
-                ringdown::phase_22_ansatz_exact(mf_t, &powers, &phase22) + phase22.c2_mrd,
+                ringdown::phase_22_ansatz(mf_t, &powers, &phase22) + phase22.c2_mrd,
                 fma(
                     phase22.c2_mrd,
                     mf_t,
-                    ringdown::phase_22_ansatz_int_exact(mf_t, &powers, &phase22) + phase22.c1_mrd,
+                    ringdown::phase_22_ansatz_int(mf_t, &powers, &phase22) + phase22.c1_mrd,
                 ),
             )
         } else {
             (
-                intermediate::phase_22_ansatz_exact(mf_t, &powers, &phase22) + phase22.c2_int,
+                intermediate::phase_22_ansatz(mf_t, &powers, &phase22) + phase22.c2_int,
                 fma(
                     phase22.c2_int,
                     mf_t,
-                    intermediate::phase_22_ansatz_int_exact(mf_t, &powers, &phase22)
-                        + phase22.c1_int,
+                    intermediate::phase_22_ansatz_int(mf_t, &powers, &phase22) + phase22.c1_int,
                 ),
             )
         };
         let dphi = dphi * inveta + linb;
         let phi = phi * inveta + (fma(linb, mf_t, lina) + phiref22);
         let a0 = dphi / 2.0 - alpha_der_mf_t;
-        let phi_a0 = if self.parity_fix {
-            // alpha at the reference frequency (in the region of alpha_MfT)
-            // instead of the offset, which includes the azimuth of the line
-            // of sight
-            let alpha_ref = self.region_alpha_at(wf, wf.mf_ref, &alpha)?;
-            -alpha_ref - FRAC_PI_2
-        } else {
-            self.alpha_offset
-        };
+        // alpha at the reference frequency (in the region of alpha_MfT)
+        // instead of the offset, which includes the azimuth of the line of
+        // sight
+        let alpha_ref = self.region_alpha_at(wf, wf.mf_ref, &alpha)?;
+        let phi_a0 = -alpha_ref - FRAC_PI_2;
         let phi_b0 = fma(a0, mf_t, alpha_mf_t - phi / 2.0) + phi_a0;
         // the azimuth of J in the L frame instead of the polarization angle
-        let phase_offset = if self.parity_fix {
-            self.phi_j_sf
-        } else {
-            self.zeta_polarization
-        };
+        let phase_offset = self.phi_j_sf;
         Ok(AntisymmetricCoefficients {
             phase22,
             amp22,
@@ -2418,77 +2396,82 @@ impl AntisymmetricCoefficients {
     }
 }
 
-/// The moving average of `IMRPhenomX_PNR_GenerateAntisymmetricAmpRatio`,
-/// in place as in LAL: `kappa[id + 40] = sum_j kappa[id + j] df_j / sum_j
-/// df_j` over the 81 points `j = 0..=80` (fewer on short grids) with `df_j =
-/// f[id + j + 1] - f[id + j]`, for `id = 0, 1, ...` in turn (so the later
-/// windows include values already smoothed).
+/// The moving average of the antisymmetric amplitude ratio, Eq. 17 of Ghosh
+/// et al. 2024 (arXiv:2310.16980): each sample `n` with `k <= n < N - k`
+/// becomes the mean of the `2k + 1` unsmoothed samples `n - k ..= n + k`,
+/// with `k = 40`; the first and last `k` samples are unchanged.
 ///
-/// The operations are those of LAL, except that a window whose inputs (the
-/// values of `kappa` it reads and the steps) are bit for bit those of the
-/// previous window takes its result instead of recomputing it: the result
-/// is the same. Above the ringdown frequency, where `kappa` is constant,
-/// the smoothed values settle on a constant, so on a uniform grid most
-/// windows there are not recomputed.
+/// LAL (`IMRPhenomX_PNR_GenerateAntisymmetricAmpRatio`) instead averages in
+/// place, so that each window's left half holds values it has already
+/// smoothed, weights the samples by the frequency step and leaves the last
+/// `k + 1` samples unsmoothed (docs/lal-quirks.md). For grids shorter than
+/// `2k + 2` samples `k` is reduced as in LAL.
+///
+/// A window whose samples are all equal (above the ringdown frequency,
+/// where `kappa` is constant) keeps that value, which is the mean.
+#[cfg_attr(not(test), allow(unused_variables))]
 fn smooth_amp_ratio(kappa: &mut [f64], frequencies: &[f64]) {
+    #[cfg(test)]
+    if LAL_MOVING_AVERAGE.with(|lal| lal.get()) {
+        smooth_amp_ratio_as_lal(kappa, frequencies);
+        return;
+    }
     let len = kappa.len();
     let mut width = 80usize;
     if width > len.saturating_sub(1) {
-        width = (len as f64 / 2.0).floor() as usize;
+        width = len / 2;
     }
-    let half_width = (width as f64 / 2.0).floor() as usize;
-    let end = len.saturating_sub(width + 1);
-    if end == 0 {
+    let k = width / 2;
+    if k == 0 || len < 2 * k + 1 {
         return;
     }
-    let df: Vec<f64> = frequencies.windows(2).map(|w| w[1] - w[0]).collect();
-    // the first index of the run of bit-for-bit equal values ending at each
-    // index (of the input kappa and of the steps)
-    let run_starts = |values: &[f64]| {
-        let mut starts = vec![0usize; values.len()];
-        for i in 1..values.len() {
-            starts[i] = if values[i].to_bits() == values[i - 1].to_bits() {
-                starts[i - 1]
-            } else {
-                i
-            };
+    let input = kappa.to_vec();
+    // the first index of the run of equal values ending at each index
+    let mut run_start = vec![0usize; len];
+    for i in 1..len {
+        run_start[i] = if input[i] == input[i - 1] {
+            run_start[i - 1]
+        } else {
+            i
+        };
+    }
+    let scale = 1.0 / (2 * k + 1) as f64;
+    for n in k..len - k {
+        if run_start[n + k] <= n - k {
+            continue;
         }
-        starts
-    };
-    let kappa_start = run_starts(kappa);
-    let df_start = run_starts(&df);
-    let mut previous = 0.0f64;
-    // the number of equal results ending with the previous one
-    let mut equal_results = 0usize;
-    for id in 0..end {
-        // Window id reads the results of windows id - hw ..= id - 1 at
-        // j < hw (hw = half_width) and the input values at j >= hw. It
-        // repeats window id - 1 if the results of windows id - hw - 1 ..= id
-        // - 1 are equal, the input values are constant over id - 1 + hw ..=
-        // id + width and the steps over id - 1 ..= id + width.
-        let repeat = id > half_width
-            && equal_results > half_width
-            && kappa_start[id + width] < id + half_width
-            && df_start[id + width] < id;
-        let value = if repeat {
-            previous
-        } else {
-            let mut smoothed_ratio = 0.0;
-            let mut frequency_width = 0.0;
-            for j in 0..=width {
-                let step = df[id + j];
-                smoothed_ratio = fma(kappa[id + j], step, smoothed_ratio);
-                frequency_width += step;
-            }
-            smoothed_ratio * 1.0 / frequency_width
-        };
-        equal_results = if id > 0 && value.to_bits() == previous.to_bits() {
-            equal_results + 1
-        } else {
-            1
-        };
-        previous = value;
-        kappa[id + half_width] = value;
+        let sum: f64 = input[n - k..=n + k].iter().sum();
+        kappa[n] = sum * scale;
+    }
+}
+
+#[cfg(test)]
+thread_local! {
+    /// For the tests that compare the rest of IMRPhenomXPNR with LAL: use
+    /// LAL's moving average ([`smooth_amp_ratio_as_lal`]) on this thread.
+    pub(crate) static LAL_MOVING_AVERAGE: std::cell::Cell<bool> =
+        const { std::cell::Cell::new(false) };
+}
+
+/// LAL's moving average, in place and weighted by the frequency steps
+/// (`IMRPhenomX_PNR_GenerateAntisymmetricAmpRatio`), for the tests.
+#[cfg(test)]
+fn smooth_amp_ratio_as_lal(kappa: &mut [f64], frequencies: &[f64]) {
+    let len = kappa.len();
+    let mut width = 80usize;
+    if width > len.saturating_sub(1) {
+        width = len / 2;
+    }
+    let half_width = width / 2;
+    for id in 0..len.saturating_sub(width + 1) {
+        let mut smoothed_ratio = 0.0;
+        let mut frequency_width = 0.0;
+        for j in 0..=width {
+            let df = frequencies[id + j + 1] - frequencies[id + j];
+            smoothed_ratio = fma(kappa[id + j], df, smoothed_ratio);
+            frequency_width += df;
+        }
+        kappa[id + half_width] = smoothed_ratio / frequency_width;
     }
 }
 
@@ -2496,31 +2479,11 @@ fn smooth_amp_ratio(kappa: &mut [f64], frequencies: &[f64]) {
 mod tests {
     use super::*;
 
-    /// The moving average as LAL writes it.
-    fn smooth_as_lal(kappa: &mut [f64], frequencies: &[f64]) {
-        let len = kappa.len();
-        let mut width = 80usize;
-        if width > len.saturating_sub(1) {
-            width = (len as f64 / 2.0).floor() as usize;
-        }
-        let half_width = (width as f64 / 2.0).floor() as usize;
-        for id in 0..len.saturating_sub(width + 1) {
-            let mut smoothed_ratio = 0.0;
-            let mut frequency_width = 0.0;
-            for j in 0..=width {
-                let df = frequencies[id + j + 1] - frequencies[id + j];
-                smoothed_ratio = fma(kappa[id + j], df, smoothed_ratio);
-                frequency_width += df;
-            }
-            kappa[id + half_width] = smoothed_ratio * 1.0 / frequency_width;
-        }
-    }
-
-    /// The windows skipped by `smooth_amp_ratio` do not change the result:
-    /// uniform and geometric grids, a ratio constant above a "ringdown"
-    /// frequency, constant everywhere, with plateaus, and short grids.
+    /// The moving average of Eq. 17 against its definition: uniform and
+    /// geometric grids, a ratio constant above a "ringdown" frequency,
+    /// constant everywhere, with plateaus, and short grids.
     #[test]
-    fn smoothing_is_that_of_lal() {
+    fn smoothing_is_the_moving_average_of_the_paper() {
         let uniform: Vec<f64> = (0..3000).map(|i| 20.0 + 0.125 * i as f64).collect();
         let geometric: Vec<f64> = (0..3000).map(|i| 20.0 * 1.001f64.powi(i)).collect();
         let short: Vec<f64> = (0..60).map(|i| 20.0 + 0.5 * i as f64).collect();
@@ -2539,13 +2502,22 @@ mod tests {
         for frequencies in [&uniform, &geometric, &short] {
             for ratio in ratios {
                 let kappa: Vec<f64> = frequencies.iter().map(|&f| ratio(f)).collect();
-                let (mut fast, mut lal) = (kappa.clone(), kappa);
-                smooth_amp_ratio(&mut fast, frequencies);
-                smooth_as_lal(&mut lal, frequencies);
-                assert!(fast
-                    .iter()
-                    .zip(&lal)
-                    .all(|(a, b)| a.to_bits() == b.to_bits()));
+                let mut smoothed = kappa.clone();
+                smooth_amp_ratio(&mut smoothed, frequencies);
+                let len = kappa.len();
+                let k = if len > 81 { 40 } else { len / 4 };
+                for n in 0..len {
+                    let expected = if n < k || n + k >= len {
+                        kappa[n]
+                    } else {
+                        kappa[n - k..=n + k].iter().sum::<f64>() / (2 * k + 1) as f64
+                    };
+                    assert!(
+                        (smoothed[n] - expected).abs() <= 1e-14 * expected.abs().max(1e-3),
+                        "{n}: {} != {expected}",
+                        smoothed[n]
+                    );
+                }
             }
         }
     }

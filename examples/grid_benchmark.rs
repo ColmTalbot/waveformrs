@@ -4,8 +4,7 @@
 //! and the largest difference between the two.
 //!
 //! The precessing models use the binary of `examples/benchmark.rs`
-//! (m1 = 40, m2 = 20 Msun, chi1 = (0.4, -0.3, 0.2), chi2 = (0.1, 0.5, -0.3));
-//! IMRPhenomXPNR with and without the parity fix of lalsuite !2593.
+//! (m1 = 40, m2 = 20 Msun, chi1 = (0.4, -0.3, 0.2), chi2 = (0.1, 0.5, -0.3)).
 //!
 //!     cargo run --release --example grid_benchmark
 use num_complex::Complex;
@@ -181,26 +180,20 @@ fn main() {
             },
         );
     }
-    for (label, parity_fix) in [("", true), (" 6.2.0", false)] {
-        let xpnr = |_| {
-            IMRPhenomXPNR::new(&binary)
+    let xpnr = |_| IMRPhenomXPNR::new(&binary).unwrap();
+    ab(
+        "IMRPhenomXPNR",
+        &grid,
+        (10, 10),
+        |k| {
+            xpnr(k)
+                .polarizations(black_box(grid.frequencies()))
                 .unwrap()
-                .with_parity_fix(parity_fix)
-        };
-        ab(
-            &format!("IMRPhenomXPNR{label}"),
-            &grid,
-            (10, 10),
-            |k| {
-                xpnr(k)
-                    .polarizations(black_box(grid.frequencies()))
-                    .unwrap()
-            },
-            |k, hp, hc| {
-                xpnr(k)
-                    .polarizations_on_grid(black_box(&grid), hp, hc)
-                    .unwrap()
-            },
-        );
-    }
+        },
+        |k, hp, hc| {
+            xpnr(k)
+                .polarizations_on_grid(black_box(&grid), hp, hc)
+                .unwrap()
+        },
+    );
 }

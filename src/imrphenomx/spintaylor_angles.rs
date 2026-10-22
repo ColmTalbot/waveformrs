@@ -566,7 +566,8 @@ impl BetaMrd {
         let ef1 = (kappa * f1).exp();
         let ef2 = (kappa * f2).exp();
 
-        // As in LAL, only the status of the last evaluation is checked.
+        // Out-of-range points give NaN; LAL checks only the status of the
+        // last evaluation, all three are checked here (docs/lal-quirks.md).
         let eval = |x: f64| {
             if spline.contains(x) {
                 spline.eval(x)
@@ -581,7 +582,7 @@ impl BetaMrd {
             f64::NAN
         };
         let cosbeta2 = eval(f2);
-        let success = spline.contains(fmax_inspiral);
+        let success = spline.contains(f1) && spline.contains(f2) && spline.contains(fmax_inspiral);
         let cosbetamax = eval(fmax_inspiral);
 
         let mut beta = Self {

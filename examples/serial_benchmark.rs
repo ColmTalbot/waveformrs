@@ -182,10 +182,10 @@ fn generate_on_grid(
     }
 }
 
-/// IMRPhenomXPNR as lalsimulation 6.2.0 computes it (without the parity
-/// fix of lalsuite !2593, which costs the same), to compare with LAL.
+/// IMRPhenomXPNR (with the parity fix of lalsuite !2593; lalsimulation
+/// 6.2.0, which it is timed against, lacks the fix, which costs the same).
 fn xpnr(draw: &Draw) -> Result<IMRPhenomXPNR, IMRPhenomXError> {
-    Ok(IMRPhenomXPNR::new(&draw.binary())?.with_parity_fix(false))
+    IMRPhenomXPNR::new(&draw.binary())
 }
 
 fn precession_version(name: &str) -> PrecessionVersion {

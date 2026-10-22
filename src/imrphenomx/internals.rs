@@ -127,12 +127,11 @@ pub(crate) use crate::spintaylor::fp::fma;
 
 /// Cached powers of a number, `IMRPhenomX_UsefulPowers`.
 ///
-/// [`UsefulPowers::new`] reproduces `IMRPhenomX_Initialize_Powers`
-/// operation by operation (all fractional powers derived from
-/// `pow(x, 1/6)`) and is used wherever LAL evaluates something once per
-/// waveform. [`UsefulPowers::fast`] computes the same quantities from a
-/// single `cbrt`, `sqrt`, `ln` and one division, for use in the
-/// per-frequency loop; the two agree to a few units in the last place.
+/// LAL's `IMRPhenomX_Initialize_Powers` derives every fractional power
+/// from `pow(x, 1/6)` by repeated multiplication, which accumulates errors
+/// of several ulp in the higher powers. [`UsefulPowers::new`] computes them
+/// from `cbrt`, `sqrt`, `ln` and one division instead, which is more
+/// accurate and faster.
 #[derive(Clone, Copy, Debug, Default)]
 #[allow(dead_code)] // the full LAL struct is kept for the higher-mode models
 pub(crate) struct UsefulPowers {
@@ -167,55 +166,14 @@ pub(crate) struct UsefulPowers {
 }
 
 impl UsefulPowers {
-    /// `IMRPhenomX_Initialize_Powers`, reproduced operation by operation.
+    /// `IMRPhenomX_Initialize_Powers` (see the type's documentation).
+    #[inline]
     pub(crate) fn new(number: f64) -> Self {
-        let sixth = number.powf(1.0 / 6.0);
-        let m_sixth = 1.0 / sixth;
-        let one_third = sixth * sixth;
-        let two_thirds = one_third * one_third;
-        let four_thirds = two_thirds * two_thirds;
-        let five_thirds = four_thirds * one_third;
-        let seven_thirds = four_thirds * number;
-        let eight_thirds = seven_thirds * one_third;
-        let two = number * number;
-        let three = two * number;
-        let four = three * number;
-        let five = four * number;
-        let m_one = 1.0 / number;
-        Self {
-            one_sixth: sixth,
-            m_one_sixth: m_sixth,
-            itself: number,
-            m_one,
-            one_third,
-            m_one_third: 1.0 / one_third,
-            two_thirds,
-            m_two_thirds: 1.0 / two_thirds,
-            four_thirds,
-            m_four_thirds: 1.0 / four_thirds,
-            five_thirds,
-            m_five_thirds: 1.0 / five_thirds,
-            seven_thirds,
-            m_seven_thirds: 1.0 / seven_thirds,
-            eight_thirds,
-            m_eight_thirds: 1.0 / eight_thirds,
-            two,
-            three,
-            four,
-            five,
-            m_two: 1.0 / two,
-            m_three: 1.0 / three,
-            m_four: 1.0 / four,
-            m_five: 1.0 / five,
-            seven_sixths: sixth * number,
-            m_seven_sixths: m_sixth * m_one,
-            log: number.ln(),
-            sqrt: sixth * sixth * sixth,
-        }
+        Self::fast(number)
     }
 
-    /// The same powers as [`UsefulPowers::new`] using one `cbrt`, one
-    /// `sqrt`, one `ln` and a single division.
+    /// The powers from one `cbrt`, one `sqrt`, one `ln` and a single
+    /// division.
     #[inline]
     pub(crate) fn fast(number: f64) -> Self {
         let one_third = number.cbrt();

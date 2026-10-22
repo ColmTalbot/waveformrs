@@ -1,18 +1,18 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2024-2026 Colm Talbot. Parts of waveformrs are translated
 // from LALSuite, GSL and fdlibm: see NOTICE.md for their authors.
-//! Four `f64` lanes with element-wise, separately rounded arithmetic (NEON
-//! on aarch64, plain arrays elsewhere), used to evaluate independent time
-//! samples together. Every operation rounds exactly as the scalar operation
-//! does; nothing is fused.
+//! Four `f64` lanes with element-wise arithmetic (NEON on aarch64, plain
+//! arrays elsewhere), used to evaluate independent time samples together.
+//! Every operation rounds exactly as the scalar operation does, and
+//! [`F64x4::mul_add`] fuses exactly as [`crate::spintaylor::fp::fma`].
 
 use std::ops::{Add, Div, Mul, Neg, Sub};
 
 #[cfg(target_arch = "aarch64")]
 mod pair {
     use std::arch::aarch64::{
-        float64x2_t, vaddq_f64, vdivq_f64, vdupq_n_f64, vld1q_f64, vmulq_f64, vnegq_f64, vst1q_f64,
-        vsubq_f64,
+        float64x2_t, vaddq_f64, vdivq_f64, vdupq_n_f64, vfmaq_f64, vld1q_f64, vmulq_f64, vnegq_f64,
+        vst1q_f64, vsubq_f64,
     };
 
     #[derive(Clone, Copy)]
@@ -56,6 +56,11 @@ mod pair {
         pub(crate) fn neg(self) -> Self {
             Self(unsafe { vnegq_f64(self.0) })
         }
+        /// `self * b + c` with a single rounding.
+        #[inline(always)]
+        pub(crate) fn mul_add(self, b: Self, c: Self) -> Self {
+            Self(unsafe { vfmaq_f64(c.0, self.0, b.0) })
+        }
     }
 }
 
@@ -97,6 +102,15 @@ mod pair {
         pub(crate) fn neg(self) -> Self {
             Self([-self.0[0], -self.0[1]])
         }
+        /// `self * b + c`, fused where the hardware can.
+        #[inline(always)]
+        pub(crate) fn mul_add(self, b: Self, c: Self) -> Self {
+            use crate::spintaylor::fp::fma;
+            Self([
+                fma(self.0[0], b.0[0], c.0[0]),
+                fma(self.0[1], b.0[1], c.0[1]),
+            ])
+        }
     }
 }
 
@@ -132,6 +146,15 @@ impl F64x4 {
     pub(crate) fn to_array(self) -> [f64; 4] {
         let [a, b] = [self.0[0].to_array(), self.0[1].to_array()];
         [a[0], a[1], b[0], b[1]]
+    }
+
+    /// `self * b + c`, fused exactly as [`crate::spintaylor::fp::fma`].
+    #[inline(always)]
+    pub(crate) fn mul_add(self, b: Self, c: Self) -> Self {
+        Self([
+            self.0[0].mul_add(b.0[0], c.0[0]),
+            self.0[1].mul_add(b.0[1], c.0[1]),
+        ])
     }
 }
 
@@ -175,5 +198,9 @@ mod tests {
             assert_eq!(r[l], (x[l] * y[l] + x[l]) / y[l] - x[l]);
         }
         assert_eq!((-a).to_array()[1], 2.5);
+        let f = a.mul_add(b, a).to_array();
+        for l in 0..4 {
+            assert_eq!(f[l], crate::spintaylor::fp::fma(x[l], y[l], x[l]));
+        }
     }
 }

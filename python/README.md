@@ -82,7 +82,6 @@ override the object.
 | `precession_version` | Euler angles of IMRPhenomXP/XPHM, LAL's `PhenomXPrecVersion`: `102` (`"NNLO"`), `223` (`"MSA"`), `320` (`"SpinTaylor"`) | `320` |
 | `mode_array` | LAL's `ModeArray`: `[(l, m), ...]`, or `None` for all modes | `None` |
 | `version_fallback` | whether IMRPhenomXP/XPHM/XPNR may change the precession version as LAL does; `False` raises `PrecessionVersionUnavailableError` instead | `True` |
-| `pnr_parity_fix` | whether IMRPhenomXPNR applies the fix of lalsuite merge request !2593 to its antisymmetric (2,2) mode, restoring the mirror symmetry of the waveform (as LAL master); `False` reproduces LALSimulation 6.2.0 and 6.2.1 | `True` |
 | `lambda_1`, `lambda_2` | LAL's `lambda1`, `lambda2`: the dimensionless tidal deformabilities of the bodies of `mass_1` and `mass_2`, for the NRTidal approximants (the others reject non-zero values) | `0.0` |
 
 ```python
@@ -90,7 +89,7 @@ options = wf.WaveformOptions(precession_version="MSA", mode_array=[(2, 2), (3, 3
 hp, hc = wf.polarizations("IMRPhenomXPHM", frequencies, **binary, options=options)
 hp, hc = wf.polarizations("IMRPhenomXPHM", frequencies, **binary, options=options, version_fallback=False)
 
-wf.WaveformOptions.lalsimulation_defaults()   # LAL 6.2.0 with an empty LALDict: MSA angles, no XPNR parity fix
+wf.WaveformOptions.lalsimulation_defaults()   # LAL 6.2.0 with an empty LALDict: MSA angles
 options.replace(mode_array=None)              # a changed copy
 options.as_dict()                             # {'precession_version': 223, ...}
 ```

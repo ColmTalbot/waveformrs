@@ -27,9 +27,8 @@ failed". For such cases (identified by lalsimulation's fallback warning) the
 reference is the PrecVersion 223 waveform, which the C-level fallback
 reproduces bit for bit; they are counted as ``n_lal_errno_fallback``.
 
-``IMRPhenomXPNR`` compares the model without the fix of lalsuite merge
-request !2593 (``with_parity_fix(false)``) with lalsimulation 6.2.0.
-``IMRPhenomXPNR_parityfix`` compares the model with the fix (its default)
+The crate's ``IMRPhenomXPNR`` includes the fix of lalsuite merge request
+!2593 (commit 64d2004def), which lalsimulation 6.2.0 lacks, so it is compared
 with a liblalsimulation built with the fix
 (``scripts/build_patched_lalsimulation.sh``), given with
 ``--lalsimulation-library`` and called through ctypes
@@ -57,11 +56,10 @@ PRECESSING = {
     "IMRPhenomXPHM_NNLO",
     "IMRPhenomXPHM_MSA",
     "IMRPhenomXPNR",
-    "IMRPhenomXPNR_parityfix",
 }
 
 # approximants that need a patched lalsimulation (--lalsimulation-library)
-PATCHED = {"IMRPhenomXPNR_parityfix"}
+PATCHED = {"IMRPhenomXPNR"}
 
 # Approximant -> (dimensionless cutoff frequency, extra lal flags, max mass
 # ratio, optionally the lalsimulation approximant if the name differs)
@@ -118,9 +116,6 @@ SETTINGS = dict(
     ),
     # SimInspiralChooseFDWaveformSequence switches multibanding off
     IMRPhenomXPNR=dict(mf_max=0.3, flags=dict(), q_min=1 / 20),
-    IMRPhenomXPNR_parityfix=dict(
-        mf_max=0.3, flags=dict(), q_min=1 / 20, lal_approximant="IMRPhenomXPNR"
-    ),
 )
 
 
@@ -298,7 +293,7 @@ def main():
     parser.add_argument("--outdir", default=str(ROOT / "report" / "data"))
     parser.add_argument(
         "--lalsimulation-library",
-        help="a liblalsimulation with the fix of lalsuite !2593 for IMRPhenomXPNR_parityfix",
+        help="a liblalsimulation with the fix of lalsuite !2593 for IMRPhenomXPNR",
     )
     args = parser.parse_args()
     outdir = Path(args.outdir)

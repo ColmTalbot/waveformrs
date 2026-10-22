@@ -9,10 +9,9 @@ use serde::Deserialize;
 use waveformrs::spintaylor::{SpinTaylorError, SpinTaylorOrbit, SpinTaylorT4, Termination};
 
 // The reference data were generated with the osx-arm64 build of
-// lalsimulation, which this crate reproduces bit for bit on the same
-// platform.  Elsewhere LAL itself is compiled differently (no fused
-// multiply-adds on x86-64, a different libm), and the adaptive step size
-// control amplifies last-bit differences (common::tolerances).
+// lalsimulation. The adaptive step size control amplifies last-bit
+// differences (of the libm and the fused multiply-adds) into differences
+// of the accepted steps (common::tolerances).
 
 #[derive(Debug, Deserialize)]
 struct ReferenceFile {

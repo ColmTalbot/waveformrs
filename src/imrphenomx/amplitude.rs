@@ -309,8 +309,8 @@ impl AmpCoefficients {
 
         let d1 = inspiral::amp_22_dansatz(f1, wf, &amp);
         let d4 = ringdown::amp_22_dansatz(f4, f_ring, f_damp, &amp);
-        let insp_f1 = inspiral::amp_22_ansatz_exact(f1, &powers_of_f1, &amp);
-        let rd_f4 = ringdown::amp_22_ansatz_exact(f4, f_ring, f_damp, &amp);
+        let insp_f1 = inspiral::amp_22_ansatz(f1, &powers_of_f1, &amp);
+        let rd_f4 = ringdown::amp_22_ansatz_from_gammas(f4, f_ring, f_damp, &amp);
 
         // D[f^{7/6} Ah^{-1}[f], f] = (7/6) f^{1/6} / Ah[f] - f^{7/6} Ah'[f] / Ah[f]^2
         let d1 = ((7.0 / 6.0) * powers_of_f1.one_sixth / insp_f1)

@@ -7,8 +7,10 @@ Suites (``tests/data/conversions_*.json``):
 
 - ``conversions_td_<model>``: ``SimInspiralTD`` for the frequency-domain
   approximants IMRPhenomD, IMRPhenomXAS, IMRPhenomXHM, IMRPhenomXP,
-  IMRPhenomXPHM (SpinTaylor angles), IMRPhenomXPNR and TaylorF2:
-  conditioned waveforms transformed to the time domain;
+  IMRPhenomXPHM (SpinTaylor angles) and TaylorF2: conditioned waveforms
+  transformed to the time domain (there is no IMRPhenomXPNR suite: the
+  crate's IMRPhenomXPNR includes the fix of lalsuite !2593, which
+  lalsimulation 6.2.0 does not have);
 - ``conversions_fd_nrsur7dq4``: ``SimInspiralFD`` for NRSur7dq4 (time
   domain, transformed to the frequency domain);
 - ``conversions_td_nrsur7dq4``: ``SimInspiralTD`` for NRSur7dq4 (tapered
@@ -302,10 +304,6 @@ SUITES = dict(
             PRECESSING_SAMPLING,
             dict(PhenomXPrecVersion=320, **NO_MULTIBANDING),
         ),
-    ),
-    conversions_td_imrphenomxpnr=(
-        generate_td,
-        lambda: td_cases("IMRPhenomXPNR", PRECESSING[:3], PRECESSING_SAMPLING[:3], NO_MULTIBANDING),
     ),
     conversions_td_taylorf2=(generate_td, taylorf2_cases),
     conversions_fd_nrsur7dq4=(generate_fd, nrsur_fd_cases),

@@ -219,23 +219,10 @@ pub(crate) fn amp_22_rho(v: [f64; 3], f: [f64; 3]) -> [f64; 3] {
 }
 
 /// `IMRPhenomX_Inspiral_Amp_22_Ansatz`: TaylorF2 PN amplitude plus
-/// pseudo-PN terms (without the f^(-7/6) and normalisation prefactors).
+/// pseudo-PN terms (without the f^(-7/6) and normalisation prefactors), in
+/// nested form with fused multiply-adds.
 #[inline]
 pub(crate) fn amp_22_ansatz(mf: f64, powers: &UsefulPowers, amp: &AmpCoefficients) -> f64 {
-    // The f^(1/3) coefficient vanishes and is omitted.
-    amp.pn_initial
-        + powers.two_thirds * amp.pn_two_thirds
-        + mf * amp.pn_three_thirds
-        + mf * (powers.one_third * amp.pn_four_thirds
-            + powers.two_thirds * amp.pn_five_thirds
-            + mf * amp.pn_six_thirds
-            + mf * (powers.one_third * amp.rho1 + powers.two_thirds * amp.rho2 + mf * amp.rho3))
-}
-
-/// `IMRPhenomX_Inspiral_Amp_22_Ansatz` evaluated operation by operation as
-/// in LALSimulation (including its fused multiply-adds), for the
-/// coefficient computations that must agree with LAL to the last bit.
-pub(crate) fn amp_22_ansatz_exact(mf: f64, powers: &UsefulPowers, amp: &AmpCoefficients) -> f64 {
     let mut inner = fma(powers.one_third, amp.rho1, powers.two_thirds * amp.rho2);
     inner = fma(mf, amp.rho3, inner);
     let mut middle = fma(
@@ -636,16 +623,11 @@ pub(crate) fn inspiral_dphase_norm() -> f64 {
     5.0 / (128.0 * POWERS_OF_LALPI.five_thirds)
 }
 
-/// `IMRPhenomX_Inspiral_Phase_22_Ansatz` evaluated operation by operation as
-/// in LALSimulation (including its fused multiply-adds), for the
-/// coefficient computations that must agree with LAL to the last bit.
+/// `IMRPhenomX_Inspiral_Phase_22_Ansatz`, the phase derivative, in nested
+/// form with fused multiply-adds.
 ///
 /// Terms with vanishing coefficients are skipped: `fma(0, x, y) == y`.
-pub(crate) fn phase_22_ansatz_exact(
-    mf: f64,
-    powers: &UsefulPowers,
-    phase: &PhaseCoefficients,
-) -> f64 {
+pub(crate) fn phase_22_ansatz(mf: f64, powers: &UsefulPowers, phase: &PhaseCoefficients) -> f64 {
     let mut phase_in = phase.dphi0;
     phase_in = fma(phase.dphi2, powers.two_thirds, phase_in);
     phase_in = fma(phase.dphi3, mf, phase_in);
@@ -663,11 +645,10 @@ pub(crate) fn phase_22_ansatz_exact(
     phase_in * powers.m_eight_thirds * phase.dphase_norm
 }
 
-/// `IMRPhenomX_Inspiral_Phase_22_AnsatzInt` evaluated operation by
-/// operation as in LALSimulation, see [`phase_22_ansatz_exact`]; also
-/// used for the phase at each frequency.
+/// `IMRPhenomX_Inspiral_Phase_22_AnsatzInt`, the phase (see
+/// [`phase_22_ansatz`]).
 #[inline]
-pub(crate) fn phase_22_ansatz_int_exact(
+pub(crate) fn phase_22_ansatz_int(
     mf: f64,
     powers: &UsefulPowers,
     phase: &PhaseCoefficients,
