@@ -1,0 +1,182 @@
+# Publish a release: push a tag vX.Y.Z matching the version in Cargo.toml and
+# python/Cargo.toml. The full CI runs first; then the crate goes to
+# crates.io, the sdist and abi3 wheels to PyPI, and the changelog section and
+# the distributions to a GitHub release.
+#
+# Needs, in the repository settings:
+# - the secret CARGO_REGISTRY_TOKEN (a crates.io token with publish-update
+#   scope; publish-new for the first release) in the environment crates-io;
+# - a PyPI trusted publisher for this repository, workflow release.yml and
+#   environment pypi.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  # the toolchain of docker/Dockerfile and ci.yml
+  RUST_TOOLCHAIN: 1.90.0
+
+jobs:
+  version:
+    name: tag matches the crate versions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          tag="${GITHUB_REF_NAME#v}"
+          for manifest in Cargo.toml python/Cargo.toml; do
+            version=$(sed -n 's/^version = "\(.*\)"$/\1/p' "$manifest" | head -n 1)
+            if [ "$version" != "$tag" ]; then
+              echo "::error file=$manifest::version $version does not match the tag $GITHUB_REF_NAME"
+              exit 1
+            fi
+          done
+          if ! grep -q "^## $tag " CHANGELOG.md; then
+            echo "::error file=CHANGELOG.md::no section '## $tag (date)'"
+            exit 1
+          fi
+
+  ci:
+    needs: version
+    uses: ./.github/workflows/ci.yml
+
+  crate:
+    name: package the crate
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+      - run: cargo publish --dry-run --locked
+
+  sdist:
+    name: Python sdist
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: PyO3/maturin-action@v1
+        with:
+          command: sdist
+          args: --out dist
+          working-directory: python
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-sdist
+          path: python/dist
+
+  wheels:
+    name: Python wheels (${{ matrix.target }}, ${{ matrix.os }})
+    needs: version
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, target: x86_64 }
+          - { os: ubuntu-24.04-arm, target: aarch64 }
+          - { os: macos-latest, target: aarch64 }
+          - { os: macos-15-intel, target: x86_64 }
+    env:
+      # abi3 for CPython >= 3.10, 3.14t version-specific, abi3t for
+      # free-threaded CPython >= 3.15 (python/Cargo.toml)
+      INTERPRETERS: python3.10 python3.14t python3.15t
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: |
+            3.10
+            3.14t
+            3.15t
+      - uses: PyO3/maturin-action@v1
+        with:
+          command: build
+          target: ${{ matrix.target }}
+          args: --release --locked --out dist --interpreter ${{ env.INTERPRETERS }}
+          manylinux: auto
+          rust-toolchain: ${{ env.RUST_TOOLCHAIN }}
+          working-directory: python
+      - name: install and import the wheels
+        run: |
+          version=$(sed -n 's/^version = "\(.*\)"$/\1/p' python/Cargo.toml | head -n 1)
+          cd "$RUNNER_TEMP"
+          for python in $INTERPRETERS; do
+            "$python" -m venv "venv-$python"
+            "venv-$python/bin/python" -m pip install --only-binary waveformrs \
+              --find-links "$GITHUB_WORKSPACE/python/dist" "waveformrs==$version"
+            # on free-threaded Python, importing the module keeps the GIL off
+            "venv-$python/bin/python" -c "
+          import sys, sysconfig, waveformrs
+          print(sys.version, waveformrs.__version__)
+          assert not (sysconfig.get_config_var('Py_GIL_DISABLED') and sys._is_gil_enabled())
+          "
+          done
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-wheel-${{ matrix.os }}-${{ matrix.target }}
+          path: python/dist
+
+  publish-crate:
+    name: publish to crates.io
+    needs: [ci, crate, sdist, wheels]
+    runs-on: ubuntu-latest
+    environment: crates-io
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+      - run: cargo publish --locked
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+  publish-pypi:
+    name: publish to PyPI
+    needs: [ci, crate, sdist, wheels]
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/waveformrs/${{ github.ref_name }}
+    permissions:
+      # trusted publishing
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: dist-*
+          merge-multiple: true
+          path: dist
+      - uses: pypa/gh-action-pypi-publish@release/v1
+
+  github-release:
+    name: GitHub release
+    needs: [publish-crate, publish-pypi]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: dist-*
+          merge-multiple: true
+          path: dist
+      - name: release notes from CHANGELOG.md
+        run: |
+          awk -v tag="${GITHUB_REF_NAME#v}" '
+            index($0, "## " tag " ") == 1 { found = 1; next }
+            found && /^## / { exit }
+            found { print }
+          ' CHANGELOG.md > "$RUNNER_TEMP/notes.md"
+      - run: gh release create "$GITHUB_REF_NAME" dist/* --title "$GITHUB_REF_NAME" --notes-file "$RUNNER_TEMP/notes.md" --verify-tag
+        env:
+          GH_TOKEN: ${{ github.token }}

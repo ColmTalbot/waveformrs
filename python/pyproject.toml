@@ -1,12 +1,12 @@
 [build-system]
-requires = ["maturin>=1.9.4,<2"]
+requires = ["maturin>=1.14.1,<2"]
 build-backend = "maturin"
 
 [project]
 name = "waveformrs"
 description = "Gravitational-wave models that reproduce LALSimulation 6.2.0 to rounding (Python bindings of the Rust crate)"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 # waveformrs is derived in part from LALSuite and GSL (see ../NOTICE.md)
 license = "GPL-3.0-or-later"
 license-files = ["COPYING"]
@@ -16,9 +16,14 @@ classifiers = [
     "Programming Language :: Rust",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: Implementation :: CPython",
+    "Programming Language :: Python :: Free Threading :: 3 - Stable",
     "Topic :: Scientific/Engineering :: Astronomy",
     "Topic :: Scientific/Engineering :: Physics",
 ]
+
+[project.urls]
+Repository = "https://github.com/ColmTalbot/waveformrs"
+Changelog = "https://github.com/ColmTalbot/waveformrs/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 # the comparisons with LALSimulation also need python-lalsimulation 6.2.0
@@ -30,7 +35,8 @@ test = ["pytest"]
 # waveformrs._waveformrs built from src/
 python-source = "python"
 module-name = "waveformrs._waveformrs"
-# the stable ABI of Python >= 3.9 (pyo3's abi3-py39 feature, Cargo.toml)
+# the stable ABIs of Python >= 3.10 and free-threaded Python >= 3.15 (pyo3's
+# abi3-py310 and abi3t-py315 features, Cargo.toml)
 profile = "release"
 
 [tool.pytest.ini_options]

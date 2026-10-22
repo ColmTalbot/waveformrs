@@ -52,11 +52,21 @@ Time domain:
   switch precession versions automatically, and the tidal deformabilities
   of neutron stars.
 - **Python bindings.** The same models and features from Python with numpy
-  arrays, including batches across threads. See
+  arrays, including batches across threads. Free-threaded Python is
+  supported. See
   [python/README.md](python/README.md).
 - **Platforms.** Tested on macOS and Linux for every pull request on GitHub.
 
-## Getting started
+## Installation
+
+The crate is on crates.io and the Python package on PyPI:
+
+```sh
+cargo add waveformrs           # the Rust crate
+pip install waveformrs         # the Python package
+```
+
+## Getting started from a checkout
 
 ```sh
 cargo test --release           # the Rust crate and its tests

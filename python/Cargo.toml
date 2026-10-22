@@ -1,6 +1,6 @@
 [package]
 name = "waveformrs-python"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 description = "Python bindings of waveformrs"
 license = "GPL-3.0-or-later"
@@ -14,11 +14,14 @@ name = "_waveformrs"
 crate-type = ["cdylib"]
 
 [dependencies]
-waveformrs = { path = ".." }
+waveformrs = { path = "..", version = "0.2.0" }
 num-complex = "0.4"
-numpy = "0.29"
-# The stable ABI of Python 3.9 and later: one wheel per platform.
-pyo3 = { version = "0.29", features = ["abi3-py39"] }
+numpy = "0.30"
+# The stable ABI of Python 3.10 and later (`abi3`), and the stable ABI of
+# free-threaded Python 3.15 and later (`abi3t`, PEP 803): one wheel of each per
+# platform. Free-threaded 3.14 has no stable ABI and gets a
+# version-specific wheel; PyO3 0.30 does not support free-threaded 3.13.
+pyo3 = { version = "0.30", features = ["abi3-py310", "abi3t-py315"] }
 
 # As recommended for downstream crates of waveformrs (see ../Cargo.toml):
 # whole-program optimisation recovers ~30% for IMRPhenomXAS.
