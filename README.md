@@ -52,7 +52,8 @@ Time domain:
   switch precession versions automatically, and the tidal deformabilities
   of neutron stars.
 - **Python bindings.** The same models and features from Python with numpy
-  arrays, including batches across threads. See
+  arrays, including batches across threads. Free-threaded Python is
+  supported. See
   [python/README.md](python/README.md).
 - **Platforms.** Tested on macOS and Linux for every pull request on GitHub.
 

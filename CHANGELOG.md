@@ -11,8 +11,10 @@ The first release published to crates.io and PyPI.
 - **Releases are published from GitHub Actions** (`.github/workflows/release.yml`).
   Pushing a tag `vX.Y.Z` that matches the version in `Cargo.toml` and
   `python/Cargo.toml` runs the full CI, then publishes the crate to
-  crates.io, the Python sdist and abi3 wheels (Linux x86_64 and aarch64,
-  macOS x86_64 and arm64) to PyPI, and a GitHub release with the
+  crates.io, the Python sdist and wheels (Linux x86_64 and aarch64,
+  macOS x86_64 and arm64; an `abi3` wheel for CPython >= 3.10, an `abi3t`
+  wheel for free-threaded CPython >= 3.15, and a wheel for 3.14t)
+  to PyPI, and a GitHub release with the
   changelog section and the built distributions. The crate's dependencies
   now have version requirements (`num-complex = "0.4"`, `once_cell = "1"`)
   instead of `*`, which crates.io rejects, and `Cargo.toml` carries the
@@ -279,7 +281,9 @@ The first release published to crates.io and PyPI.
 - **IMRPhenomXHM release 122019**, the original higher-mode amplitudes
   used by IMRPhenomXPNR (internal only, see Breaking changes).
 - **Python bindings** (`python/`, the package `waveformrs` built with
-  maturin; PyO3 0.29 and rust-numpy 0.29, stable ABI for CPython >= 3.9):
+  maturin; PyO3 0.30 and rust-numpy 0.30, stable ABI for CPython >= 3.10,
+  and free-threaded CPython >= 3.14 supported, with the free-threaded stable
+  ABI from 3.15):
   the approximants by LAL's names, `WaveformOptions` as keyword arguments
   or an object, `polarizations` (`SimInspiralChooseFDWaveformSequence`),
   `FrequencyGrid` and `polarizations_on_grid`, `modes` and

@@ -93,3 +93,33 @@ jobs:
         working-directory: python
       - run: pytest -v
         working-directory: python
+
+  python-free-threaded:
+    name: Python bindings, free-threaded (${{ matrix.python }}, ${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+        python: ["3.14t", "3.15t"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: python
+      - name: NRSur7dq4 data
+        uses: ./.github/actions/nrsur-data
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python }}
+      # no lalsimulation for free-threaded Python: its comparisons skip
+      - run: python -m pip install maturin numpy pytest
+      - run: maturin build --release --out dist
+        working-directory: python
+      - run: python -m pip install --find-links dist --no-index waveformrs
+        working-directory: python
+      - run: python -m pytest -v
+        working-directory: python

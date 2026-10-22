@@ -15,7 +15,8 @@ many binaries over threads and write straight into numpy-owned memory.
 
 ## Installation
 
-Wheels for Linux and macOS are on PyPI:
+Wheels for Linux and macOS, for CPython 3.10 and later and free-threaded
+CPython 3.14 and later, are on PyPI:
 
 ```sh
 pip install waveformrs
@@ -26,14 +27,21 @@ go (a virtualenv or an activated conda environment; for an environment that
 is not activated, set `CONDA_PREFIX` to it):
 
 ```sh
-pip install maturin           # >= 1.9.4
+pip install maturin           # >= 1.14.1
 maturin develop --release     # build and install in editable mode
 ```
 
 `maturin build --release` builds a wheel into `target/wheels/` instead, and
-`pip install .` builds and installs one in a step. The extension is built
-against Python's stable ABI (`abi3`), so one wheel serves CPython 3.9 and
-later on a platform.
+`pip install .` builds and installs one in a step. The package needs CPython
+3.10 or later. The extension is built against Python's stable ABI (`abi3`),
+so one wheel serves CPython 3.10 and later on a platform.
+
+Free-threaded CPython (3.14t and later) is supported: the extension declares
+that it does not need the GIL, so importing it leaves the GIL disabled, and
+waveforms can be computed from several threads at once. Free-threaded 3.15
+and later share one wheel per platform (the free-threaded stable ABI,
+`abi3t`); 3.14t has a wheel of its own. (PyO3 0.30 does not support
+free-threaded 3.13.)
 
 For this repository's development environment:
 
@@ -310,7 +318,8 @@ single calls because it uses the grid paths.
 
 * `Cargo.toml`: the extension crate `waveformrs-python` (library
   `_waveformrs`), depending on the crate with `waveformrs = { path = ".." }`
-  (the root is not a workspace), PyO3 0.29 with `abi3-py39` and numpy 0.29,
+  (the root is not a workspace), PyO3 0.30 with `abi3-py310` and
+  `abi3t-py315`, and numpy 0.30,
   built with `lto = "fat"` as the crate recommends.
 * `src/`: the bindings (`lib.rs` functions and `FrequencyGrid`, `params.rs`
   keyword arguments and `WaveformOptions`, `batch.rs`, `results.rs`,

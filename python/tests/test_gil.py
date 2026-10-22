@@ -1,6 +1,8 @@
 """The GIL is released while waveforms are computed."""
 
 import os
+import sys
+import sysconfig
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -22,6 +24,17 @@ BINARY = dict(
     precession_version=223,
 )
 GRID = wf.FrequencyGrid.uniform(20.0, 1024.0, 0.125)
+
+
+@pytest.mark.skipif(
+    not sysconfig.get_config_var("Py_GIL_DISABLED"), reason="needs free-threaded Python"
+)
+def test_import_keeps_the_gil_disabled():
+    """The extension declares free-threading support, so importing it does
+    not switch the GIL back on (unless PYTHON_GIL=1 forces it)."""
+    if os.environ.get("PYTHON_GIL") == "1":
+        pytest.skip("PYTHON_GIL=1")
+    assert not sys._is_gil_enabled()
 
 
 def python_work(n=200_000):

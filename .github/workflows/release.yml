@@ -74,37 +74,52 @@ jobs:
           path: python/dist
 
   wheels:
-    name: Python wheel (${{ matrix.target }}, ${{ matrix.os }})
+    name: Python wheels (${{ matrix.target }}, ${{ matrix.os }})
     needs: version
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { os: ubuntu-latest, target: x86_64, smoke-test: true }
-          - { os: ubuntu-24.04-arm, target: aarch64, smoke-test: true }
-          - { os: macos-latest, target: aarch64, smoke-test: true }
-          # cross-compiled on Apple silicon
-          - { os: macos-latest, target: x86_64, smoke-test: false }
+          - { os: ubuntu-latest, target: x86_64 }
+          - { os: ubuntu-24.04-arm, target: aarch64 }
+          - { os: macos-latest, target: aarch64 }
+          - { os: macos-15-intel, target: x86_64 }
+    env:
+      # abi3 for CPython >= 3.10, 3.14t version-specific, abi3t for
+      # free-threaded CPython >= 3.15 (python/Cargo.toml)
+      INTERPRETERS: python3.10 python3.14t python3.15t
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.12"
+          python-version: |
+            3.10
+            3.14t
+            3.15t
       - uses: PyO3/maturin-action@v1
         with:
           command: build
           target: ${{ matrix.target }}
-          args: --release --locked --out dist
+          args: --release --locked --out dist --interpreter ${{ env.INTERPRETERS }}
           manylinux: auto
           rust-toolchain: ${{ env.RUST_TOOLCHAIN }}
           working-directory: python
-      - name: install and import the wheel
-        if: matrix.smoke-test
+      - name: install and import the wheels
         run: |
-          python -m pip install python/dist/*.whl
+          version=$(sed -n 's/^version = "\(.*\)"$/\1/p' python/Cargo.toml | head -n 1)
           cd "$RUNNER_TEMP"
-          python -c "import waveformrs; print(waveformrs.__version__)"
+          for python in $INTERPRETERS; do
+            "$python" -m venv "venv-$python"
+            "venv-$python/bin/python" -m pip install --only-binary waveformrs \
+              --find-links "$GITHUB_WORKSPACE/python/dist" "waveformrs==$version"
+            # on free-threaded Python, importing the module keeps the GIL off
+            "venv-$python/bin/python" -c "
+          import sys, sysconfig, waveformrs
+          print(sys.version, waveformrs.__version__)
+          assert not (sysconfig.get_config_var('Py_GIL_DISABLED') and sys._is_gil_enabled())
+          "
+          done
       - uses: actions/upload-artifact@v4
         with:
           name: dist-wheel-${{ matrix.os }}-${{ matrix.target }}
