@@ -485,3 +485,173 @@ fn nrsur7dq4_workspace_reuse_is_exact() {
             .is_err());
     }
 }
+
+/// Grids of the caller's choosing agree with the output grid of
+/// `polarizations_with` where they coincide, are zero outside the surrogate,
+/// and the span is the output grid's.
+#[test]
+fn nrsur7dq4_polarizations_on_grids() {
+    let Some(data) = load_data() else { return };
+    let binary = PrecessingBinary {
+        mass_1: 40.0,
+        mass_2: 25.0,
+        spin_1: [0.4, -0.3, 0.2],
+        spin_2: [0.1, 0.5, -0.3],
+        luminosity_distance: 400.0,
+        inclination: 0.7,
+        phi_ref: 0.1,
+        f_ref: 20.0,
+    };
+    let model = NRSur7dq4::new(data, &binary).unwrap();
+    let delta_t = 1.0 / 4096.0;
+    for f_min in [0.0, 20.0] {
+        let reference = model.polarizations(delta_t, f_min).unwrap();
+        let mut workspace = NRSurWorkspace::new();
+        let (start, end) = model
+            .polarizations_on_grids_with(&mut workspace, f_min, delta_t, &[], 0, &mut [])
+            .unwrap();
+        // The output of `polarizations_with` starts at the span's start
+        // (rounded to nanoseconds) and covers it.
+        assert!((reference.epoch - start).abs() < 1e-9);
+        let n = reference.hplus.len();
+        assert!(start + (n - 1) as f64 * delta_t <= end && end <= start + n as f64 * delta_t);
+
+        // Grids starting 5 samples into the output, and 100 samples before
+        // it, against the reference samples.
+        let starts = [start + 5.0 * delta_t, start - 100.0 * delta_t];
+        let mut outs = vec![TimeSeriesPolarizations::default(); 2];
+        let span = model
+            .polarizations_on_grids_with(
+                &mut workspace,
+                f_min,
+                delta_t,
+                &starts,
+                n + 200,
+                &mut outs,
+            )
+            .unwrap();
+        assert_eq!(span, (start, end));
+        let scale = reference.hplus.iter().fold(0.0f64, |a, h| a.max(h.abs()));
+        for j in 0..n - 5 {
+            assert!((outs[0].hplus[j] - reference.hplus[j + 5]).abs() < 1e-12 * scale);
+            assert!((outs[0].hcross[j] - reference.hcross[j + 5]).abs() < 1e-12 * scale);
+        }
+        let shifted = &outs[1];
+        assert_eq!(shifted.epoch, starts[1]);
+        assert!(shifted.hplus[..100].iter().all(|&h| h == 0.0));
+        assert!(shifted.hcross[..100].iter().all(|&h| h == 0.0));
+        for j in 0..n {
+            assert!((shifted.hplus[100 + j] - reference.hplus[j]).abs() < 1e-12 * scale);
+        }
+        // After the end of the ringdown everything is zero, not NaN.
+        assert!(shifted.hplus[100 + n..].iter().all(|&h| h == 0.0));
+    }
+}
+
+/// The largest and median norms of the second differences of `h_+` (on a
+/// grid through the merger and past the end of the surrogate) along a
+/// sweep of the binaries `binary(x)`, `x = 0, step, ...`, relative to the
+/// norm of `h_+`.
+fn second_differences(
+    data: &NRSur7dq4Data,
+    continuous: bool,
+    binary: impl Fn(f64) -> PrecessingBinary,
+    step: f64,
+    n: usize,
+) -> (f64, f64) {
+    let (delta_t, length) = (1.0 / 4096.0, 4096);
+    let mut ws = NRSurWorkspace::new();
+    let mut outs = vec![TimeSeriesPolarizations::default()];
+    let waveforms: Vec<Vec<f64>> = (0..n)
+        .map(|i| {
+            let model = NRSur7dq4::new(data, &binary(i as f64 * step))
+                .unwrap()
+                .with_continuous(continuous);
+            model
+                .polarizations_on_grids_with(&mut ws, 0.0, delta_t, &[-0.8], length, &mut outs)
+                .unwrap();
+            outs[0].hplus.clone()
+        })
+        .collect();
+    let norm = waveforms[0].iter().map(|h| h * h).sum::<f64>().sqrt();
+    let mut values: Vec<f64> = waveforms
+        .windows(3)
+        .map(|w| {
+            let s: f64 = (0..length)
+                .map(|k| (w[0][k] - 2. * w[1][k] + w[2][k]).powi(2))
+                .sum();
+            s.sqrt() / norm
+        })
+        .collect();
+    values.sort_by(f64::total_cmp);
+    (values[values.len() - 1], values[values.len() / 2])
+}
+
+/// `with_continuous`: no jumps as the reference frequency moves past the
+/// middle of an interval between dynamics nodes (here with the aligned
+/// spin) or past a node, or as the end of the surrogate moves past a sample
+/// (with the masses), where LAL's surrogate jumps.
+#[test]
+fn continuous_in_the_parameters() {
+    let Some(data) = load_data() else { return };
+    let base = PrecessingBinary {
+        mass_1: 36.0,
+        mass_2: 29.0,
+        spin_1: [0.3, 0.1, 0.25],
+        spin_2: [-0.1, 0.25, 0.1],
+        luminosity_distance: 500.0,
+        inclination: 0.6,
+        phi_ref: 1.3,
+        f_ref: 20.0,
+    };
+    type Sweep = (
+        &'static str,
+        Box<dyn Fn(f64) -> PrecessingBinary>,
+        f64,
+        usize,
+    );
+    let sweeps: [Sweep; 3] = [
+        (
+            "aligned spin",
+            Box::new(move |x| {
+                let mut b = base;
+                b.spin_1[2] += x;
+                b
+            }),
+            2e-5,
+            400,
+        ),
+        (
+            "total mass",
+            Box::new(move |x| {
+                let s = 1.0 + x / 65.0;
+                PrecessingBinary {
+                    mass_1: base.mass_1 * s,
+                    mass_2: base.mass_2 * s,
+                    ..base
+                }
+            }),
+            2e-4,
+            700,
+        ),
+        (
+            "reference frequency",
+            Box::new(move |x| PrecessingBinary {
+                f_ref: base.f_ref + x,
+                ..base
+            }),
+            1e-4,
+            400,
+        ),
+    ];
+    for (name, binary, step, n) in &sweeps {
+        let (lal_max, lal_median) = second_differences(data, false, binary, *step, *n);
+        let (max, median) = second_differences(data, true, binary, *step, *n);
+        println!("{name}: LAL max {lal_max:.2e} median {lal_median:.2e}; continuous max {max:.2e} median {median:.2e}");
+        assert!(
+            lal_max > 5.0 * lal_median,
+            "{name}: {lal_max:e} {lal_median:e}"
+        );
+        assert!(max < 1.1 * median, "{name}: {max:e} {median:e}");
+    }
+}

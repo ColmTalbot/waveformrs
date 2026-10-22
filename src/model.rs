@@ -322,6 +322,12 @@ pub struct WaveformOptions {
     /// implemented here).
     pub lambda_1: f64,
     pub lambda_2: f64,
+    /// Make NRSur7dq4 change continuously with the parameters
+    /// ([`NRSur7dq4::with_continuous`]); `false` (the default) reproduces
+    /// LAL, whose surrogate jumps slightly when the reference frequency
+    /// moves past the middle of an interval between its time nodes and
+    /// when its end moves past a sample.
+    pub nrsur_continuous: bool,
 }
 
 impl Default for WaveformOptions {
@@ -332,6 +338,7 @@ impl Default for WaveformOptions {
             version_fallback: true,
             lambda_1: 0.0,
             lambda_2: 0.0,
+            nrsur_continuous: false,
         }
     }
 }
@@ -373,6 +380,12 @@ impl WaveformOptions {
     pub fn with_tidal_deformabilities(mut self, lambda_1: f64, lambda_2: f64) -> Self {
         self.lambda_1 = lambda_1;
         self.lambda_2 = lambda_2;
+        self
+    }
+
+    /// Set [`WaveformOptions::nrsur_continuous`].
+    pub fn with_nrsur_continuous(mut self, continuous: bool) -> Self {
+        self.nrsur_continuous = continuous;
         self
     }
 
@@ -669,7 +682,8 @@ pub fn choose_td_model(
 ) -> Result<Box<dyn TimeDomainModel<Workspace = NRSurWorkspace>>> {
     match approximant {
         Approximant::NRSur7dq4 => {
-            let mut model = NRSur7dq4::from_binary(binary)?;
+            let mut model =
+                NRSur7dq4::from_binary(binary)?.with_continuous(options.nrsur_continuous);
             if let Some(modes) = &options.mode_array {
                 model = model.with_mode_array(modes)?;
             }

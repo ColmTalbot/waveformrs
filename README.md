@@ -15,7 +15,9 @@ Frequency domain:
 - **IMRPhenomXAS**: aligned spins, dominant (2,2) mode.
 - **IMRPhenomXHM**: aligned spins with higher modes.
 - **IMRPhenomXP**: precessing spins, dominant mode. Choice of NNLO, MSA or
-  SpinTaylor precession angles.
+  SpinTaylor precession angles, plus a variant of the SpinTaylor angles
+  that changes smoothly with the masses and spins (LAL's version jumps in
+  small steps, which upsets samplers).
 - **IMRPhenomXPHM**: precessing spins with higher modes, with the same
   choice of precession angles.
 - **IMRPhenomXPNR**: precessing spins tuned to numerical relativity. It
@@ -34,7 +36,10 @@ Binary neutron stars, with the NRTidal tidal corrections:
 Time domain:
 
 - **NRSur7dq4**: numerical-relativity surrogate for precessing binaries. It
-  needs the surrogate data file from LALSuite's data repository.
+  needs the surrogate data file from LALSuite's data repository. It can be
+  sampled on any time grid, such as each detector's own samples, and made
+  to change smoothly with the masses and spins (LAL's version jumps in
+  small steps).
 
 ## Features
 

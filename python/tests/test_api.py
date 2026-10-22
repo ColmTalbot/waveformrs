@@ -195,9 +195,15 @@ def test_pickle():
     options = wf.WaveformOptions(precession_version=102, mode_array=[(2, 2)])
     assert pickle.loads(pickle.dumps(options)) == options
     assert wf.WaveformOptions(**options.as_dict()) == options
+    # the continuous variants survive the round trip
+    continuous = wf.WaveformOptions(precession_version="SpinTaylorContinuous", nrsur_continuous=True)
+    assert continuous.precession_version == "SpinTaylorContinuous"
+    assert continuous.nrsur_continuous
+    assert pickle.loads(pickle.dumps(continuous)) == continuous
+    assert wf.WaveformOptions(**continuous.as_dict()) == continuous
     assert repr(options) == (
         "WaveformOptions(precession_version=102, mode_array=[(2, 2)], version_fallback=True, "
-        "lambda_1=0.0, lambda_2=0.0)"
+        "lambda_1=0.0, lambda_2=0.0, nrsur_continuous=False)"
     )
     grid = wf.FrequencyGrid.uniform(20.0, 64.0, 0.5)
     np.testing.assert_array_equal(pickle.loads(pickle.dumps(grid)).frequencies, grid.frequencies)

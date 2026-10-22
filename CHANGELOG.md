@@ -2,6 +2,56 @@
 
 All notable changes to `waveformrs` are recorded here.
 
+## Unreleased
+
+### Features
+
+- **NRSur7dq4 on grids of the caller's choosing**:
+  `NRSur7dq4::polarizations_on_grids_with` samples `h_+` and `h_x` every
+  `delta_t` from any start times (relative to the peak), e.g. one grid per
+  detector with its own arrival time. The surrogate is evaluated and its
+  modes summed once for all the grids; samples outside the surrogate are
+  zero rather than NaN. It returns the surrogate's span in seconds, so
+  that callers can tell when its abrupt start falls inside their data.
+  `polarizations_with` shares the same code and its output is unchanged.
+- **SpinTaylor angles without discontinuities**:
+  `PrecessionVersion::SpinTaylorContinuous` (`"SpinTaylorContinuous"` in
+  Python). LAL's SpinTaylor angles (320) end the PN solution at the last
+  sample before the integration stops and take the final spin and the
+  merger-ringdown continuation from there, so IMRPhenomXP(HM) jumps
+  whenever a sample enters or leaves (every ~0.01 solar masses in the chirp
+  mass for a binary black hole, with likelihood jumps of order one). The
+  new version keeps the integration as a continuous solution, finds where
+  the stopping condition is met exactly, ends half a sample interval before
+  it (where LAL's last sample is on average) and spaces the samples back
+  from there. It also closes the smaller seams at the start of the
+  merger-ringdown continuation: the integration of `gamma` across it, the
+  first frequency beyond it and the value of `alpha` there. The waveform
+  then changes smoothly with the parameters, at the same cost; it differs
+  from 320 by about the size of 320's jumps (up to ~1e-3), without a
+  systematic offset in the likelihood. 320 is unchanged and still the
+  default.
+
+- **NRSur7dq4 without discontinuities**: `NRSur7dq4::with_continuous`
+  (`WaveformOptions::nrsur_continuous`, `nrsur_continuous=True` in Python).
+  LAL's surrogate changes discontinuously with the parameters:
+  - it integrates the dynamics from the node nearest to the reference
+    frequency, so it jumps (by up to ~4e-4 of the waveform) when the
+    reference time moves past the middle of an interval between nodes;
+  - it ends abruptly ~100 M after the peak, so a sample jumps when the end
+    moves past it;
+  - its reference time is interpolated linearly between nodes, so it has
+    a kink at every node;
+  - its epoch is rounded to the nanosecond, a time shift that moves in
+    steps with the masses.
+  The option blends the dynamics from the two nodes near the middle of an
+  interval, tapers the last 10 M, rounds the corners of the
+  interpolation and keeps the epoch exact. It is LAL's surrogate wherever
+  none of these applies, at the same cost. Off by default.
+- Python: `WaveformOptions.precession_version` is `"SpinTaylorContinuous"`
+  (rather than 320) for the continuous SpinTaylor angles, so that options
+  survive pickling and `as_dict`.
+
 ## 0.2.0 (2026-10-21)
 
 The first release published to crates.io and PyPI.

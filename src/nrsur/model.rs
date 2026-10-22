@@ -129,12 +129,17 @@ pub struct NRSurWorkspace {
     coef_d: Vec<f64>,
 }
 
+/// The length (in units of the total mass) of the taper at the end of the
+/// surrogate with [`NRSur7dq4::with_continuous`].
+pub const END_TAPER: f64 = 10.0;
+
 /// What the inertial modes depend on.
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct IntrinsicKey {
     data: usize,
     bits: [u64; 10],
     unlimited_extrapolation: bool,
+    continuous: bool,
     active: [bool; N_MODES],
 }
 
@@ -212,6 +217,8 @@ pub struct NRSur7dq4<'a> {
     data: &'a NRSur7dq4Data,
     binary: PrecessingBinary,
     unlimited_extrapolation: bool,
+    /// See [`NRSur7dq4::with_continuous`].
+    continuous: bool,
     /// The active coorbital modes, by [`mode_index`].
     active: [bool; N_MODES],
 }
@@ -361,8 +368,34 @@ impl<'a> NRSur7dq4<'a> {
             data,
             binary: *binary,
             unlimited_extrapolation: false,
+            continuous: false,
             active: [true; N_MODES],
         })
+    }
+
+    /// Make the waveform change continuously with the parameters (off by
+    /// default, reproducing LAL). LAL's surrogate has two discontinuities:
+    ///
+    /// * The dynamics are integrated from the node nearest to the
+    ///   reference frequency, and the integration error depends on that
+    ///   node, so the waveform jumps (by ~1e-4) when the reference time
+    ///   crosses the middle of an interval between nodes. With this option
+    ///   the dynamics are integrated from both nodes of the interval and
+    ///   blended smoothly between them: they are LAL's when the reference
+    ///   time is at a node.
+    /// * The waveform ends abruptly at the end of the surrogate, ~100 M
+    ///   after the peak, so a sample jumps to zero when the end crosses it.
+    ///   With this option the last [`END_TAPER`] M are tapered to zero.
+    /// * The reference time is interpolated linearly between nodes, so it
+    ///   has a kink as it crosses one. With this option the corners are
+    ///   rounded off.
+    /// * The epoch of [`Self::polarizations_with`] and
+    ///   [`Self::modes_with`] is rounded to the nanosecond (as LAL's
+    ///   `LIGOTimeGPS`), so it moves in steps as the masses change. With
+    ///   this option it is exact.
+    pub fn with_continuous(mut self, continuous: bool) -> Self {
+        self.continuous = continuous;
+        self
     }
 
     /// Allow extrapolation beyond `q = 6.01` and `|chi| = 1`
@@ -396,6 +429,18 @@ impl<'a> NRSur7dq4<'a> {
         self.data
     }
 
+    /// The epoch of the output for its first sample at `t` seconds from
+    /// the peak: rounded to the nanosecond as LAL's `LIGOTimeGPS`, or
+    /// exact with [`Self::with_continuous`] (the rounding makes a time
+    /// shift by the epoch step as the masses change).
+    fn epoch(&self, t: f64) -> f64 {
+        if self.continuous {
+            t
+        } else {
+            gps_epoch(t)
+        }
+    }
+
     fn intrinsic_key(&self, f_min: f64) -> IntrinsicKey {
         let b = &self.binary;
         let values = [
@@ -414,6 +459,7 @@ impl<'a> NRSur7dq4<'a> {
             data: self.data as *const NRSur7dq4Data as usize,
             bits: values.map(f64::to_bits),
             unlimited_extrapolation: self.unlimited_extrapolation,
+            continuous: self.continuous,
             active: self.active,
         }
     }
@@ -501,6 +547,7 @@ impl<'a> NRSur7dq4<'a> {
             0.0,
             &init_quat,
             self.unlimited_extrapolation,
+            self.continuous,
             &mut ws.omega_cache,
             &mut ws.dynamics,
         )?;
@@ -510,7 +557,7 @@ impl<'a> NRSur7dq4<'a> {
         let start_freq = self.start_frequency_of(&l);
         let t0 = if f_min >= start_freq {
             let y0 = reference_state(&l.chi_a, &l.chi_b, &init_quat, 0.0);
-            dynamics.t_ref(omega_min, &y0, &mut ws.omega_cache)?
+            dynamics.t_ref(omega_min, &y0, &mut ws.omega_cache, self.continuous)?
         } else if f_min > 0.0 {
             return Err(NRSurError::StartFrequency {
                 f_min,
@@ -725,6 +772,80 @@ impl<'a> NRSur7dq4<'a> {
         out: &mut TimeSeriesPolarizations,
     ) -> Result<(), NRSurError> {
         let core = self.core(ws, f_min, delta_t)?;
+        self.model_polarizations(ws, &core);
+        let (dt, nt) = self.output_grid(&core, delta_t);
+        out.epoch = self.epoch(core.labels.m_tot_sec * core.t0);
+        out.delta_t = delta_t;
+        self.sample_polarizations(ws, core.t0, dt, nt, out, f64::NAN);
+        Ok(())
+    }
+
+    /// `h_+` and `h_x` sampled every `delta_t` seconds from each of `starts`
+    /// (in seconds relative to the peak of the waveform), `length` samples
+    /// each, written into the matching entry of `outs` (whose `epoch` is
+    /// set to the start).
+    ///
+    /// This is [`Self::polarizations_with`] on grids of the caller's choosing:
+    /// the surrogate is evaluated (or taken from `ws`) once and the modes
+    /// summed once, then the polarizations are interpolated onto each grid
+    /// with the same splines. With a start on the grid of
+    /// [`Self::polarizations_with`] the samples agree with it. Samples
+    /// outside the surrogate (before its start, set by `f_min` as there, or
+    /// after the end of the ringdown) are zero.
+    ///
+    /// For example, a detector at a delay `dt_d` from the geocentre with the
+    /// peak at geocentre time `t_c` sees, on its samples `t_0 + j delta_t`,
+    /// the polarizations from start `t_0 - t_c - dt_d`.
+    ///
+    /// Returns the span `(start, end)` of the surrogate in seconds relative
+    /// to the peak. The surrogate starts abruptly, so a caller whose grid
+    /// moves relative to it (e.g. as the arrival time changes) should taper
+    /// the start in continuous time, measured from `start`: otherwise the
+    /// first non-zero sample, and anything computed from the samples, jumps
+    /// whenever the start crosses a sample.
+    ///
+    /// # Panics
+    ///
+    /// If `starts` and `outs` have different lengths.
+    pub fn polarizations_on_grids_with(
+        &self,
+        ws: &mut NRSurWorkspace,
+        f_min: f64,
+        delta_t: f64,
+        starts: &[f64],
+        length: usize,
+        outs: &mut [TimeSeriesPolarizations],
+    ) -> Result<(f64, f64), NRSurError> {
+        assert_eq!(starts.len(), outs.len(), "one output per start time");
+        let core = self.core(ws, f_min, delta_t)?;
+        self.model_polarizations(ws, &core);
+        let m_tot_sec = core.labels.m_tot_sec;
+        let dt = delta_t / m_tot_sec;
+        // The first time of the output of `polarizations_with`: earlier
+        // samples are before the start of the surrogate for this `f_min`.
+        let t_first = core.t0;
+        for (&start, out) in starts.iter().zip(outs.iter_mut()) {
+            out.epoch = start;
+            out.delta_t = delta_t;
+            self.sample_polarizations(ws, start / m_tot_sec, dt, length, out, 0.0);
+            // Zero the samples before the start of the surrogate.
+            // (with a tolerance, so that a grid through `t_first` keeps that
+            // sample despite rounding)
+            let before = ((t_first - start / m_tot_sec) / dt - 1e-9).ceil();
+            if before > 0.0 {
+                let before = (before as usize).min(length);
+                out.hplus[..before].fill(0.0);
+                out.hcross[..before].fill(0.0);
+            }
+        }
+        let t_end = self.data.t_coorb.x[self.data.t_coorb.len() - 1];
+        Ok((m_tot_sec * t_first, m_tot_sec * t_end))
+    }
+
+    /// Sum the modes into `h_+` and `h_x` on the coorbital times
+    /// (`ws.hp_model`, `ws.hc_model`) and prepare their splines
+    /// (`ws.c_plus`, `ws.c_cross`).
+    fn model_polarizations(&self, ws: &mut NRSurWorkspace, core: &Core) {
         let n = ws.n_coorb;
         let l = &core.labels;
         ws.hp_model.fill(0.0);
@@ -757,23 +878,50 @@ impl<'a> NRSur7dq4<'a> {
         for h in ws.hp_model.iter_mut().chain(ws.hc_model.iter_mut()) {
             *h *= a0;
         }
-
-        let (dt, nt) = self.output_grid(&core, delta_t);
-        out.epoch = gps_epoch(l.m_tot_sec * core.t0);
-        out.delta_t = delta_t;
         let knots = &self.data.t_coorb;
-        ws.grid.locate(knots, core.t0, dt, nt);
+        if self.continuous {
+            // Taper the end of the surrogate (where the ringdown is still
+            // ~5e-4 of the peak) to zero, so that samples cross it smoothly.
+            let t_end = knots.x[knots.len() - 1];
+            for (k, &t) in knots.x.iter().enumerate().rev() {
+                let x = (t_end - t) / END_TAPER;
+                if x >= 1.0 {
+                    break;
+                }
+                let w = (0.5 * PI * x).sin().powi(2);
+                ws.hp_model[k] *= w;
+                ws.hc_model[k] *= w;
+            }
+        }
+        knots.second_derivatives(&ws.hp_model, &mut ws.c_plus, &mut ws.spline_z);
+        knots.second_derivatives(&ws.hc_model, &mut ws.c_cross, &mut ws.spline_z);
+    }
+
+    /// Interpolate the prepared `h_+` and `h_x` onto `t0 + dt j`, `j < nt`
+    /// (in units of the total mass), with `outside` beyond the coorbital
+    /// times (LAL's NaN, or zero).
+    fn sample_polarizations(
+        &self,
+        ws: &mut NRSurWorkspace,
+        t0: f64,
+        dt: f64,
+        nt: usize,
+        out: &mut TimeSeriesPolarizations,
+        outside: f64,
+    ) {
+        let knots = &self.data.t_coorb;
+        ws.grid.locate(knots, t0, dt, nt);
         for (y, c, h) in [
-            (&ws.hp_model, &mut ws.c_plus, &mut out.hplus),
-            (&ws.hc_model, &mut ws.c_cross, &mut out.hcross),
+            (&ws.hp_model, &ws.c_plus, &mut out.hplus),
+            (&ws.hc_model, &ws.c_cross, &mut out.hcross),
         ] {
-            knots.second_derivatives(y, c, &mut ws.spline_z);
             h.clear();
             h.resize(nt, 0.0);
             ws.grid
-                .evaluate(knots, y, c, &mut ws.coef_b, &mut ws.coef_d, |j, v| h[j] = v);
+                .evaluate(knots, y, c, &mut ws.coef_b, &mut ws.coef_d, |j, v| {
+                    h[j] = if v.is_nan() { outside } else { v }
+                });
         }
-        Ok(())
     }
 
     /// The inertial-frame modes `h_{ell m}`, `ell <= 4`
@@ -798,7 +946,7 @@ impl<'a> NRSur7dq4<'a> {
         let distance = self.binary.luminosity_distance * 1e6 * PC_SI;
         let a0 = l.m_tot_sec * C_SI / distance;
         let (dt, nt) = self.output_grid(&core, delta_t);
-        out.epoch = gps_epoch(l.m_tot_sec * core.t0);
+        out.epoch = self.epoch(l.m_tot_sec * core.t0);
         out.delta_t = delta_t;
         let knots = &self.data.t_coorb;
         ws.grid.locate(knots, core.t0, dt, nt);
@@ -898,6 +1046,7 @@ impl NRSur7dq4Data {
             init_orbphase,
             &init_quat,
             unlimited_extrapolation,
+            false,
             &mut omega_cache,
             &mut states,
         )?;

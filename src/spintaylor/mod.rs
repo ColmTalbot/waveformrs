@@ -48,7 +48,7 @@ use std::fmt;
 
 use dynamics::{mass_in_seconds, SpinTaylorT4System};
 pub use dynamics::{SpinTaylorT4Coefficients, NUM_VARIABLES};
-use integrator::{adaptive_rk4_hermite_into, HermiteSink, IntegratorSettings};
+use integrator::{adaptive_rk4_hermite_into, hermite_interpolate, HermiteSink, IntegratorSettings};
 
 use crate::constants::MSUN_SI;
 
@@ -234,6 +234,175 @@ impl OrbitSamples for FullSamples {
 
     fn omega(&self, i: usize) -> f64 {
         self.0[i][1]
+    }
+}
+
+/// One accepted step of an integration, from `t0` to `t1` (in units of the
+/// total mass), with what the interpolant of the step needs.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct DenseStep {
+    t0: f64,
+    t1: f64,
+    y0: [f64; NUM_VARIABLES],
+    y1: [f64; NUM_VARIABLES],
+    k1: [f64; NUM_VARIABLES],
+    k6: [f64; NUM_VARIABLES],
+}
+
+impl DenseStep {
+    fn state(&self, t: f64) -> [f64; NUM_VARIABLES] {
+        let h = self.t1 - self.t0;
+        hermite_interpolate((t - self.t0) / h, h, &self.y0, &self.y1, &self.k1, &self.k6)
+    }
+
+    fn contains(&self, t: f64) -> bool {
+        (self.t0 <= t && t <= self.t1) || (self.t1 <= t && t <= self.t0)
+    }
+}
+
+/// Every accepted step of an integration, and `M omega` of the evenly
+/// spaced samples (from which the length of LAL's orbit follows).
+#[derive(Debug, Default)]
+struct DenseSamples {
+    omega: Vec<f64>,
+    steps: Vec<DenseStep>,
+}
+
+impl HermiteSink<NUM_VARIABLES> for DenseSamples {
+    fn reserve(&mut self, n: usize) {
+        self.omega.reserve(n);
+    }
+
+    #[inline]
+    fn push(&mut self, _t: f64, y: &[f64; NUM_VARIABLES]) {
+        self.omega.push(y[1]);
+    }
+
+    #[inline]
+    fn step(
+        &mut self,
+        t0: f64,
+        t1: f64,
+        y0: &[f64; NUM_VARIABLES],
+        y1: &[f64; NUM_VARIABLES],
+        k1: &[f64; NUM_VARIABLES],
+        k6: &[f64; NUM_VARIABLES],
+    ) {
+        self.steps.push(DenseStep {
+            t0,
+            t1,
+            y0: *y0,
+            y1: *y1,
+            k1: *k1,
+            k6: *k6,
+        });
+    }
+}
+
+impl OrbitSamples for DenseSamples {
+    fn len(&self) -> usize {
+        self.omega.len()
+    }
+
+    fn omega(&self, i: usize) -> f64 {
+        self.omega[i]
+    }
+}
+
+/// An integration with its solution at any time: the interpolant of each
+/// accepted step (the one LAL uses for the evenly spaced samples). Time is
+/// in units of the total mass from the start of the integration, negative
+/// for an integration backwards in time.
+#[derive(Debug)]
+pub(crate) struct DenseOrbit {
+    coefficients: SpinTaylorT4Coefficients,
+    steps: Vec<DenseStep>,
+    evolution: Evolution,
+}
+
+impl DenseOrbit {
+    /// The times covered, earliest first.
+    pub(crate) fn span(&self) -> (f64, f64) {
+        let (first, last) = (self.steps[0].t0, self.steps[self.steps.len() - 1].t1);
+        (first.min(last), first.max(last))
+    }
+
+    /// The state at `t`, within [`Self::span`].
+    pub(crate) fn state(&self, t: f64) -> [f64; NUM_VARIABLES] {
+        // the steps are ordered by time in the direction of the integration
+        let forward = !self.evolution.backwards;
+        let i = self
+            .steps
+            .partition_point(|step| if forward { step.t1 < t } else { step.t1 > t });
+        let step = &self.steps[i.min(self.steps.len() - 1)];
+        debug_assert!(step.contains(t) || i == self.steps.len());
+        step.state(t)
+    }
+
+    /// The dimensionless spins of a state.
+    pub(crate) fn spins(&self, y: &[f64; NUM_VARIABLES]) -> ([f64; 3], [f64; 3]) {
+        (self.evolution.s1(y), self.evolution.s2(y))
+    }
+
+    /// `d^2 (M omega) / dt^2` along the solution at `t`, from the derivatives
+    /// on either side of the state along its direction of motion.
+    fn omega_double_dot(&self, t: f64) -> f64 {
+        const EPSILON: f64 = 1e-3;
+        let y = self.state(t);
+        let mut dydt = [0.0; NUM_VARIABLES];
+        self.coefficients.derivatives(&y, &mut dydt);
+        let shifted = |sign: f64| {
+            let z: [f64; NUM_VARIABLES] = std::array::from_fn(|k| y[k] + sign * EPSILON * dydt[k]);
+            let mut dz = [0.0; NUM_VARIABLES];
+            self.coefficients.derivatives(&z, &mut dz);
+            dz[1]
+        };
+        (shifted(1.0) - shifted(-1.0)) / (2.0 * EPSILON)
+    }
+
+    /// The time at which a forward integration stops, found exactly rather
+    /// than at the end of the step after which the stopping test fails:
+    /// where the frequency reaches its bound, where the PN energy stops
+    /// decreasing, where `v = 1`, or where `d omega / dt` is largest,
+    /// whichever stopped the integration. The end of the last step for any
+    /// other reason.
+    pub(crate) fn end_time(&self) -> f64 {
+        let n = self.steps.len();
+        let last = &self.steps[n - 1];
+        let (mut low, mut high) = (last.t0, last.t1);
+        let condition: Box<dyn Fn(f64) -> f64 + '_> = match self.evolution.return_code {
+            dynamics::ST_TEST_FREQBOUND => {
+                let omega_end = self.coefficients.omega_end();
+                Box::new(move |t| self.state(t)[1] - omega_end)
+            }
+            dynamics::ST_TEST_ENERGY => {
+                Box::new(|t| -self.coefficients.energy_test(&self.state(t)))
+            }
+            dynamics::ST_TEST_LARGEV => Box::new(|t| self.state(t)[1] - 1.0),
+            dynamics::ST_TEST_OMEGADOUBLEDOT => {
+                // The test compares d omega / dt at the ends of the last two
+                // steps.
+                low = self.steps[n.saturating_sub(2)].t0;
+                Box::new(|t| -self.omega_double_dot(t))
+            }
+            _ => return high,
+        };
+        // the condition holds at `high` and not at `low`: bisect
+        if !(condition(low) < 0.0 && condition(high) >= 0.0) {
+            return high;
+        }
+        for _ in 0..200 {
+            let middle = 0.5 * (low + high);
+            if middle == low || middle == high {
+                break;
+            }
+            if condition(middle) >= 0.0 {
+                high = middle;
+            } else {
+                low = middle;
+            }
+        }
+        high
     }
 }
 
@@ -449,6 +618,27 @@ impl SpinTaylorT4 {
             samples[..cutlen].iter().for_each(&mut push);
         }
         Ok(orbit)
+    }
+
+    /// [`Self::evolve_orbit`] keeping the solution at any time rather than
+    /// evenly spaced samples (the integration is the same).
+    pub(crate) fn evolve_dense(
+        &self,
+        delta_t: f64,
+        f_start: f64,
+        f_end: f64,
+    ) -> Result<DenseOrbit, SpinTaylorError> {
+        let coefficients = self.coefficients(f_start, f_end)?;
+        let mut samples = DenseSamples::default();
+        let evolution = self.evolve_into(&coefficients, delta_t, &mut samples)?;
+        if samples.steps.is_empty() {
+            return Err(SpinTaylorError::InvalidInterval);
+        }
+        Ok(DenseOrbit {
+            coefficients,
+            steps: samples.steps,
+            evolution,
+        })
     }
 
     /// [`Self::evolve_orbit`] recording the samples in `samples` rather

@@ -460,6 +460,50 @@ pub(crate) trait HermiteSink<const N: usize> {
     fn reserve(&mut self, n: usize);
     /// The state `y` at time `t`.
     fn push(&mut self, t: f64, y: &[f64; N]);
+    /// Called after every accepted step, from `t0` (state `y0`, derivative
+    /// `k1`) to `t1` (state `y1`), with the stage `k6` of the step: what
+    /// [`hermite_interpolate`] needs to evaluate the solution within it.
+    #[inline]
+    fn step(
+        &mut self,
+        _t0: f64,
+        _t1: f64,
+        _y0: &[f64; N],
+        _y1: &[f64; N],
+        _k1: &[f64; N],
+        _k6: &[f64; N],
+    ) {
+    }
+}
+
+/// The interpolant of `XLALAdaptiveRungeKutta4Hermite` within a step of
+/// length `h` from `y0` (derivative `k1`) to `y1`, at the fraction `theta`
+/// of the step: `y(t0 + h theta)` to fourth order.
+#[inline]
+pub(crate) fn hermite_interpolate<const N: usize>(
+    theta: f64,
+    h: f64,
+    y0: &[f64; N],
+    y1: &[f64; N],
+    k1: &[f64; N],
+    k6: &[f64; N],
+) -> [f64; N] {
+    // These are the interpolating coefficients for y(t + h*theta) =
+    // ynew + i1*h*k1 + i5*h*k5 + i6*h*k6 + O(h^4).
+    let i0 = fma(theta * theta, fnms(4.0, theta, 3.0), 1.0);
+    let i1 = -theta * (theta - 1.0);
+    let i6 = -4.0 * theta * theta * (theta - 1.0);
+    let iend = theta * theta * fma(4.0, theta, -3.0);
+
+    let h_i1 = h * i1;
+    let h_i6 = h * i6;
+    let mut ytemp = [0.0; N];
+    for i in 0..N {
+        let mut x = fma(i0, y0[i], iend * y1[i]);
+        x = fma(h_i1, k1[i], x);
+        ytemp[i] = fma(h_i6, k6[i], x);
+    }
+    ytemp
 }
 
 impl<const N: usize> HermiteSink<N> for HermiteOutput<N> {
@@ -569,6 +613,7 @@ pub(crate) fn adaptive_rk4_hermite_into<S: OdeSystem<N>, K: HermiteSink<N>, cons
         // time, t.  Note we square to get an absolute value, because we may
         // be integrating t in the positive or negative direction.
         let rkf = &evolve.step;
+        sink.step(told, t, &rkf.y0, yinit, &rkf.k1, &rkf.k6);
         while (tintp + deltat) * (tintp + deltat) < t * t {
             tintp += deltat;
             // tintp = told + (t-told)*theta, 0 <= theta <= 1.  We have to
@@ -576,22 +621,7 @@ pub(crate) fn adaptive_rk4_hermite_into<S: OdeSystem<N>, K: HermiteSink<N>, cons
             // suggested next h, not the actual stepsize taken.
             let h_used = t - told;
             let theta = (tintp - told) / h_used;
-
-            // These are the interpolating coefficients for y(t + h*theta) =
-            // ynew + i1*h*k1 + i5*h*k5 + i6*h*k6 + O(h^4).
-            let i0 = fma(theta * theta, fnms(4.0, theta, 3.0), 1.0);
-            let i1 = -theta * (theta - 1.0);
-            let i6 = -4.0 * theta * theta * (theta - 1.0);
-            let iend = theta * theta * fma(4.0, theta, -3.0);
-
-            let h_i1 = h_used * i1;
-            let h_i6 = h_used * i6;
-            let mut ytemp = [0.0; N];
-            for i in 0..N {
-                let mut x = fma(i0, rkf.y0[i], iend * yinit[i]);
-                x = fma(h_i1, rkf.k1[i], x);
-                ytemp[i] = fma(h_i6, rkf.k6[i], x);
-            }
+            let ytemp = hermite_interpolate(theta, h_used, &rkf.y0, yinit, &rkf.k1, &rkf.k6);
             sink.push(tintp, &ytemp);
             last = ytemp;
         }

@@ -47,6 +47,16 @@ pub enum PrecessionVersion {
     /// the MSA angles (223) instead, and so do we.
     #[default]
     SpinTaylor,
+    /// The SpinTaylor angles (320) without their discontinuities in the
+    /// masses and spins. LAL ends the PN solution at the last evenly spaced
+    /// sample before the integration stops, and the merger-ringdown
+    /// continuation and the final spin are taken there, so they move by up
+    /// to one sample whenever a sample enters or leaves. Here the solution
+    /// ends exactly where the integration's stopping condition is met, and
+    /// the samples are spaced back from that point, so the angles change
+    /// smoothly with the parameters. The angles differ from LAL's by about
+    /// the size of those jumps.
+    SpinTaylorContinuous,
     /// `PhenomXPrecVersion = 223`: double-spin MSA Euler angles
     /// (Chatziioannou et al. 2017, arXiv:1703.03967) as implemented in
     /// `LALSimInspiralFDPrecAngles`, with the precession-averaged final
@@ -60,7 +70,7 @@ impl PrecessionVersion {
     pub fn lal_flag(&self) -> u32 {
         match self {
             Self::Nnlo => 102,
-            Self::SpinTaylor => 320,
+            Self::SpinTaylor | Self::SpinTaylorContinuous => 320,
             Self::Msa => 223,
         }
     }
@@ -353,6 +363,9 @@ pub(crate) struct PrecessionStruct {
     /// First digit of the version: 1 NNLO, 2 MSA, 3 SpinTaylor. As in LAL,
     /// this stays 2 when the MSA system falls back to the NNLO angles.
     pub(crate) precessing_tag: u32,
+    /// Whether the SpinTaylor angles end exactly where the PN integration
+    /// stops ([`PrecessionVersion::SpinTaylorContinuous`]).
+    pub(crate) continuous: bool,
     /// Mass of the larger body in kg as passed to LAL.
     pub(crate) m1_si: f64,
     pub(crate) m2_si: f64,
@@ -672,6 +685,7 @@ impl PrecessionStruct {
 
         Ok(Self {
             version,
+            continuous: requested == PrecessionVersion::SpinTaylorContinuous,
             precessing_tag,
             m1_si,
             m2_si,
