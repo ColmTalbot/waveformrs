@@ -2,6 +2,19 @@
 
 All notable changes to `waveformrs` are recorded here.
 
+## Unreleased
+
+### Features
+
+- **NRSur7dq4 on grids of the caller's choosing**:
+  `NRSur7dq4::polarizations_on_grids_with` samples `h_+` and `h_x` every
+  `delta_t` from any start times (relative to the peak), e.g. one grid per
+  detector with its own arrival time. The surrogate is evaluated and its
+  modes summed once for all the grids; samples outside the surrogate are
+  zero rather than NaN. It returns the surrogate's span in seconds, so
+  that callers can tell when its abrupt start falls inside their data.
+  `polarizations_with` shares the same code and its output is unchanged.
+
 ## 0.2.0 (2026-10-21)
 
 The first release published to crates.io and PyPI.

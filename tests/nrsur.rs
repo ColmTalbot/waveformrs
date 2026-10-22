@@ -485,3 +485,65 @@ fn nrsur7dq4_workspace_reuse_is_exact() {
             .is_err());
     }
 }
+
+/// Grids of the caller's choosing agree with the output grid of
+/// `polarizations_with` where they coincide, are zero outside the surrogate,
+/// and the span is the output grid's.
+#[test]
+fn nrsur7dq4_polarizations_on_grids() {
+    let Some(data) = load_data() else { return };
+    let binary = PrecessingBinary {
+        mass_1: 40.0,
+        mass_2: 25.0,
+        spin_1: [0.4, -0.3, 0.2],
+        spin_2: [0.1, 0.5, -0.3],
+        luminosity_distance: 400.0,
+        inclination: 0.7,
+        phi_ref: 0.1,
+        f_ref: 20.0,
+    };
+    let model = NRSur7dq4::new(data, &binary).unwrap();
+    let delta_t = 1.0 / 4096.0;
+    for f_min in [0.0, 20.0] {
+        let reference = model.polarizations(delta_t, f_min).unwrap();
+        let mut workspace = NRSurWorkspace::new();
+        let (start, end) = model
+            .polarizations_on_grids_with(&mut workspace, f_min, delta_t, &[], 0, &mut [])
+            .unwrap();
+        // The output of `polarizations_with` starts at the span's start
+        // (rounded to nanoseconds) and covers it.
+        assert!((reference.epoch - start).abs() < 1e-9);
+        let n = reference.hplus.len();
+        assert!(start + (n - 1) as f64 * delta_t <= end && end <= start + n as f64 * delta_t);
+
+        // Grids starting 5 samples into the output, and 100 samples before
+        // it, against the reference samples.
+        let starts = [start + 5.0 * delta_t, start - 100.0 * delta_t];
+        let mut outs = vec![TimeSeriesPolarizations::default(); 2];
+        let span = model
+            .polarizations_on_grids_with(
+                &mut workspace,
+                f_min,
+                delta_t,
+                &starts,
+                n + 200,
+                &mut outs,
+            )
+            .unwrap();
+        assert_eq!(span, (start, end));
+        let scale = reference.hplus.iter().fold(0.0f64, |a, h| a.max(h.abs()));
+        for j in 0..n - 5 {
+            assert!((outs[0].hplus[j] - reference.hplus[j + 5]).abs() < 1e-12 * scale);
+            assert!((outs[0].hcross[j] - reference.hcross[j + 5]).abs() < 1e-12 * scale);
+        }
+        let shifted = &outs[1];
+        assert_eq!(shifted.epoch, starts[1]);
+        assert!(shifted.hplus[..100].iter().all(|&h| h == 0.0));
+        assert!(shifted.hcross[..100].iter().all(|&h| h == 0.0));
+        for j in 0..n {
+            assert!((shifted.hplus[100 + j] - reference.hplus[j]).abs() < 1e-12 * scale);
+        }
+        // After the end of the ringdown everything is zero, not NaN.
+        assert!(shifted.hplus[100 + n..].iter().all(|&h| h == 0.0));
+    }
+}
