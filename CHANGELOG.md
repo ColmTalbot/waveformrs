@@ -14,6 +14,23 @@ All notable changes to `waveformrs` are recorded here.
   zero rather than NaN. It returns the surrogate's span in seconds, so
   that callers can tell when its abrupt start falls inside their data.
   `polarizations_with` shares the same code and its output is unchanged.
+- **SpinTaylor angles without discontinuities**:
+  `PrecessionVersion::SpinTaylorContinuous` (`"SpinTaylorContinuous"` in
+  Python). LAL's SpinTaylor angles (320) end the PN solution at the last
+  sample before the integration stops and take the final spin and the
+  merger-ringdown continuation from there, so IMRPhenomXP(HM) jumps
+  whenever a sample enters or leaves (every ~0.01 solar masses in the chirp
+  mass for a binary black hole, with likelihood jumps of order one). The
+  new version keeps the integration as a continuous solution, finds where
+  the stopping condition is met exactly, ends half a sample interval before
+  it (where LAL's last sample is on average) and spaces the samples back
+  from there. It also closes the smaller seams at the start of the
+  merger-ringdown continuation: the integration of `gamma` across it, the
+  first frequency beyond it and the value of `alpha` there. The waveform
+  then changes smoothly with the parameters, at the same cost; it differs
+  from 320 by about the size of 320's jumps (up to ~1e-3), without a
+  systematic offset in the likelihood. 320 is unchanged and still the
+  default.
 
 ## 0.2.0 (2026-10-21)
 

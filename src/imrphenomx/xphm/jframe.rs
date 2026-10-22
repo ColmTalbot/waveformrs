@@ -141,7 +141,14 @@ impl JFrameModes<'_> {
                 Some((m_min.unwrap_or(4), m_max.unwrap_or(1)))
             }
             // only the SpinTaylor angles depend on the range
-            AngleRange::PerMode if self.version != PrecessionVersion::SpinTaylor => Some((1, 4)),
+            AngleRange::PerMode
+                if !matches!(
+                    self.version,
+                    PrecessionVersion::SpinTaylor | PrecessionVersion::SpinTaylorContinuous
+                ) =>
+            {
+                Some((1, 4))
+            }
             AngleRange::PerMode => None,
         };
         let mut groups: Vec<Group> = Vec::new();

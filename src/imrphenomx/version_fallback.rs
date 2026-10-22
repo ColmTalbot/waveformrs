@@ -31,7 +31,9 @@ pub(crate) fn check_version(
         return Ok(());
     }
     let reason = match requested {
-        PrecessionVersion::SpinTaylor => "the in-plane spins are below 1e-7",
+        PrecessionVersion::SpinTaylor | PrecessionVersion::SpinTaylorContinuous => {
+            "the in-plane spins are below 1e-7"
+        }
         PrecessionVersion::Msa => "the MSA system cannot be initialised",
         _ => "the prescription is not available for this binary",
     };

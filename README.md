@@ -15,7 +15,9 @@ Frequency domain:
 - **IMRPhenomXAS**: aligned spins, dominant (2,2) mode.
 - **IMRPhenomXHM**: aligned spins with higher modes.
 - **IMRPhenomXP**: precessing spins, dominant mode. Choice of NNLO, MSA or
-  SpinTaylor precession angles.
+  SpinTaylor precession angles, plus a variant of the SpinTaylor angles
+  that changes smoothly with the masses and spins (LAL's version jumps in
+  small steps, which upsets samplers).
 - **IMRPhenomXPHM**: precessing spins with higher modes, with the same
   choice of precession angles.
 - **IMRPhenomXPNR**: precessing spins tuned to numerical relativity. It

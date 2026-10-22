@@ -122,7 +122,8 @@ fn option_items<'py>(
 }
 
 /// A precession version from LAL's `PhenomXPrecVersion` (102, 223, 320) or
-/// a name (`"NNLO"`, `"MSA"`, `"SpinTaylor"`, case-insensitive).
+/// a name (`"NNLO"`, `"MSA"`, `"SpinTaylor"`, `"SpinTaylorContinuous"`,
+/// case-insensitive).
 fn precession_version(value: &Bound<'_, PyAny>) -> PyResult<PrecessionVersion> {
     if let Ok(name) = value.cast::<PyString>() {
         let name = name.to_cow()?;
@@ -130,9 +131,12 @@ fn precession_version(value: &Bound<'_, PyAny>) -> PyResult<PrecessionVersion> {
             "nnlo" => Ok(PrecessionVersion::Nnlo),
             "msa" => Ok(PrecessionVersion::Msa),
             "spintaylor" | "spin_taylor" => Ok(PrecessionVersion::SpinTaylor),
+            "spintaylorcontinuous" | "spintaylor_continuous" | "spin_taylor_continuous" => {
+                Ok(PrecessionVersion::SpinTaylorContinuous)
+            }
             _ => Err(invalid_parameter(format!(
-                "unknown precession version {name:?}: use 102 (\"NNLO\"), 223 (\"MSA\") or \
-                 320 (\"SpinTaylor\")"
+                "unknown precession version {name:?}: use 102 (\"NNLO\"), 223 (\"MSA\"), \
+                 320 (\"SpinTaylor\") or \"SpinTaylorContinuous\""
             ))),
         };
     }
@@ -315,7 +319,9 @@ pub fn parse_request(kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<(Binary, Wa
 /// * ``precession_version``: the Euler angles of IMRPhenomXP/XPHM, LAL's
 ///   ``PhenomXPrecVersion``: 102 (``"NNLO"``), 223 (``"MSA"``) or 320
 ///   (``"SpinTaylor"``, the default here; LALSimulation 6.2.0 defaults to
-///   223, see ``WaveformOptions.lalsimulation_defaults()``).
+///   223, see ``WaveformOptions.lalsimulation_defaults()``), or
+///   ``"SpinTaylorContinuous"``, the SpinTaylor angles without their jumps
+///   in the masses and spins (reported as 320).
 /// * ``mode_array``: LAL's ``ModeArray``, a sequence of ``(l, m)`` pairs, or
 ///   ``None`` for all modes of the model.
 /// * ``version_fallback``: whether IMRPhenomXP/XPHM/XPNR may change the

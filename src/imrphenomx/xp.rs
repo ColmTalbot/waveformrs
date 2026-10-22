@@ -576,7 +576,7 @@ impl IMRPhenomXP {
             None => match self.version {
                 PrecessionVersion::Nnlo => 102,
                 PrecessionVersion::Msa => 223,
-                PrecessionVersion::SpinTaylor => {
+                PrecessionVersion::SpinTaylor | PrecessionVersion::SpinTaylorContinuous => {
                     let s1 = self.binary.spin_1;
                     let s2 = self.binary.spin_2;
                     let chi_in_plane =

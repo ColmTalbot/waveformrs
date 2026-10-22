@@ -716,6 +716,40 @@ impl SpinTaylorT4Coefficients {
         espin
     }
 
+    /// The (dimensionless) orbital frequency `M omega` at which the
+    /// integration stops, zero if there is no frequency bound.
+    pub(crate) fn omega_end(&self) -> f64 {
+        self.omega_end
+    }
+
+    /// The quantity whose sign the energy test of [`Self::stopping_test`]
+    /// checks: proportional to `dE/dv`, positive while the PN energy
+    /// decreases as the orbit shrinks.
+    #[inline]
+    pub(crate) fn energy_test(&self, values: &[f64; NUM_VARIABLES]) -> f64 {
+        let v = values[1].cbrt();
+        let lnh = [values[2], values[3], values[4]];
+        let s1 = [values[5], values[6], values[7]];
+        let s2 = [values[8], values[9], values[10]];
+        let lnh_dot_s1 = dot(&lnh, &s1);
+        let lnh_dot_s2 = dot(&lnh, &s2);
+        let s1sq = dot(&s1, &s1);
+        let s2sq = dot(&s2, &s2);
+        let s1_dot_s2 = dot(&s1, &s2);
+        let [espin3, espin4, espin5, espin6] =
+            self.energy_spin_terms(lnh_dot_s1, lnh_dot_s2, s1sq, s2sq, s1_dot_s2);
+        let espin7 = 0.0;
+        let e = &self.ecoeff;
+        let mut test = fma(12., self.etidal10, v * v * (14. * self.etidal12));
+        test = fma(9., e[7] + espin7, v * v * v * test);
+        test = fma(8., e[6] + espin6, v * test);
+        test = fma(7., e[5] + espin5, v * test);
+        test = fma(6., e[4] + espin4, v * test);
+        test = fma(5., e[3] + espin3, v * test);
+        test = fma(4., e[2], v * test);
+        fma(v * v, test, 2.)
+    }
+
     /// Port of `XLALSimInspiralSpinTaylorStoppingTest`.
     ///
     /// `prev_domega` is the state LAL keeps in the coefficient struct.
@@ -729,30 +763,9 @@ impl SpinTaylorT4Coefficients {
     ) -> i32 {
         let omega = values[1];
         let v = omega.cbrt();
-        let lnh = [values[2], values[3], values[4]];
-        let s1 = [values[5], values[6], values[7]];
-        let s2 = [values[8], values[9], values[10]];
-        let lnh_dot_s1 = dot(&lnh, &s1);
-        let lnh_dot_s2 = dot(&lnh, &s2);
-        let s1sq = dot(&s1, &s1);
-        let s2sq = dot(&s2, &s2);
-        let s1_dot_s2 = dot(&s1, &s2);
-
         let omega_start = self.omega_start;
         let omega_end = self.omega_end;
-
-        let [espin3, espin4, espin5, espin6] =
-            self.energy_spin_terms(lnh_dot_s1, lnh_dot_s2, s1sq, s2sq, s1_dot_s2);
-        let espin7 = 0.0;
-        let e = &self.ecoeff;
-        let mut test = fma(12., self.etidal10, v * v * (14. * self.etidal12));
-        test = fma(9., e[7] + espin7, v * v * v * test);
-        test = fma(8., e[6] + espin6, v * test);
-        test = fma(7., e[5] + espin5, v * test);
-        test = fma(6., e[4] + espin4, v * test);
-        test = fma(5., e[3] + espin3, v * test);
-        test = fma(4., e[2], v * test);
-        test = fma(v * v, test, 2.);
+        let test = self.energy_test(values);
 
         let mut ddomega = dvalues[1] - *prev_domega;
         if self.f_end < self.f_start && self.f_end != 0. && *prev_domega != 0. {

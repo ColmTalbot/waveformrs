@@ -316,6 +316,16 @@ pub(crate) fn inspiral_angles_spintaylor(
     prec: &PrecessionStruct,
     f_min: f64,
 ) -> Result<PnArrays, IMRPhenomXError> {
+    if prec.continuous {
+        return inspiral_angles_spintaylor_continuous(
+            wf,
+            prec.chi1,
+            prec.chi2,
+            prec.version,
+            prec.f_ring_aligned + 8. * prec.f_damp_aligned,
+            f_min,
+        );
+    }
     inspiral_angles_spintaylor_with(
         wf,
         prec.chi1,
@@ -423,6 +433,125 @@ pub(crate) fn inspiral_angles_spintaylor_with(
     }
     Ok(arrays)
 }
+
+/// Coarse intervals at the end of the PN solution that are sampled at the
+/// fine spacing, as LAL's fine integration starts 9 samples before the end
+/// of the coarse one.
+const FINE_INTERVALS: usize = 9;
+
+/// [`inspiral_angles_spintaylor_with`] for
+/// [`PrecessionVersion::SpinTaylorContinuous`](crate::imrphenomx::PrecessionVersion::SpinTaylorContinuous):
+/// the same integrations, backward from `f_ref` to below `f_min` and forward
+/// from `f_ref` until the stopping test fails, kept as continuous
+/// solutions. The PN solution ends at a fixed time ([`END_OFFSET`] fine
+/// intervals, where LAL's last sample is on average) before the exact point
+/// where the stopping condition is met, rather than at the last sample
+/// before the step in which it fails, and its samples are spaced back from
+/// there: at LAL's fine spacing over
+/// the last [`FINE_INTERVALS`] coarse intervals and at the coarse spacing
+/// before. Every sample then moves continuously with the parameters, except
+/// for the samples entering at the start, below `f_min`. LAL's separate
+/// fine integration repeats the coarse one to its tolerance, so it is not
+/// needed.
+fn inspiral_angles_spintaylor_continuous(
+    wf: &WaveformStruct,
+    chi1: [f64; 3],
+    chi2: [f64; 3],
+    version: u32,
+    mf_end: f64,
+    f_min: f64,
+) -> Result<PnArrays, IMRPhenomXError> {
+    let fallback = IMRPhenomXError::SpinTaylorFallbackToMsa;
+    let failed = |_| fallback("XLALSimInspiralSpinTaylorPNEvolveOrbit failed");
+    let f_ref = wf.f_ref;
+    if f_min <= 0.0 {
+        return Err(fallback("fmin must be positive"));
+    }
+    if f_ref < f_min {
+        return Err(fallback("fRef must be >= fmin"));
+    }
+    let (m1_si, m2_si) = (wf.m1_si, wf.m2_si);
+    let pi_gm = PI * (m1_si + m2_si) * (G_SI / C_SI) / (C_SI * C_SI);
+    let lambda = [wf.lambda1, wf.lambda2];
+    let quadparam = [wf.quadparam1, wf.quadparam2];
+    let binary = SpinTaylorT4::new(m1_si, m2_si, chi1, chi2).with_matter(lambda, quadparam);
+
+    let f_meco_hz = mf_to_hz(wf.f_meco, wf.m_tot);
+    let mut f_min = f_min;
+    if f_min > f_meco_hz && (version == 320 || version == 321) {
+        f_min = f_meco_hz;
+    }
+    let f_cut = mf_to_hz(mf_end, wf.m_tot);
+    let coarse_fac = 10.0f32 as f64;
+    let delta_t_coarse = 0.5 * coarse_fac / f_cut;
+
+    // Always integrate backward (also for f_ref = f_min), so that the
+    // solution starts below f_min.
+    let f_below = (f_min - 0.5).max(0.5 * f_min);
+    let backward = binary
+        .evolve_dense(delta_t_coarse, f_ref, f_below)
+        .map_err(failed)?;
+    let forward = binary
+        .evolve_dense(delta_t_coarse, f_ref, f_cut)
+        .map_err(failed)?;
+    // time in units of the total mass, zero at f_ref
+    let m_sec = pi_gm / PI;
+    let (start, _) = backward.span();
+    let coarse = delta_t_coarse / m_sec;
+    let fine = 0.5 / f_cut / m_sec;
+    // LAL's last sample falls anywhere in the last fine interval before
+    // the integration stops: end half an interval early, LAL's end on
+    // average.
+    let end = forward.end_time() - END_OFFSET * fine;
+    let state = |t: f64| {
+        if t >= 0.0 {
+            forward.state(t)
+        } else {
+            backward.state(t)
+        }
+    };
+    let fine_samples = (FINE_INTERVALS as f64 * coarse / fine).round() as usize;
+    let handoff = end - FINE_INTERVALS as f64 * coarse;
+    let mut times: Vec<f64> = (0..fine_samples)
+        .map(|k| end - k as f64 * fine)
+        .chain((0..).map(|j| handoff - j as f64 * coarse))
+        .take_while(|&t| t >= start)
+        .collect();
+    times.reverse();
+    if times.len() < 4 {
+        return Err(fallback("too few points for spline interpolation"));
+    }
+    let mut v = Vec::with_capacity(times.len());
+    let mut lnhat = [
+        Vec::with_capacity(times.len()),
+        Vec::with_capacity(times.len()),
+        Vec::with_capacity(times.len()),
+    ];
+    for &t in &times {
+        let y = state(t);
+        v.push(y[1].cbrt());
+        for (series, value) in lnhat.iter_mut().zip(&y[2..5]) {
+            series.push(*value);
+        }
+    }
+    let (s1_end, s2_end) = forward.spins(&state(end));
+    let arrays = PnArrays {
+        v,
+        lnhat,
+        s1_end,
+        s2_end,
+    };
+    let f_min_pn = arrays.v[0].powf(3.) / pi_gm;
+    if f_min_pn < 0. || f_min_pn > f_min {
+        return Err(fallback("PN solution starts above fmin"));
+    }
+    Ok(arrays)
+}
+
+/// How far before the exact end of the integration the continuous PN
+/// solution ends, in fine sampling intervals (see
+/// [`inspiral_angles_spintaylor_continuous`]).
+const END_OFFSET: f64 = 0.5;
 
 /// `evaluate_QNMfit_fdamp21` of `LALSimIMRPhenomXHM_qnm.c`, the damping
 /// frequency of the (2,1) mode (accumulated with fused multiply-adds, see
@@ -707,6 +836,10 @@ pub(crate) struct SpinTaylorAngles {
     pub(crate) gamma_ref: f64,
     /// Precession version (320 or 321 continue the angles analytically).
     version: u32,
+    /// [`PrecessionVersion::SpinTaylorContinuous`](crate::imrphenomx::PrecessionVersion::SpinTaylorContinuous):
+    /// the angles are made continuous across `ftrans_mrd` as it moves with
+    /// the parameters (see [`SpinTaylorAngles::new`]).
+    continuous: bool,
 }
 
 impl SpinTaylorAngles {
@@ -812,6 +945,22 @@ impl SpinTaylorAngles {
             (AlphaMrd::default(), BetaMrd::default())
         };
 
+        let mut alpha_mrd = alpha_mrd;
+        let continuous = prec.continuous && matches!(prec.version, 320 | 321);
+        if continuous {
+            // LAL's MRD alpha matches the spline at 0.97 and 0.99 fmax but
+            // takes over at ftrans_MRD = 0.98 fmax, where the two differ
+            // slightly: the frequencies at which one or the other is used
+            // change with the parameters, so shift the MRD alpha to meet
+            // the spline there. (cos(beta) is matched at ftrans_MRD.)
+            if !alpha_spline.contains(ftrans_mrd) {
+                return Err(IMRPhenomXError::SpinTaylorAngles(
+                    "alpha could not be interpolated for the MRD continuation",
+                ));
+            }
+            alpha_mrd.a += alpha_mrd.alpha(ftrans_mrd) - alpha_spline.eval(ftrans_mrd);
+        }
+
         Ok(Self {
             alpha_spline,
             cosbeta_spline,
@@ -823,11 +972,68 @@ impl SpinTaylorAngles {
             alpha_ref: 0.0,
             gamma_ref: 0.0,
             version: prec.version,
+            continuous,
         })
     }
 
     fn continues_analytically(&self) -> bool {
         self.version == 320 || self.version == 321
+    }
+
+    /// The change of `gamma` from `mf_low` to `mf_high`, with Boole's rule,
+    /// from the splines of `alpha` and `cos(beta)`.
+    fn spline_gamma_step(
+        &self,
+        mf_low: f64,
+        mf_high: f64,
+        hint: &mut usize,
+    ) -> Result<f64, IMRPhenomXError> {
+        let step = (mf_high - mf_low) * 0.25;
+        let mut values = [0.0; 5];
+        for (j, value) in values.iter_mut().enumerate() {
+            let mf = fma(j as f64, step, mf_low);
+            if !self.alpha_spline.contains(mf) {
+                return Err(IMRPhenomXError::SpinTaylorAngles(
+                    "could not evaluate splines for alpha and/or gamma angles",
+                ));
+            }
+            *hint = self.alpha_spline.locate(mf, *hint);
+            *value =
+                self.cosbeta_spline.eval_in(*hint, mf) * self.alpha_spline.derivative_in(*hint, mf);
+        }
+        Ok(boole(&values, step))
+    }
+
+    /// The change of `gamma` from `mf_low` to `mf_high`, with Boole's rule,
+    /// from the merger-ringdown continuation of `alpha` and `beta`.
+    fn mrd_gamma_step(&self, mf_low: f64, mf_high: f64) -> f64 {
+        let step = (mf_high - mf_low) * 0.25;
+        let values: [f64; 5] = std::array::from_fn(|j| {
+            let mf = fma(j as f64, step, mf_low);
+            self.beta_mrd.beta(mf).cos() * self.alpha_mrd.dalpha(mf)
+        });
+        boole(&values, step)
+    }
+
+    /// The `gamma` from which LAL integrates to the first frequency `mf`
+    /// above ftrans_MRD of a grid, `mf_previous` being the frequency before
+    /// it. LAL starts from `gamma` at `mf_previous` and adds the step from
+    /// `mf` to `2 mf - mf_previous`, so `gamma` at `mf` jumps when ftrans_MRD
+    /// crosses a frequency of the grid. For the continuous angles, start
+    /// instead from the spline at ftrans_MRD less the step from `mf` to
+    /// `ftrans_MRD + mf - mf_previous`: LAL's value when ftrans_MRD is at
+    /// `mf_previous`, and the spline's when it reaches `mf`.
+    fn gamma_before_mrd(&self, gamma_previous: f64, mf_previous: f64, mf: f64) -> f64 {
+        if !(self.continuous && mf_previous < self.ftrans_mrd && self.ftrans_mrd <= mf) {
+            return gamma_previous;
+        }
+        match &self.gamma_spline {
+            Some(spline) if spline.contains(self.ftrans_mrd) => {
+                spline.eval(self.ftrans_mrd)
+                    - self.mrd_gamma_step(mf, self.ftrans_mrd + (mf - mf_previous))
+            }
+            _ => gamma_previous,
+        }
     }
 
     /// `gamma_from_alpha_cosbeta`: the change of `gamma` from `Mf` to
@@ -857,6 +1063,16 @@ impl SpinTaylorAngles {
         cache: &mut BooleCache,
     ) -> Result<f64, IMRPhenomXError> {
         let mf_high = mf + delta_mf;
+        if self.continuous && mf <= self.ftrans_mrd && mf_high > self.ftrans_mrd {
+            // The step across ftrans_MRD, in two parts with their own
+            // integrands (LAL uses the spline over the whole step), so
+            // that gamma changes continuously as ftrans_MRD crosses the
+            // integration grid.
+            let inspiral = self.spline_gamma_step(mf, self.ftrans_mrd, hint)?;
+            let mrd = self.mrd_gamma_step(self.ftrans_mrd, mf_high);
+            *cache = BooleCache::default();
+            return Ok(inspiral + mrd);
+        }
         let step = (mf_high - mf) * 0.25;
         let mut alphadotcosbeta = [0.0; 5];
         let inspiral = mf <= self.ftrans_mrd;
@@ -1179,7 +1395,8 @@ impl SpinTaylorAngles {
                     .cos_beta_fast(&mfs, &mut angles.cos_beta[start..], false);
                 let delta_mf =
                     |k: usize| hz_to_mf(frequencies[i + k] - frequencies[i + k - 1], wf.m_tot);
-                let gamma_start = angles.gamma[i - 1];
+                let mf_previous = hz_to_mf(frequencies[i - 1], wf.m_tot);
+                let gamma_start = self.gamma_before_mrd(angles.gamma[i - 1], mf_previous, mfs[0]);
                 self.push_mrd_gamma_fast(&mfs, delta_mf, false, gamma_start, &mut angles.gamma);
                 break;
             }
@@ -1201,7 +1418,8 @@ impl SpinTaylorAngles {
                 let delta_mf = hz_to_mf(frequencies[i] - frequencies[i - 1], wf.m_tot);
                 angles.alpha.push(self.alpha_mrd.alpha(mf) + alpha_offset);
                 angles.cos_beta.push(self.beta_mrd.beta(mf).cos());
-                let previous = angles.gamma[i - 1];
+                let mf_previous = hz_to_mf(frequencies[i - 1], wf.m_tot);
+                let previous = self.gamma_before_mrd(angles.gamma[i - 1], mf_previous, mf);
                 // A failed step keeps the previous value.
                 let deltagamma = self.gamma_step(mf, delta_mf, &mut step_hint).unwrap_or(0.0);
                 angles.gamma.push(previous + deltagamma);
