@@ -10,6 +10,7 @@
 
 use crate::imrphenomx::amplitude::AmpCoefficients;
 use crate::imrphenomx::internals::{fma, UsefulPowers};
+use crate::imrphenomx::jet::Jet;
 use crate::imrphenomx::phase::PhaseCoefficients;
 
 /* ******************************** Amplitude ******************************** */
@@ -172,6 +173,15 @@ pub(crate) fn amp_22_ansatz_from_gammas(
     let gamma_d2 = (f_damp * amp.gamma3) * (f_damp * amp.gamma3);
     let dfr = mf - f_ring;
     (-dfr * gamma_r).exp() * gamma_d13 / fma(dfr, dfr, gamma_d2)
+}
+
+/// [`amp_22_ansatz_exact`] with its first and second derivatives.
+pub(crate) fn amp_22_ansatz_jet(mf: f64, f_ring: f64, f_damp: f64, amp: &AmpCoefficients) -> Jet {
+    let gamma_d13 = f_damp * amp.gamma1 * amp.gamma3;
+    let gamma_r = amp.gamma2 / (amp.gamma3 * f_damp);
+    let gamma_d2 = (f_damp * amp.gamma3) * (f_damp * amp.gamma3);
+    let dfr = Jet::variable(mf) - f_ring;
+    (dfr * -gamma_r).exp() * gamma_d13 / (dfr * dfr + gamma_d2)
 }
 
 /// `IMRPhenomX_Ringdown_Amp_22_DAnsatz`: derivative of the ringdown

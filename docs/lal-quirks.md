@@ -23,7 +23,7 @@ model.
 
 | | what | status | effect |
 |---|---|---|---|
-| 1 | elementary functions, fused multiply-adds | changed | ~1e-16 per operation; up to ~1e-4 in the ill-conditioned parts |
+| 1 | elementary functions, fused multiply-adds, analytic derivatives | changed | ~1e-16 per operation; up to ~1e-4 where LAL amplifies rounding |
 | 2 | IMRPhenomXPNR antisymmetric phase (parity) | fixed (lalsuite !2593) | large for the antisymmetric mode |
 | 3 | (3,2) mixing coefficients in single precision | fixed | ~1e-7 in the (3,2) ringdown |
 | 4 | `I/3` in single precision | fixed | ~3e-8 in one PN coefficient of the (2,1) amplitude (122019, IMRPhenomXPNR) |
@@ -89,11 +89,14 @@ integration. There the crate differs from LAL by about as much as LAL's
 own builds differ from each other (up to ~2e-3 in the (3,2) mode).
 `docs/linux.md` has the measurements.
 
-The (3,2) mode's finite-difference second derivative itself is LAL's
-model, and is kept. An analytic replacement, which makes the higher-mode
-models reproducible between platforms (the crate's own macOS and Linux
-builds then agree to ~1e-12 instead of ~1e-6), is on the branch
-`analytic-32-derivative` and not part of the crate yet.
+LAL fixes several IMRPhenomXHM coefficients from derivatives taken by
+finite differences: the second derivative of the rotated spheroidal
+ringdown phase of the (3,2) mode (step 1e-7), and the amplitude
+derivatives at the region boundaries (step 1e-9). waveformrs uses the
+analytic derivatives of the same functions (`src/imrphenomx/jet.rs`). Its
+own builds on macOS and Linux then agree to ~1e-12 in IMRPhenomXHM
+instead of ~1e-5, and it differs from LAL by about as much as LAL's builds
+differ from each other (CHANGELOG.md has the numbers).
 
 ### 2. IMRPhenomXPNR: the parity of the antisymmetric phase
 

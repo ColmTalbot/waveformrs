@@ -87,8 +87,8 @@ All notable changes to `waveformrs` are recorded here.
   IMRPhenomXP_NRTidal 6e-8 -> 5e-9); the aligned-spin models are slightly
   closer to both. The crate's own builds (macOS arm64, Linux arm64 and
   amd64) agree to ~1e-12 for the models without higher modes (TaylorF2 and
-  IMRPhenomD are now identical on Linux arm64 and amd64) and to ~1e-6
-  (median) for the higher-mode models, whose (3,2) mode amplifies rounding.
+  IMRPhenomD are now identical on Linux arm64 and amd64); for the
+  higher-mode models see the analytic derivatives below.
   On Linux the per-frequency paths of TaylorF2, IMRPhenomD and IMRPhenomXAS
   are 6-18% slower without the inlined `cbrt`; the other models and the
   grid paths are unchanged or a few per cent faster, on macOS as well.
@@ -127,6 +127,41 @@ All notable changes to `waveformrs` are recorded here.
   and 1 ulp off); fused multiply-adds in the NRSur7dq4 frame rotation; and
   no copies of OpenBLAS's kernels in the NRSur7dq4 interpolants and the
   IMRPhenomX LU solves.
+- **Analytic derivatives in IMRPhenomXHM.** Where LALSimulation fixes
+  coefficients from derivatives of the ansatzes taken by finite
+  differences, the crate now uses the analytic derivatives of the same
+  functions (evaluated with `src/imrphenomx/jet.rs`, a value with its first
+  and second derivatives):
+  - the first and second derivatives of the phase of the rotated
+    spheroidal ringdown of the (3,2) mode, which fix its intermediate phase
+    (central differences with step 1e-7, amplifying rounding by ~1e14);
+  - the derivative of the amplitude of the rotated (3,2) ringdown at the
+    intermediate-ringdown boundary, and of the inspiral amplitude at the
+    inspiral-intermediate boundary of every mode, in both releases (122022
+    and the 122019 of IMRPhenomXPNR; fourth-order differences with step
+    1e-9).
+
+  The crate's builds (macOS arm64, Linux arm64 and Linux amd64, 100 draws
+  per model, max relative error of the polarizations between each pair of
+  builds) now agree to:
+
+  | model | median, before -> after | max, before -> after |
+  |---|---|---|
+  | IMRPhenomXHM | 4e-7 -> 2e-13 | 3e-5 -> 5e-12 |
+  | IMRPhenomXPHM (NNLO) | 6e-7 -> 3e-13 | 8e-5 -> 6e-12 |
+  | IMRPhenomXPHM (MSA) | 5e-7 -> 4e-13 | 1e-4 -> 9e-7 |
+  | IMRPhenomXPHM (SpinTaylor) | 9e-7 -> 2e-11 | 4e-4 -> 1.5e-6 |
+  | IMRPhenomXPNR | 7e-7 -> 2e-10 | 2e-5 -> 2e-8 |
+
+  (the remaining differences of XPHM come from the MSA and SpinTaylor
+  angles). In exchange the crate no longer reproduces the osx-arm64
+  lalsimulation 6.2.0 to ~1e-15: against it (200 draws per model) the
+  median relative error is ~4e-7 to 5e-7 and the maximum ~2e-5
+  (IMRPhenomXHM) to ~2e-4 (XPHM), the size of the differences between
+  LAL's own builds on the same draws (osx-arm64, Linux arm64 and amd64:
+  medians 2e-7 to 8e-7, maxima 2e-5 to 4e-4). Every test passes with the
+  existing tolerances; the closest is the release-122019 IMRPhenomXHM at
+  mass ratio 100 (4.9e-4 against 1e-3).
 - **The same test tolerances on every platform.** `tests/common` and the
   Python tests no longer treat macOS arm64 as a mirrored build: the suites
   that amplify rounding (`AMPLIFYING_SUITE_TOLERANCES`) have their looser

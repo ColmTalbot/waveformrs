@@ -6,12 +6,13 @@
 //! (`PhenomXHMReleaseVersion` 122022 with the 122019 phase).
 //!
 //! Every coefficient is computed operation by operation as in LALSimulation
-//! (with fused multiply-adds where the hardware has them, see [`fma`]). The
-//! (3,2) mode's intermediate phase is fixed by a second derivative computed
-//! by finite differences with a step of 1e-7 (`FSTEP_MIXING`), which
-//! amplifies rounding differences by ~1e14, as do the numerical derivatives
-//! of the amplitude at the region boundaries: these parts differ between
-//! platforms, and from LAL, far more than the rest of the model.
+//! (with fused multiply-adds where the hardware has them, see [`fma`]),
+//! except the derivatives of the ansatzes at the region boundaries: the
+//! (3,2) mode's intermediate phase is fixed by the second derivative of the
+//! rotated spheroidal ringdown phase, which LALSimulation takes by finite
+//! differences with a step of 1e-7 (amplifying rounding by ~1e14), and the
+//! amplitudes by derivatives with a step of 1e-9. Here they are the
+//! analytic derivatives of the same functions (see [`jet`]).
 
 use std::f64::consts::{FRAC_PI_4, PI};
 
@@ -19,9 +20,11 @@ use num_complex::Complex;
 
 use crate::imrphenomx::amplitude::AmpCoefficients;
 use crate::imrphenomx::internals::{fma, UsefulPowers, WaveformStruct};
+use crate::imrphenomx::jet::{self, Jet};
 use crate::imrphenomx::linalg::lu_solve;
 use crate::imrphenomx::phase::{
-    dphase_22, phase_22, phase_22_connection_coefficients, time_shift_22, PhaseCoefficients,
+    dphase_22, phase_22, phase_22_connection_coefficients, phase_22_jet, time_shift_22,
+    PhaseCoefficients,
 };
 use crate::imrphenomx::utilities::psi4_to_strain;
 use crate::imrphenomx::{
@@ -30,10 +33,6 @@ use crate::imrphenomx::{
 
 /// `FALSE_ZERO`: value replacing negative amplitudes.
 const FALSE_ZERO: f64 = 1.0e-15;
-
-/// Finite-difference step of the (3,2) ringdown phase derivatives in
-/// `IMRPhenomXHM_GetPhaseCoefficients`.
-const FSTEP_MIXING: f64 = 0.0000001;
 
 /// A parameter-space fit of IMRPhenomXHM, `ParameterSpaceFit`.
 pub(crate) type Fit = fn(&WaveformStruct) -> f64;
@@ -471,6 +470,41 @@ impl HMMode {
         self.rotate(powers, wf22r)
     }
 
+    /// [`Self::spheroidal_to_spherical`] at `mf` with its first and second
+    /// derivatives (the value is that of [`Self::spheroidal_to_spherical`]).
+    pub(crate) fn spheroidal_to_spherical_jet(&self, mf: f64) -> [Complex<f64>; 3] {
+        let mix = self
+            .mixing
+            .as_ref()
+            .expect("IMRPhenomXHM: spheroidal rotation without mixing data");
+        let powers = UsefulPowers::new(mf);
+        let mut amp22 = ringdown::amp_22_ansatz_jet(mf, mix.f_ring22, mix.f_damp22, &mix.amp22);
+        if self.wfhm.ringdown_amp_version != 0 {
+            amp22 = amp22 * Jet::power(mf, -7. / 6.) * self.wfhm.amp_norm;
+        }
+        let phi22 = phase_22_jet(mf, &powers, &mix.phase22) * mix.inveta
+            + Jet::variable(mf) * self.wfhm.timeshift
+            + (self.wfhm.phaseshift + self.wfhm.phiref22);
+        let amplm = if self.wfhm.ringdown_amp_version == 0 {
+            hm_amp_122019::rd_amp_ansatz_jet(mf, &self.wfhm, &self.amp)
+        } else {
+            hm_ringdown::amp_ansatz_jet(mf, &self.wfhm, &self.amp)
+        };
+        let philm = Jet::new(
+            hm_ringdown::phase_ansatz_int(mf, &powers, &self.wfhm, &self.phase),
+            hm_ringdown::phase_ansatz(mf, &powers, &self.wfhm, &self.phase),
+            hm_ringdown::phase_ansatz_jet(mf, &self.wfhm, &self.phase).d1,
+        );
+        let [c22, c32] = self.mixing_factors();
+        let a = jet::polar(c22, amp22, phi22);
+        let b = jet::polar(c32, amplm, philm);
+        [
+            self.spheroidal_to_spherical(&powers),
+            a[1] + b[1],
+            a[2] + b[2],
+        ]
+    }
+
     /// `SpheroidalToSphericalRecycle`: as
     /// [`HMMode::spheroidal_to_spherical`] with the 22 mode `wf22` (strain,
     /// including `amp0`) computed elsewhere.
@@ -668,8 +702,8 @@ fn get_amplitude_coefficients(
     if wfhm.release == hm_amp_122019::RELEASE_122019 {
         // The rotation only uses quantities the amplitude does not change.
         let wfhm_rotation = *wfhm;
-        hm_amp_122019::get_amplitude_coefficients(amp, wfhm, wf, |powers, amp| {
-            rotated_32(powers, *amp, phase, mixing, &wfhm_rotation)
+        hm_amp_122019::get_amplitude_coefficients(amp, wfhm, wf, |mf, amp| {
+            rotated_32(mf, *amp, phase, mixing, &wfhm_rotation)
         });
         return;
     }
@@ -696,27 +730,27 @@ fn get_amplitude_coefficients(
     // The value of the (3,2) at the right boundary comes from the rotated
     // spheroidal ansatz with the coefficients computed so far.
     let wfhm: &HMWaveformStruct = wfhm;
-    hm_intermediate::intermediate_amp_coefficients(amp, wfhm, wf, |powers, amp| {
-        rotated_32(powers, *amp, phase, mixing, wfhm)
+    hm_intermediate::intermediate_amp_coefficients(amp, wfhm, wf, |mf, amp| {
+        rotated_32(mf, *amp, phase, mixing, wfhm)
     });
 }
 
 /// `SpheroidalToSpherical` with the coefficients available while the
 /// amplitude coefficients are being computed.
 fn rotated_32(
-    powers: &UsefulPowers,
+    mf: f64,
     amp: HMAmpCoefficients,
     phase: &HMPhaseCoefficients,
     mixing: Option<&Mixing22>,
     wfhm: &HMWaveformStruct,
-) -> Complex<f64> {
+) -> [Complex<f64>; 3] {
     let mode = HMMode {
         wfhm: *wfhm,
         amp,
         phase: *phase,
         mixing: mixing.copied(),
     };
-    mode.spheroidal_to_spherical(powers)
+    mode.spheroidal_to_spherical_jet(mf)
 }
 
 /* ---------------------------------------------------------------------- */
@@ -917,24 +951,18 @@ fn get_phase_coefficients(
         let x = lu_solve(matrix, b);
         [x[0], x[1], x[2], x[3], x[4], 0.]
     } else {
-        // Derivatives of the rotated spheroidal ringdown phase at fcut_rd
-        // by finite differences.
-        let mut phase_args = [0.; 3];
-        for (i, arg) in phase_args.iter_mut().enumerate() {
-            let ff = fma((i as i32 - 1) as f64, FSTEP_MIXING, fcut_rd);
-            let powers = UsefulPowers::new(ff);
-            let h = rotated_32(&powers, *amp, phase, mixing, wfhm);
-            *arg = h.im.atan2(h.re) % (2. * PI);
-            // Make sure all the points belong to the same branch.
-            if *arg > 0. {
-                *arg -= 2. * PI;
-            }
+        // The rotated spheroidal ringdown phase at fcut_rd and its
+        // derivatives. LALSimulation takes the derivatives by central
+        // differences with step FSTEP_MIXING = 1e-7, which amplify the
+        // rounding of the phase by ~1e14 in the second derivative.
+        let h = rotated_32(fcut_rd, *amp, phase, mixing, wfhm);
+        let mut phi0 = h[0].im.atan2(h[0].re) % (2. * PI);
+        if phi0 > 0. {
+            phi0 -= 2. * PI;
         }
-        phase.phi0_rd = phase_args[1];
-        let fstep_m1 = 1. / FSTEP_MIXING;
-        phase.dphi0_rd = 0.5 * fstep_m1 * (phase_args[2] - phase_args[0]);
-        let d2phi0_rd =
-            fstep_m1 * fstep_m1 * (fma(-2., phase_args[1], phase_args[2]) + phase_args[0]);
+        phase.phi0_rd = phi0;
+        let (dphi0_rd, d2phi0_rd) = jet::arg_derivatives(h);
+        phase.dphi0_rd = dphi0_rd;
 
         if wf.eta > wfhm.eta_emr {
             phase.colloc_freqs_inter[n_inter - 2] = fcut_rd;
@@ -1122,4 +1150,73 @@ fn get_spheroidal_coefficients(
     let phishift = hm_ringdown::phase_32_spheroidal_phase_shift(wf);
     phase.phi0_s =
         phi22_ref - hm_ringdown::phase_ansatz_int(fref_rd, &powers_of_fref, wfhm, phase) + phishift;
+}
+
+#[cfg(test)]
+mod tests {
+    use num_complex::Complex;
+
+    use super::HMMode;
+    use crate::imrphenomx::hm_amp_122019::{RELEASE_122019, RELEASE_122022};
+    use crate::imrphenomx::internals::{UsefulPowers, WaveformStruct};
+    use crate::imrphenomx::jet;
+    use crate::imrphenomx::phase::PhaseCoefficients;
+
+    /// Fourth-order central differences of `h` with step `d`: the first and
+    /// second derivatives.
+    fn differences(h: impl Fn(f64) -> Complex<f64>, f: f64, d: f64) -> [Complex<f64>; 3] {
+        let [m2, m1, h0, p1, p2] = [-2., -1., 0., 1., 2.].map(|k| h(f + k * d));
+        [
+            h0,
+            (m2 - 8. * m1 + 8. * p1 - p2) / (12. * d),
+            (-m2 + 16. * m1 - 30. * h0 + 16. * p1 - p2) / (12. * d * d),
+        ]
+    }
+
+    /// The analytic derivatives of the rotated (3,2) ringdown against
+    /// well-conditioned finite differences, across the ringdown regions.
+    #[test]
+    fn spheroidal_to_spherical_derivatives() {
+        for release in [RELEASE_122022, RELEASE_122019] {
+            for (m1, m2, chi1, chi2) in [
+                (36.0, 29.0, 0.3, -0.4),
+                (79.0, 4.0, -0.89, 0.96),
+                (20.0, 19.0, 0.95, 0.9),
+            ] {
+                let mut wf =
+                    WaveformStruct::new(m1, m2, chi1, chi2, 0.0, 20.0, 0.4, 10.0, 0.0, 500.0, 0.0)
+                        .unwrap();
+                wf.hm_release = release;
+                let mode = HMMode::new(3, 2, &wf, &PhaseCoefficients::new(&wf));
+                let fring = mode.wfhm.f_ring;
+                let fdamp = mode.wfhm.f_damp;
+                let mut freqs = vec![mode.phase.f_phase_match_im, mode.amp.f_amp_match_im];
+                freqs.extend([-1.7, -0.5, 0.3, 1.2, 3.1].map(|k| fring + k * fdamp));
+                for f in freqs {
+                    let h = mode.spheroidal_to_spherical_jet(f);
+                    let fd = differences(
+                        |x| mode.spheroidal_to_spherical(&UsefulPowers::new(x)),
+                        f,
+                        1e-3 * fdamp,
+                    );
+                    let (d1, d2) = jet::arg_derivatives(h);
+                    let (e1, e2) = jet::arg_derivatives(fd);
+                    let scale = 1. / fdamp;
+                    assert!(
+                        (d1 - e1).abs() < 1e-7 * scale.max(d1.abs()),
+                        "{f}: {d1} {e1}"
+                    );
+                    assert!(
+                        (d2 - e2).abs() < 1e-5 * (scale * scale).max(d2.abs()),
+                        "{f}: {d2} {e2}"
+                    );
+                    let (a1, b1) = (jet::abs_derivative(h), jet::abs_derivative(fd));
+                    assert!(
+                        (a1 - b1).abs() < 1e-7 * h[0].norm() * scale,
+                        "{f}: {a1} {b1}"
+                    );
+                }
+            }
+        }
+    }
 }

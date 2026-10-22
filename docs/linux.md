@@ -129,7 +129,10 @@ is the largest relative error, or the absolute error for angles:
 
 LAL's own Linux builds therefore differ from its macOS build by up to 0.2%
 in the (3,2) mode of IMRPhenomXHM. That mode's intermediate phase takes a
-finite-difference second derivative with a step of 1e-7.
+finite-difference second derivative with a step of 1e-7. The crate uses the
+analytic derivatives instead (CHANGELOG), so its own builds agree to ~1e-12
+in IMRPhenomXHM, and it differs from each LAL build by about as much as
+the LAL builds differ from each other.
 
 ## Floating-point decisions
 
@@ -293,12 +296,6 @@ where NEON is baseline.
 
 ## Open ends
 
-* **Platform-independent higher modes.** The crate's own builds differ by
-  ~1e-6 (median) to ~1e-5 (max) in IMRPhenomXHM, XPHM and XPNR, as LAL's
-  do, because the (3,2) mode's intermediate phase uses a numerical second
-  derivative with a step of 1e-7. The analytic derivative would remove
-  most of this, at the cost of a difference from LAL of the size of the
-  finite-difference error.
 * **Faster per-frequency paths on Linux.** glibc's `sincos` and `atan` are
   slower than Apple's. A vectorised `sin_cos`, which the grid paths already
   use, would speed up the per-frequency paths of TaylorF2, D and XAS, at

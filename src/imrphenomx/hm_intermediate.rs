@@ -13,6 +13,7 @@ use crate::imrphenomx::hm_internals::{
     Fit, HMAmpCoefficients, HMPhaseCoefficients, HMWaveformStruct,
 };
 use crate::imrphenomx::internals::{fma, UsefulPowers, WaveformStruct};
+use crate::imrphenomx::jet;
 use crate::imrphenomx::linalg::lu_solve;
 use crate::imrphenomx::{hm_inspiral, hm_ringdown};
 
@@ -3102,14 +3103,15 @@ pub(crate) fn amp_ansatz(powers: &UsefulPowers, amp: &HMAmpCoefficients) -> f64 
 /// ansatzes at the boundaries.
 ///
 /// `rotated_32` evaluates the spheroidal-to-spherical rotation of the (3,2)
-/// ringdown for the coefficients computed so far.
+/// ringdown for the coefficients computed so far, with its first and second
+/// derivatives.
 pub(crate) fn intermediate_amp_coefficients<F>(
     amp: &mut HMAmpCoefficients,
     wfhm: &HMWaveformStruct,
     wf: &WaveformStruct,
     rotated_32: F,
 ) where
-    F: Fn(&UsefulPowers, &HMAmpCoefficients) -> Complex<f64>,
+    F: Fn(f64, &HMAmpCoefficients) -> [Complex<f64>; 3],
 {
     let version = wfhm.intermediate_amp_version;
     let n_colloc = version.len();
@@ -3150,27 +3152,16 @@ pub(crate) fn intermediate_amp_coefficients<F>(
     }
     // Value and derivative at the ringdown boundary.
     let powers_of_frd = UsefulPowers::new(amp.f_amp_match_im);
-    let value = |powers: &UsefulPowers| {
-        if wfhm.mixing_on {
-            let h = rotated_32(powers, amp);
-            h.re.hypot(h.im)
-        } else {
-            hm_ringdown::amp_ansatz(powers, wfhm, amp)
-        }
-    };
-    let rd_value = value(&powers_of_frd);
-    let rd_derivative = if wfhm.mixing_on {
-        // IMRPhenomXHM_RD_Amp_NDAnsatz
-        let df = 10e-10;
-        let f = powers_of_frd.itself;
-        let at = |x: f64| value(&UsefulPowers::new(x));
-        let fun2r = at(fma(2., df, f));
-        let funr = at(f + df);
-        let funl = at(f - df);
-        let fun2l = at(fma(-2., df, f));
-        (fma(-8., funl, fma(8., funr, -fun2r)) + fun2l) / (12. * df)
+    let (rd_value, rd_derivative) = if wfhm.mixing_on {
+        // LALSimulation (IMRPhenomXHM_RD_Amp_NDAnsatz) takes the derivative
+        // by fourth-order finite differences with step 1e-9.
+        let h = rotated_32(amp.f_amp_match_im, amp);
+        (h[0].re.hypot(h[0].im), jet::abs_derivative(h))
     } else {
-        hm_ringdown::amp_dansatz(&powers_of_frd, wfhm, amp)
+        (
+            hm_ringdown::amp_ansatz(&powers_of_frd, wfhm, amp),
+            hm_ringdown::amp_dansatz(&powers_of_frd, wfhm, amp),
+        )
     };
     amp.colloc_values_inter[n] = rd_value;
     n += 1;

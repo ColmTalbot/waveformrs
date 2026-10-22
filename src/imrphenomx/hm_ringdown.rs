@@ -10,6 +10,7 @@ use crate::imrphenomx::hm_internals::{
     Fit, HMAmpCoefficients, HMPhaseCoefficients, HMWaveformStruct,
 };
 use crate::imrphenomx::internals::{fma, UsefulPowers, WaveformStruct};
+use crate::imrphenomx::jet::Jet;
 use crate::imrphenomx::linalg::lu_solve;
 
 /// `IMRPhenomXHM_RD_Amp_21_rdcp1` (version 122022): ringdown amplitude
@@ -2155,6 +2156,29 @@ fn amp_ansatz_falloff(
     }
 }
 
+/// [`amp_ansatz`] with its first and second derivatives.
+pub(crate) fn amp_ansatz_jet(ff: f64, wfhm: &HMWaveformStruct, amp: &HMAmpCoefficients) -> Jet {
+    let x = Jet::variable(ff);
+    let rd = &amp.rd_coefficients;
+    let f_amp_rd_falloff = wfhm.f_amp_rd_falloff;
+    if amp.n_coefficients_rd_aux > 0 && ff < amp.f_rd_aux {
+        let mut amp_rd = Jet::constant(0.);
+        let mut fpower = Jet::constant(1.);
+        for &coefficient in &amp.rd_aux_coefficients[..amp.n_coefficients_rd_aux] {
+            amp_rd = amp_rd + fpower * coefficient;
+            fpower = fpower * x;
+        }
+        amp_rd
+    } else if f_amp_rd_falloff > 0. && ff >= f_amp_rd_falloff {
+        ((x - f_amp_rd_falloff) * -rd[4]).exp() * rd[3]
+    } else {
+        let fda = wfhm.f_damp;
+        let dfr = x - wfhm.f_ring;
+        let dfd = fda * rd[2];
+        rd[0] * fda / ((dfr * (rd[1] / dfd)).exp() * (dfr * dfr + dfd * dfd))
+    }
+}
+
 /// `IMRPhenomXHM_RD_Amp_DAnsatz` (versions 1 and 2): derivative of the
 /// Lorentzian ringdown amplitude.
 pub(crate) fn amp_dansatz(
@@ -2194,6 +2218,27 @@ pub(crate) fn phase_ansatz(
     } else {
         let d = fma(phase.alpha2_s, powers.m_two, phase.alpha0_s);
         fma(phase.alpha4_s, powers.m_four, d) + (phase.alpha_l_s * fda) / den
+    }
+}
+
+/// [`phase_ansatz`] (the phase derivative) with its first and second
+/// derivatives.
+pub(crate) fn phase_ansatz_jet(
+    ff: f64,
+    wfhm: &HMWaveformStruct,
+    phase: &HMPhaseCoefficients,
+) -> Jet {
+    let x = Jet::variable(ff);
+    let frd = wfhm.f_ring;
+    let fda = wfhm.f_damp;
+    let lorentzian = fda / ((x - frd) * (x - frd) + fda * fda);
+    if !wfhm.mixing_on {
+        Jet::power(ff, -2.) * (frd * frd * phase.alpha2) + lorentzian * phase.alpha_l + phase.alpha0
+    } else {
+        Jet::power(ff, -2.) * phase.alpha2_s
+            + Jet::power(ff, -4.) * phase.alpha4_s
+            + lorentzian * phase.alpha_l_s
+            + phase.alpha0_s
     }
 }
 

@@ -10,6 +10,7 @@ use std::f64::consts::{LN_2, PI};
 
 use crate::constants::EGAMMA;
 use crate::imrphenomx::internals::{fma, UsefulPowers, WaveformStruct, POWERS_OF_LALPI};
+use crate::imrphenomx::jet::Jet;
 use crate::imrphenomx::linalg::lu_solve;
 use crate::imrphenomx::utilities::{linb, psi4_to_strain};
 use crate::imrphenomx::{inspiral, intermediate, ringdown};
@@ -690,6 +691,50 @@ pub(crate) fn dphase_22(mf: f64, powers: &UsefulPowers, phase: &PhaseCoefficient
     } else {
         intermediate::phase_22_ansatz(mf, powers, phase) + phase.c2_int
     }
+}
+
+/// The phase of the 22 ([`phase_22`]) with its first ([`dphase_22`]) and
+/// second derivatives, the latter by differentiating the phase-derivative
+/// ansatz of the region of `mf`.
+pub(crate) fn phase_22_jet(mf: f64, powers: &UsefulPowers, phase: &PhaseCoefficients) -> Jet {
+    let x = Jet::variable(mf);
+    let p = phase;
+    let dphase = if mf < p.f_phase_match_in {
+        let pw = |k: f64| Jet::power(mf, k);
+        let log = x.ln();
+        let pn = pw(2. / 3.) * p.dphi2
+            + x * p.dphi3
+            + pw(4. / 3.) * p.dphi4
+            + pw(5. / 3.) * p.dphi5
+            + pw(2.) * p.dphi6
+            + pw(2.) * log * p.dphi6l
+            + pw(7. / 3.) * p.dphi7
+            + pw(8. / 3.) * p.dphi8
+            + pw(8. / 3.) * log * p.dphi8l
+            + p.dphi0;
+        let pseudo = pw(8. / 3.) * p.a0 + pw(3.) * p.a1 + pw(10. / 3.) * p.a2 + pw(11. / 3.) * p.a3;
+        (pn + pseudo) * pw(-8. / 3.) * p.dphase_norm
+    } else if mf >= p.f_phase_match_im {
+        let dfr = x - p.f_ring;
+        Jet::power(mf, -1. / 3.) * p.c1
+            + Jet::power(mf, -2.) * p.c2
+            + Jet::power(mf, -4.) * p.c4
+            + p.c_l / (dfr * dfr + p.f_damp * p.f_damp)
+            + p.c0
+    } else {
+        let dfr = x - p.f_ring;
+        x.recip() * p.b1
+            + Jet::power(mf, -2.) * p.b2
+            + Jet::power(mf, -3.) * p.b3
+            + Jet::power(mf, -4.) * p.b4
+            + (4. * p.c_l_gr) / (dfr * dfr + 4. * p.f_damp * p.f_damp)
+            + p.b0
+    };
+    Jet::new(
+        phase_22(mf, powers, phase),
+        dphase_22(mf, powers, phase),
+        dphase.d1,
+    )
 }
 
 /// `IMRPhenomX_TimeShift_22`: linear-in-frequency phase coefficient `linb`
