@@ -48,8 +48,9 @@ def python_work(n=200_000):
 def test_python_runs_during_a_call():
     """Python code in another thread runs while a long call computes: with
     the GIL held it could only finish after the call."""
-    parameters = dict(mass_1=np.full(48, 36.0), mass_2=29.0, spin_1=(0.4, 0.2, 0.3))
-    # make sure the call takes a while (and warm up)
+    parameters = dict(mass_1=np.full(192, 36.0), mass_2=29.0, spin_1=(0.4, 0.2, 0.3))
+    # make sure the call takes a while (~0.3 s, long against a stall of a CI
+    # runner; and warm up)
     start = time.perf_counter()
     wf.batch_polarizations("IMRPhenomXPHM", GRID, parameters, precession_version=223)
     duration = time.perf_counter() - start
