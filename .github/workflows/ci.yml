@@ -1,0 +1,93 @@
+# Tests of the crate and of the Python bindings. See docs/linux.md for the
+# tolerances: strict (mostly bit for bit) on macOS arm64, whose conda-forge
+# lalsimulation produced tests/data, and the cross-build tolerances of
+# tests/common elsewhere.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  # the toolchain of docker/Dockerfile
+  RUST_TOOLCHAIN: 1.90.0
+  NRSUR_URL: https://zenodo.org/records/14999310/files/NRSur7dq4_v1.0.h5?download=1
+  NRSUR_SHA256: 69ddcf046f8b11aff539803d47aae5fe28f12e74636ab04f83c50774f0c2d536
+
+jobs:
+  check:
+    name: warnings, clippy and rustfmt
+    runs-on: ubuntu-latest
+    env:
+      RUSTFLAGS: -D warnings
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          components: clippy, rustfmt
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --check
+      - run: cargo fmt --check
+        working-directory: python
+      - run: cargo build --all-targets
+      - run: cargo build --all-targets --no-default-features
+      # as docker/run.sh check
+      - run: cargo clippy --all-targets -- -D warnings -A clippy::neg_multiply -A clippy::manual_is_multiple_of
+
+  test:
+    name: cargo test (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest, ubuntu-24.04-arm]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+      - uses: Swatinem/rust-cache@v2
+      - name: NRSur7dq4 data
+        uses: ./.github/actions/nrsur-data
+      - run: cargo test --release --no-fail-fast
+      # the doctests of src/conversions need the fft feature (docs/linux.md)
+      - run: cargo test --release --no-fail-fast --no-default-features --lib --tests
+
+  python:
+    name: Python bindings (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+    defaults:
+      run:
+        shell: bash -el {0}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: python
+      - name: NRSur7dq4 data
+        uses: ./.github/actions/nrsur-data
+      # lalsimulation 6.2.0 and the rest of the reference environment
+      - uses: mamba-org/setup-micromamba@v2
+        with:
+          environment-file: docker/environment.yml
+          create-args: pytest maturin
+          cache-environment: true
+      - run: maturin develop --release
+        working-directory: python
+      - run: pytest -v
+        working-directory: python

@@ -2,15 +2,34 @@
 name = "waveformrs"
 version = "0.1.0"
 edition = "2021"
+# Parts are translated from LALSuite and GSL: see NOTICE.md.
+license = "GPL-3.0-or-later"
+# The reference data, the report and the scripts stay in the repository:
+# without them the package (and the sdist of the Python bindings, which
+# bundles this crate) is ~0.5 MB instead of ~15 MB.
+exclude = ["/tests/data", "/report", "/scripts", "/lal_data"]
 
 [dependencies]
 num-complex = "*"
-ndarray = "*"
-ndarray-linalg = {version = "0.16", default-features = false }
-blas-src = { version = "0.10.0", features = ["accelerate"] }
-autodiff = "*"
 once_cell = "*"
+rustfft = { version = "6.2", optional = true }
 
 [features]
 
-default = []
+default = ["fft"]
+# Fourier transforms between the time and frequency domains (`fft`,
+# `conversions::td_from_fd`, `conversions::fd_from_td`).
+fft = ["dep:rustfft"]
+[[example]]
+name = "conversions"
+required-features = ["fft"]
+
+[dev-dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["float_roundtrip"] }
+
+# Whole-program optimisation recovers ~30% for IMRPhenomXAS; it applies to
+# binaries built from this package (examples, tests, benchmarks). Downstream
+# crates should enable `lto = "fat"` in their own release profile.
+[profile.release]
+lto = "fat"

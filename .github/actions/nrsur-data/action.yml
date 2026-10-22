@@ -1,0 +1,25 @@
+name: NRSur7dq4 data
+description: >
+  Download NRSur7dq4_v1.0.h5 into lal_data/ (cached), check its SHA-256 and
+  set NRSUR7DQ4_DATA and LAL_DATA_PATH. Needs NRSUR_URL and NRSUR_SHA256.
+runs:
+  using: composite
+  steps:
+    - uses: actions/cache@v4
+      with:
+        path: lal_data/NRSur7dq4_v1.0.h5
+        key: nrsur7dq4-${{ env.NRSUR_SHA256 }}
+    - shell: bash
+      run: |
+        mkdir -p lal_data
+        file=lal_data/NRSur7dq4_v1.0.h5
+        if [ ! -f "$file" ]; then
+          curl -fsSL --retry 5 -o "$file" "$NRSUR_URL"
+        fi
+        if command -v sha256sum >/dev/null; then
+          echo "$NRSUR_SHA256  $file" | sha256sum -c -
+        else
+          echo "$NRSUR_SHA256  $file" | shasum -a 256 -c -
+        fi
+        echo "NRSUR7DQ4_DATA=$PWD/$file" >> "$GITHUB_ENV"
+        echo "LAL_DATA_PATH=$PWD/lal_data" >> "$GITHUB_ENV"

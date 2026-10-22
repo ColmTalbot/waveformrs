@@ -1,0 +1,428 @@
+{
+ "lalsimulation linux-arm64 vs osx-arm64": {
+  "choose_fd_modes": {
+   "max_relative_error": 0.0006972915102128395,
+   "max_mismatch": 2.1325545740413787e-07,
+   "fraction_bit_identical": 0.2681262141019583,
+   "notes": []
+  },
+  "imrphenomd": {
+   "max_relative_error": 1.0669991521003896e-12,
+   "max_mismatch": 1.1102230246251565e-16,
+   "fraction_bit_identical": 0.440968841285297,
+   "notes": []
+  },
+  "imrphenomxas": {
+   "max_relative_error": 2.3117887822150484e-12,
+   "max_mismatch": 2.220446049250313e-16,
+   "fraction_bit_identical": 0.03992210321324245,
+   "notes": []
+  },
+  "imrphenomxhm": {
+   "max_relative_error": 3.5174782033801806e-06,
+   "max_mismatch": 5.1855519878074574e-11,
+   "fraction_bit_identical": 0.0034079844206426485,
+   "notes": []
+  },
+  "imrphenomxhm_modes": {
+   "max_relative_error": 0.0010505275804743254,
+   "max_mismatch": 9.27064762845653e-07,
+   "fraction_bit_identical": 0.06441717791411043,
+   "notes": []
+  },
+  "imrphenomxp_msa": {
+   "max_relative_error": 3.622153893287898e-09,
+   "max_mismatch": 2.220446049250313e-16,
+   "fraction_bit_identical": 0.01743119266055046,
+   "notes": []
+  },
+  "imrphenomxp_nnlo": {
+   "max_relative_error": 3.092329708707432e-13,
+   "max_mismatch": 2.220446049250313e-16,
+   "fraction_bit_identical": 0.008037018996590355,
+   "notes": []
+  },
+  "imrphenomxp_spintaylor": {
+   "max_relative_error": 7.895612423951014e-11,
+   "max_mismatch": 2.220446049250313e-16,
+   "fraction_bit_identical": 0.002070141256697516,
+   "notes": []
+  },
+  "imrphenomxp_spintaylor_angles": {
+   "max_relative_error": 9.033840342453914e-11,
+   "max_mismatch": 0.0,
+   "fraction_bit_identical": 0.003469210754553339,
+   "notes": []
+  },
+  "imrphenomxp_spintaylor_fallback": {
+   "max_relative_error": 1.4129424308284392e-13,
+   "max_mismatch": 1.1102230246251565e-16,
+   "fraction_bit_identical": 0.3317820147125056,
+   "notes": []
+  },
+  "imrphenomxp_uniform": {
+   "max_relative_error": 7.066887261830622e-11,
+   "max_mismatch": 3.3306690738754696e-16,
+   "fraction_bit_identical": 0.04475609756097561,
+   "notes": []
+  },
+  "imrphenomxphm_modes": {
+   "max_relative_error": 0.00012959091298234227,
+   "max_mismatch": 5.659945512270781e-08,
+   "fraction_bit_identical": 0.002269779507133593,
+   "notes": []
+  },
+  "imrphenomxphm_msa": {
+   "max_relative_error": 2.9601512677810736e-06,
+   "max_mismatch": 9.772016529296934e-11,
+   "fraction_bit_identical": 0.011525229357798166,
+   "notes": []
+  },
+  "imrphenomxphm_nnlo": {
+   "max_relative_error": 8.04511505773352e-06,
+   "max_mismatch": 4.2742676065188334e-10,
+   "fraction_bit_identical": 0.0,
+   "notes": []
+  },
+  "imrphenomxphm_spintaylor": {
+   "max_relative_error": 2.2119821080722835e-05,
+   "max_mismatch": 2.7781068556720356e-09,
+   "fraction_bit_identical": 0.00012177301509985388,
+   "notes": []
+  },
+  "imrphenomxphm_spintaylor_fallback": {
+   "max_relative_error": 8.686666769997537e-06,
+   "max_mismatch": 3.0165758779787666e-11,
+   "fraction_bit_identical": 0.14545454545454545,
+   "notes": []
+  },
+  "imrphenomxphm_uniform": {
+   "max_relative_error": 1.904901481666486e-05,
+   "max_mismatch": 1.283536388285711e-09,
+   "fraction_bit_identical": 0.04275959245610232,
+   "notes": []
+  },
+  "nrsur7dq4": {
+   "max_relative_error": 3.06303922650341e-14,
+   "max_mismatch": 0.0,
+   "fraction_bit_identical": 0.31867891057080244,
+   "notes": []
+  },
+  "nrsur7dq4_dynamics": {
+   "max_relative_error": 1.128230442325401e-12,
+   "max_mismatch": 0.0,
+   "fraction_bit_identical": 0.44644268774703555,
+   "notes": []
+  },
+  "nrsur7dq4_modes": {
+   "max_relative_error": 4.098528087843829e-14,
+   "max_mismatch": 0.0,
+   "fraction_bit_identical": 0.14227274340680793,
+   "notes": []
+  },
+  "spin_weighted_harmonics": {
+   "max_relative_error": 0.0,
+   "max_mismatch": 0.0,
+   "fraction_bit_identical": null,
+   "notes": [
+    "0 of 146 angles in both"
+   ]
+  },
+  "spintaylor": {
+   "max_relative_error": 7.450039237585156e-10,
+   "max_mismatch": 0.0,
+   "fraction_bit_identical": 0.0891451068616423,
+   "notes": []
+  },
+  "taylorf2": {
+   "max_relative_error": 6.821241685506162e-12,
+   "max_mismatch": 2.220446049250313e-16,
+   "fraction_bit_identical": 0.153183885640026,
+   "notes": []
+  }
+ },
+ "lalsimulation linux-amd64 vs osx-arm64": {
+  "choose_fd_modes": {
+   "max_relative_error": 0.0011635880602957746,
+   "max_mismatch": 3.266410071312009e-07,
+   "fraction_bit_identical": 0.2656717593321783,
+   "notes": []
+  },
+  "imrphenomd": {
+   "max_relative_error": 8.891612490759711e-13,
+   "max_mismatch": 2.220446049250313e-16,
+   "fraction_bit_identical": 0.04211295034079844,
+   "notes": []
+  },
+  "imrphenomxas": {
+   "max_relative_error": 3.0230398959845854e-12,
+   "max_mismatch": 2.220446049250313e-16,
+   "fraction_bit_identical": 0.024951314508276534,
+   "notes": []
+  },
+  "imrphenomxhm": {
+   "max_relative_error": 4.0192853958216075e-05,
+   "max_mismatch": 1.2644315594556588e-09,
+   "fraction_bit_identical": 0.0004868549172346641,
+   "notes": []
+  },
+  "imrphenomxhm_modes": {
+   "max_relative_error": 0.0021892250184604813,
+   "max_mismatch": 4.0261038296574014e-06,
+   "fraction_bit_identical": 0.04772645254420787,
+   "notes": []
+  },
+  "imrphenomxp_msa": {
+   "max_relative_error": 3.1860996531936503e-09,
+   "max_mismatch": 2.220446049250313e-16,
+   "fraction_bit_identical": 0.013474770642201836,
+   "notes": []
+  },
+  "imrphenomxp_nnlo": {
+   "max_relative_error": 3.09210345018157e-13,
+   "max_mismatch": 2.220446049250313e-16,
+   "fraction_bit_identical": 0.006697515830491963,
+   "notes": []
+  },
+  "imrphenomxp_spintaylor": {
+   "max_relative_error": 6.1504675956233425e-12,
+   "max_mismatch": 2.220446049250313e-16,
+   "fraction_bit_identical": 0.0017048222113979542,
+   "notes": []
+  },
+  "imrphenomxp_spintaylor_angles": {
+   "max_relative_error": 1.836042429204099e-11,
+   "max_mismatch": 0.0,
+   "fraction_bit_identical": 0.03902862098872507,
+   "notes": []
+  },
+  "imrphenomxp_spintaylor_fallback": {
+   "max_relative_error": 4.3372409053353523e-13,
+   "max_mismatch": 2.220446049250313e-16,
+   "fraction_bit_identical": 0.33151929139768804,
+   "notes": []
+  },
+  "imrphenomxp_uniform": {
+   "max_relative_error": 5.3326773943270495e-12,
+   "max_mismatch": 2.220446049250313e-16,
+   "fraction_bit_identical": 0.043536585365853656,
+   "notes": []
+  },
+  "imrphenomxphm_modes": {
+   "max_relative_error": 0.0001198042674453595,
+   "max_mismatch": 4.837069489393997e-08,
+   "fraction_bit_identical": 0.0006485084306095979,
+   "notes": []
+  },
+  "imrphenomxphm_msa": {
+   "max_relative_error": 3.4809675707882935e-05,
+   "max_mismatch": 4.3862110610248806e-09,
+   "fraction_bit_identical": 0.011467889908256881,
+   "notes": []
+  },
+  "imrphenomxphm_nnlo": {
+   "max_relative_error": 1.882022697858148e-05,
+   "max_mismatch": 2.339073823520721e-09,
+   "fraction_bit_identical": 0.0006088650754992694,
+   "notes": []
+  },
+  "imrphenomxphm_spintaylor": {
+   "max_relative_error": 8.955870924862352e-06,
+   "max_mismatch": 3.662292691331004e-10,
+   "fraction_bit_identical": 0.0,
+   "notes": []
+  },
+  "imrphenomxphm_spintaylor_fallback": {
+   "max_relative_error": 1.627025735905907e-05,
+   "max_mismatch": 1.8335788443124557e-10,
+   "fraction_bit_identical": 0.14545454545454545,
+   "notes": []
+  },
+  "imrphenomxphm_uniform": {
+   "max_relative_error": 1.395941570325904e-05,
+   "max_mismatch": 6.893094983695391e-10,
+   "fraction_bit_identical": 0.04281378712334706,
+   "notes": []
+  },
+  "nrsur7dq4": {
+   "max_relative_error": 6.98633738725363e-13,
+   "max_mismatch": 0.0,
+   "fraction_bit_identical": 0.03859960346446833,
+   "notes": []
+  },
+  "nrsur7dq4_dynamics": {
+   "max_relative_error": 4.76644153530645e-13,
+   "max_mismatch": 0.0,
+   "fraction_bit_identical": 0.2528656126482213,
+   "notes": []
+  },
+  "nrsur7dq4_modes": {
+   "max_relative_error": 8.208619907592958e-13,
+   "max_mismatch": 0.0,
+   "fraction_bit_identical": 0.014890143044759167,
+   "notes": []
+  },
+  "spin_weighted_harmonics": {
+   "max_relative_error": 0.0,
+   "max_mismatch": 0.0,
+   "fraction_bit_identical": null,
+   "notes": [
+    "0 of 146 angles in both"
+   ]
+  },
+  "spintaylor": {
+   "max_relative_error": 1.2820938098419641e-09,
+   "max_mismatch": 0.0,
+   "fraction_bit_identical": 0.08689538807649044,
+   "notes": []
+  },
+  "taylorf2": {
+   "max_relative_error": 6.821241685506162e-12,
+   "max_mismatch": 2.220446049250313e-16,
+   "fraction_bit_identical": 0.08950617283950617,
+   "notes": []
+  }
+ },
+ "lalsimulation linux-amd64 vs linux-arm64": {
+  "choose_fd_modes": {
+   "max_relative_error": 0.0012082732336564086,
+   "max_mismatch": 6.403933509036008e-07,
+   "fraction_bit_identical": 0.26561925762587285,
+   "notes": []
+  },
+  "imrphenomd": {
+   "max_relative_error": 8.891612490759711e-13,
+   "max_mismatch": 2.220446049250313e-16,
+   "fraction_bit_identical": 0.04552093476144109,
+   "notes": []
+  },
+  "imrphenomxas": {
+   "max_relative_error": 1.952340105597203e-12,
+   "max_mismatch": 2.220446049250313e-16,
+   "fraction_bit_identical": 0.0250730282375852,
+   "notes": []
+  },
+  "imrphenomxhm": {
+   "max_relative_error": 4.3710328702499464e-05,
+   "max_mismatch": 1.4954297800073846e-09,
+   "fraction_bit_identical": 0.0004868549172346641,
+   "notes": []
+  },
+  "imrphenomxhm_modes": {
+   "max_relative_error": 0.002086151798289616,
+   "max_mismatch": 1.879691036821285e-06,
+   "fraction_bit_identical": 0.04763623240707326,
+   "notes": []
+  },
+  "imrphenomxp_msa": {
+   "max_relative_error": 3.318770228756165e-09,
+   "max_mismatch": 2.220446049250313e-16,
+   "fraction_bit_identical": 0.013417431192660551,
+   "notes": []
+  },
+  "imrphenomxp_nnlo": {
+   "max_relative_error": 3.095349499951134e-13,
+   "max_mismatch": 1.1102230246251565e-16,
+   "fraction_bit_identical": 0.0030443253774963468,
+   "notes": []
+  },
+  "imrphenomxp_spintaylor": {
+   "max_relative_error": 8.482237541233956e-11,
+   "max_mismatch": 2.220446049250313e-16,
+   "fraction_bit_identical": 0.0017048222113979542,
+   "notes": []
+  },
+  "imrphenomxp_spintaylor_angles": {
+   "max_relative_error": 9.21893672511942e-11,
+   "max_mismatch": 0.0,
+   "fraction_bit_identical": 0.004047412546978896,
+   "notes": []
+  },
+  "imrphenomxp_spintaylor_fallback": {
+   "max_relative_error": 3.021290526450644e-13,
+   "max_mismatch": 2.220446049250313e-16,
+   "fraction_bit_identical": 0.3309938447680528,
+   "notes": []
+  },
+  "imrphenomxp_uniform": {
+   "max_relative_error": 7.5940058188434e-11,
+   "max_mismatch": 3.3306690738754696e-16,
+   "fraction_bit_identical": 0.04365853658536585,
+   "notes": []
+  },
+  "imrphenomxphm_modes": {
+   "max_relative_error": 0.0002493951182578045,
+   "max_mismatch": 2.0961713587119846e-07,
+   "fraction_bit_identical": 0.001621271076523995,
+   "notes": []
+  },
+  "imrphenomxphm_msa": {
+   "max_relative_error": 3.479889378393711e-05,
+   "max_mismatch": 4.383494567328228e-09,
+   "fraction_bit_identical": 0.011467889908256881,
+   "notes": []
+  },
+  "imrphenomxphm_nnlo": {
+   "max_relative_error": 2.6865085948609945e-05,
+   "max_mismatch": 4.766204764194981e-09,
+   "fraction_bit_identical": 0.0,
+   "notes": []
+  },
+  "imrphenomxphm_spintaylor": {
+   "max_relative_error": 3.0469488246184286e-05,
+   "max_mismatch": 3.1663892618993827e-09,
+   "fraction_bit_identical": 0.0,
+   "notes": []
+  },
+  "imrphenomxphm_spintaylor_fallback": {
+   "max_relative_error": 1.9989848445262263e-05,
+   "max_mismatch": 2.767751583476752e-10,
+   "fraction_bit_identical": 0.14545454545454545,
+   "notes": []
+  },
+  "imrphenomxphm_uniform": {
+   "max_relative_error": 3.3008365762341455e-05,
+   "max_mismatch": 3.854060848240692e-09,
+   "fraction_bit_identical": 0.042705397788857576,
+   "notes": []
+  },
+  "nrsur7dq4": {
+   "max_relative_error": 6.971649027470559e-13,
+   "max_mismatch": 0.0,
+   "fraction_bit_identical": 0.03742043201502661,
+   "notes": []
+  },
+  "nrsur7dq4_dynamics": {
+   "max_relative_error": 6.515862887947561e-13,
+   "max_mismatch": 0.0,
+   "fraction_bit_identical": 0.24654150197628458,
+   "notes": []
+  },
+  "nrsur7dq4_modes": {
+   "max_relative_error": 8.23208985101997e-13,
+   "max_mismatch": 0.0,
+   "fraction_bit_identical": 0.014348844638483654,
+   "notes": []
+  },
+  "spin_weighted_harmonics": {
+   "max_relative_error": 4.440892098500626e-16,
+   "max_mismatch": 0.0,
+   "fraction_bit_identical": 0.8685300207039337,
+   "notes": [
+    "46 of 46 angles in both"
+   ]
+  },
+  "spintaylor": {
+   "max_relative_error": 5.370898860909541e-10,
+   "max_mismatch": 0.0,
+   "fraction_bit_identical": 0.09645669291338582,
+   "notes": []
+  },
+  "taylorf2": {
+   "max_relative_error": 6.719016333364492e-12,
+   "max_mismatch": 1.1102230246251565e-16,
+   "fraction_bit_identical": 0.3198505523066927,
+   "notes": []
+  }
+ }
+}

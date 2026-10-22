@@ -1,0 +1,7 @@
+{
+ "description": "examples/benchmark.rs on the original main branch (87f9d9b), Apple Silicon, cargo --release; best of 10x200 iterations, 5921 frequencies (20-1500 Hz, 0.25 Hz), M=60, q=0.5, chi=(0.3,-0.2)",
+ "TaylorF2 new + waveform_us": 231.99,
+ "TaylorF2 new + waveform_modes_us": 235.49,
+ "IMRPhenomD new + waveform_us": 274.15,
+ "IMRPhenomD new + waveform_modes_us": 274.34
+}

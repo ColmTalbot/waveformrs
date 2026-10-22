@@ -1,0 +1,110 @@
+{
+ "lalsimulation_version": "6.2.0",
+ "rows": [
+  {
+   "label": "IMRPhenomD 36+29 Msun",
+   "what": "SimInspiralTD",
+   "rust": 0.000883889,
+   "lal": 0.0023443113796552534,
+   "samples": 13601
+  },
+  {
+   "label": "IMRPhenomXAS 36+29 Msun",
+   "what": "SimInspiralTD",
+   "rust": 0.000932153,
+   "lal": 0.0023783064135427714,
+   "samples": 13601
+  },
+  {
+   "label": "IMRPhenomXHM 36+29 Msun",
+   "what": "SimInspiralTD",
+   "rust": 0.00148559,
+   "lal": 0.003329614341333261,
+   "samples": 13601
+  },
+  {
+   "label": "IMRPhenomXP 36+29 Msun",
+   "what": "SimInspiralTD",
+   "rust": 0.001583473,
+   "lal": 0.004743516387779848,
+   "samples": 13006
+  },
+  {
+   "label": "IMRPhenomXPHM 36+29 Msun",
+   "what": "SimInspiralTD",
+   "rust": 0.004166585,
+   "lal": 0.011517108241417285,
+   "samples": 13006
+  },
+  {
+   "label": "IMRPhenomD 10+5 Msun, 10 Hz",
+   "what": "SimInspiralTD",
+   "rust": 0.032290685,
+   "lal": 0.09056403825525194,
+   "samples": 429577
+  },
+  {
+   "label": "TaylorF2 1.4+1.3 Msun, 30 Hz",
+   "what": "SimInspiralTD",
+   "rust": 0.023486942,
+   "lal": 0.05872000694378383,
+   "samples": 280505
+  },
+  {
+   "label": "NRSur7dq4 40+20 Msun, df = 0, 2048 Hz",
+   "what": "SimInspiralFD",
+   "rust": 0.001041971,
+   "lal": 0.005814698882141086,
+   "samples": 2049
+  },
+  {
+   "label": "NRSur7dq4 40+20 Msun, df = 1/8, 2048 Hz",
+   "what": "SimInspiralFD",
+   "rust": 0.001235007,
+   "lal": 0.006273299219901674,
+   "samples": 16385
+  },
+  {
+   "label": "forward real FFT, N = 2^16",
+   "what": "(plan + FFT)",
+   "rust": 0.000658104,
+   "lal": 0.0004962392528781608,
+   "samples": 65536
+  },
+  {
+   "label": "reverse real FFT, N = 2^16",
+   "what": "(plan + FFT)",
+   "rust": 0.000649783,
+   "lal": 0.0007822579162470571,
+   "samples": 65536
+  },
+  {
+   "label": "forward real FFT, N = 2^16",
+   "what": "(cached plan)",
+   "rust": 0.000197104,
+   "lal": 0.0004962392528781608,
+   "samples": 65536
+  },
+  {
+   "label": "forward real FFT, N = 2^20",
+   "what": "(plan + FFT)",
+   "rust": 0.013522315,
+   "lal": 0.011748250974558814,
+   "samples": 1048576
+  },
+  {
+   "label": "reverse real FFT, N = 2^20",
+   "what": "(plan + FFT)",
+   "rust": 0.013344948,
+   "lal": 0.01733535846920106,
+   "samples": 1048576
+  },
+  {
+   "label": "forward real FFT, N = 2^20",
+   "what": "(cached plan)",
+   "rust": 0.004126762,
+   "lal": 0.011748250974558814,
+   "samples": 1048576
+  }
+ ]
+}

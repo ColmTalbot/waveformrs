@@ -1,0 +1,46 @@
+{
+ "lalsimulation_version": "6.2.0",
+ "n_frequencies": 5921,
+ "description": "Best time per call (s), single thread. Rust: examples/benchmark.rs (construction + polarizations). LAL: SimInspiralChooseFDWaveformSequence on the same 5921 frequencies (multibanding off), and SimInspiralChooseFDWaveform on the uniform 0.25 Hz grid (stops at Mf = 0.3) with multibanding off and with the default thresholds.",
+ "rust": {
+  "TaylorF2": 0.00011009794776119403,
+  "IMRPhenomD": 0.0001422534746970777,
+  "IMRPhenomXAS": 0.00010329371991701245,
+  "IMRPhenomXHM": 0.0010567121010638296,
+  "IMRPhenomXP (102)": 0.0003470972481751825,
+  "IMRPhenomXP (223)": 0.0011310965909090908,
+  "IMRPhenomXP (320)": 0.0007645753192307692,
+  "IMRPhenomXPHM (102)": 0.0020313363402061856,
+  "IMRPhenomXPHM (223)": 0.0050671634615384615,
+  "IMRPhenomXPHM (320)": 0.0033532105,
+  "IMRPhenomXPNR": 0.0038553872549019607,
+  "IMRPhenomXHM (uniform)": 0.000716879798561151,
+  "IMRPhenomXPHM (320) (uniform)": 0.0033756408103448278,
+  "IMRPhenomXPNR (uniform)": 0.003669077925925926,
+  "NRSur7dq4": 0.0010143594051282051,
+  "NRSur7dq4 (workspace)": 6.0410979e-05
+ },
+ "lal_sequence": {
+  "TaylorF2": 0.00017179191746746582,
+  "IMRPhenomD": 0.00030640540243957634,
+  "IMRPhenomXAS": 0.00020844100176223686,
+  "IMRPhenomXHM": 0.0017425096676951008,
+  "IMRPhenomXP (102)": 0.0006539645429009831,
+  "IMRPhenomXP (223)": 0.0015527705072599929,
+  "IMRPhenomXP (320)": 0.002864847640826631,
+  "IMRPhenomXPHM (102)": 0.004395137044290702,
+  "IMRPhenomXPHM (223)": 0.008810452651232481,
+  "IMRPhenomXPHM (320)": 0.008582574254630701,
+  "IMRPhenomXPNR": 0.009409236078638406,
+  "NRSur7dq4": 0.005776187500861638,
+  "NRSur7dq4 (workspace)": 0.005776187500861638
+ },
+ "lal_uniform": {
+  "IMRPhenomXHM (uniform)": 0.0012446050977061509,
+  "IMRPhenomXHM (uniform, default multibanding)": 0.0010545793738653208,
+  "IMRPhenomXPHM (320) (uniform)": 0.008411291642519443,
+  "IMRPhenomXPHM (320) (uniform, default multibanding)": 0.006216757814399898,
+  "IMRPhenomXPNR (uniform)": 0.00867549054832621,
+  "IMRPhenomXPNR (uniform, default multibanding)": 0.007352969537560756
+ }
+}

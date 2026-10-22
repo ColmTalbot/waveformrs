@@ -1,3 +1,6 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2024-2026 Colm Talbot. Parts of waveformrs are translated
+// from LALSuite, GSL and fdlibm: see NOTICE.md for their authors.
 use std::f64::consts::PI;
 
 use crate::constants::EGAMMA;
@@ -9,7 +12,7 @@ pub(crate) fn chi_pn(params: &Params) -> f64 {
     let chi_s = (params.chi_1 + params.chi_2) / 2.0;
     let chi_a = (params.chi_1 - params.chi_2) / 2.0;
 
-    return chi_s * (1.0 - params.eta * 76.0 / 113.0) + params.seta * chi_a;
+    chi_s * (1.0 - params.eta * 76.0 / 113.0) + params.seta * chi_a
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -120,14 +123,13 @@ pub fn taylor_f2_amplitude_2(args: &Params) -> f64 {
 }
 
 pub fn taylor_f2_amplitude_3(args: &Params) -> f64 {
-    args.chi_1 * (27.0 * args.mass_ratio / 16.0 - 11.0 * args.eta / 12.0 + 27.0 / 16.0)
-        + args.chi_2 * (-27.0 * args.mass_ratio / 16.0 - 11.0 * args.eta / 12.0 + 27.0 / 16.0)
+    args.chi_1 * (27.0 * args.seta / 16.0 - 11.0 * args.eta / 12.0 + 27.0 / 16.0)
+        + args.chi_2 * (-27.0 * args.seta / 16.0 - 11.0 * args.eta / 12.0 + 27.0 / 16.0)
 }
 
 pub fn taylor_f2_amplitude_4(args: &Params) -> f64 {
-    args.chi_1.powi(2) * (-81.0 * args.mass_ratio / 64.0 + 81.0 * args.eta / 32.0 - 81.0 / 64.0)
-        + args.chi_2.powi(2)
-            * (81.0 * args.mass_ratio / 64.0 + 81.0 * args.eta / 32.0 - 81.0 / 64.0)
+    args.chi_1.powi(2) * (-81.0 * args.seta / 64.0 + 81.0 * args.eta / 32.0 - 81.0 / 64.0)
+        + args.chi_2.powi(2) * (81.0 * args.seta / 64.0 + 81.0 * args.eta / 32.0 - 81.0 / 64.0)
         + (105271.0 / 24192.0 * args.eta.powi(2)
             - 1975055.0 / 338688.0 * args.eta
             - 27312085.0 / 8128512.0)
@@ -136,18 +138,17 @@ pub fn taylor_f2_amplitude_4(args: &Params) -> f64 {
 
 pub fn taylor_f2_amplitude_5(args: &Params) -> f64 {
     args.chi_1.powi(3)
-        * (args.mass_ratio * (3.0 / 16.0 - 3.0 * args.eta / 16.0) - 9.0 * args.eta / 16.0
-            + 3.0 / 16.0)
+        * (args.seta * (3.0 / 16.0 - 3.0 * args.eta / 16.0) - 9.0 * args.eta / 16.0 + 3.0 / 16.0)
         + args.chi_1
-            * (args.mass_ratio * (287213.0 / 32256.0 - 2083.0 * args.eta / 8064.0)
+            * (args.seta * (287213.0 / 32256.0 - 2083.0 * args.eta / 8064.0)
                 - 2227.0 * args.eta.powi(2) / 2016.0
                 - 15569.0 * args.eta / 1344.0
                 + 287213.0 / 32256.0)
         + args.chi_2.powi(3)
-            * (args.mass_ratio * (3.0 * args.eta / 16.0 - 3.0 / 16.0) - 9.0 * args.eta / 16.0
+            * (args.seta * (3.0 * args.eta / 16.0 - 3.0 / 16.0) - 9.0 * args.eta / 16.0
                 + 3.0 / 16.0)
         + args.chi_2
-            * (args.mass_ratio * (2083.0 * args.eta / 8064.0 - 287213.0 / 32256.0)
+            * (args.seta * (2083.0 * args.eta / 8064.0 - 287213.0 / 32256.0)
                 - 2227.0 * args.eta.powi(2) / 2016.0
                 - 15569.0 * args.eta / 1344.0
                 + 287213.0 / 32256.0)
@@ -156,20 +157,18 @@ pub fn taylor_f2_amplitude_5(args: &Params) -> f64 {
 }
 
 pub fn taylor_f2_amplitude_6(args: &Params) -> f64 {
-    args.chi_1
-        * (-17.0 * PI * args.mass_ratio / 12.0 + 5.0 * PI * args.eta / 3.0 - 17.0 * PI / 12.0)
-        + args.chi_2
-            * (17.0 * PI * args.mass_ratio / 12.0 + 5.0 * PI * args.eta / 3.0 - 17.0 * PI / 12.0)
+    args.chi_1 * (-17.0 * PI * args.seta / 12.0 + 5.0 * PI * args.eta / 3.0 - 17.0 * PI / 12.0)
+        + args.chi_2 * (17.0 * PI * args.seta / 12.0 + 5.0 * PI * args.eta / 3.0 - 17.0 * PI / 12.0)
         + args.chi_1
             * args.chi_2
             * (-133249.0 * args.eta.powi(2) / 8064.0 - 319321.0 * args.eta / 32256.0)
         + args.chi_1.powi(2)
-            * (args.mass_ratio * (-14139.0 * args.eta / 32256.0 - 49039.0 / 14336.0)
+            * (args.seta * (-14139.0 * args.eta / 32256.0 - 49039.0 / 14336.0)
                 + 163199.0 * args.eta.powi(2) / 16128.0
                 + 158633.0 * args.eta / 64512.0
                 - 49039.0 / 14336.0)
         + args.chi_2.powi(2)
-            * (args.mass_ratio * (14139.0 * args.eta / 32256.0 + 49039.0 / 14336.0)
+            * (args.seta * (14139.0 * args.eta / 32256.0 + 49039.0 / 14336.0)
                 + 163199.0 * args.eta.powi(2) / 16128.0
                 + 158633.0 * args.eta / 64512.0
                 - 49039.0 / 14336.0)
@@ -193,7 +192,7 @@ pub fn taylor_f2_phase_2(args: &Params) -> f64 {
 
 pub fn taylor_f2_phase_3(args: &Params) -> f64 {
     let mut phase = -16.0 * PI;
-    for (m_on_m, chi) in vec![(args.m1_on_m, args.chi_1), (args.m2_on_m, args.chi_2)] {
+    for (m_on_m, chi) in [(args.m1_on_m, args.chi_1), (args.m2_on_m, args.chi_2)] {
         phase += m_on_m * (25.0 + 38.0 / 3.0 * m_on_m) * chi;
     }
     phase
@@ -203,7 +202,7 @@ pub fn taylor_f2_phase_4(args: &Params) -> f64 {
     let mut phase =
         15293365.0 / 508032.0 + 27145.0 / 504.0 * args.eta + 3085.0 / 72.0 * args.eta.powi(2);
     phase -= 395.0 / 4.0 * args.eta * args.chi_1 * args.chi_2;
-    for (m_on_m, chi, qm_def) in vec![
+    for (m_on_m, chi, qm_def) in [
         (args.m1_on_m, args.chi_1, args.qm_def_1),
         (args.m2_on_m, args.chi_2, args.qm_def_2),
     ] {
@@ -214,7 +213,7 @@ pub fn taylor_f2_phase_4(args: &Params) -> f64 {
 
 pub fn taylor_f2_phase_5(args: &Params) -> f64 {
     let mut phase = 5.0 / 9.0 * (7729.0 / 84.0 - 13.0 * args.eta) * PI;
-    for (m_on_m, chi) in vec![(args.m1_on_m, args.chi_1), (args.m2_on_m, args.chi_2)] {
+    for (m_on_m, chi) in [(args.m1_on_m, args.chi_1), (args.m2_on_m, args.chi_2)] {
         phase -= chi
             * m_on_m
             * (13915.0 / 84.0 - m_on_m * (1.0 - m_on_m) * 10.0 / 3.0
@@ -230,15 +229,16 @@ pub fn taylor_f2_phase_6(args: &Params) -> f64 {
     phase += args.eta.powi(2) * 76055.0 / 1728.0 - args.eta.powi(3) * 127825.0 / 1296.0;
     phase += taylor_f2_phase_6l(args) * 4.0f64.ln();
     phase += taylor_3pn_ss(args);
-    for (m_on_m, chi) in vec![(args.m1_on_m, args.chi_1), (args.m2_on_m, args.chi_2)] {
+    for (m_on_m, chi) in [(args.m1_on_m, args.chi_1), (args.m2_on_m, args.chi_2)] {
         phase += PI * m_on_m * (1490.0 / 3.0 + m_on_m * 260.0) * chi;
     }
     phase
 }
 
 pub fn taylor_3pn_ss(args: &Params) -> f64 {
-    let mut phase = (32675.0 / 112.0 + 5575.0 / 18.0 * args.eta) * args.chi_1 * args.chi_2;
-    for (m_on_m, chi, qm_def) in vec![
+    let mut phase =
+        (32675.0 / 112.0 + 5575.0 / 18.0 * args.eta) * args.eta * args.chi_1 * args.chi_2;
+    for (m_on_m, chi, qm_def) in [
         (args.m1_on_m, args.chi_1, args.qm_def_1),
         (args.m2_on_m, args.chi_2, args.qm_def_2),
     ] {
@@ -257,7 +257,7 @@ pub fn taylor_f2_phase_7(args: &Params) -> f64 {
     let mut phase = PI
         * (77096675.0 / 254016.0 + 378515.0 / 1512.0 * args.eta
             - 74045.0 / 756.0 * args.eta.powi(2));
-    for (m_on_m, chi) in vec![(args.m1_on_m, args.chi_1), (args.m2_on_m, args.chi_2)] {
+    for (m_on_m, chi) in [(args.m1_on_m, args.chi_1), (args.m2_on_m, args.chi_2)] {
         phase += chi
             * m_on_m
             * (-170978035.0 / 48384.0
@@ -280,7 +280,7 @@ pub fn taylor_f2_phase_9(_: &Params) -> f64 {
 
 pub fn taylor_f2_phase_10(args: &Params) -> f64 {
     let mut phase = 0.0;
-    for (lambda, m_on_m) in vec![(args.lambda_1, args.m1_on_m), (args.lambda_2, args.m2_on_m)] {
+    for (lambda, m_on_m) in [(args.lambda_1, args.m1_on_m), (args.lambda_2, args.m2_on_m)] {
         phase += 24.0 * (-12.0 + 11.0 * m_on_m) * m_on_m.powi(4) * lambda;
     }
     phase
@@ -292,7 +292,7 @@ pub fn taylor_f2_phase_11(_: &Params) -> f64 {
 
 pub fn taylor_f2_phase_12(args: &Params) -> f64 {
     let mut phase = 0.0;
-    for (lambda, m_on_m) in vec![(args.lambda_1, args.m1_on_m), (args.lambda_2, args.m2_on_m)] {
+    for (lambda, m_on_m) in [(args.lambda_1, args.m1_on_m), (args.lambda_2, args.m2_on_m)] {
         phase += (-15895.0 / 28.0 + 4595.0 / 28.0 * m_on_m + 5715.0 / 14.0 * m_on_m.powi(2)
             - 325.0 / 7.0 * m_on_m.powi(3))
             * m_on_m.powi(4)
@@ -303,7 +303,7 @@ pub fn taylor_f2_phase_12(args: &Params) -> f64 {
 
 pub fn taylor_f2_phase_13(args: &Params) -> f64 {
     let mut phase = 0.0;
-    for (lambda, m_on_m) in vec![(args.lambda_1, args.m1_on_m), (args.lambda_2, args.m2_on_m)] {
+    for (lambda, m_on_m) in [(args.lambda_1, args.m1_on_m), (args.lambda_2, args.m2_on_m)] {
         phase += 24.0 * (12.0 - 11.0 * m_on_m) * PI * m_on_m.powi(4) * lambda;
     }
     phase
@@ -311,7 +311,7 @@ pub fn taylor_f2_phase_13(args: &Params) -> f64 {
 
 pub fn taylor_f2_phase_14(args: &Params) -> f64 {
     let mut phase = 0.0;
-    for (lambda, m_on_m) in vec![(args.lambda_1, args.m1_on_m), (args.lambda_2, args.m2_on_m)] {
+    for (lambda, m_on_m) in [(args.lambda_1, args.m1_on_m), (args.lambda_2, args.m2_on_m)] {
         phase += -(m_on_m.powi(4))
             * lambda
             * 5.0
@@ -327,7 +327,7 @@ pub fn taylor_f2_phase_14(args: &Params) -> f64 {
 
 pub fn taylor_f2_phase_15(args: &Params) -> f64 {
     let mut phase = 0.0;
-    for (lambda, m_on_m) in vec![(args.lambda_1, args.m1_on_m), (args.lambda_2, args.m2_on_m)] {
+    for (lambda, m_on_m) in [(args.lambda_1, args.m1_on_m), (args.lambda_2, args.m2_on_m)] {
         phase += (m_on_m.powi(4)) * lambda * 1.0 / 28.0
             * PI
             * (27719.0 - 22415.0 * m_on_m + 7598.0 * m_on_m.powi(2) - 10520.0 * m_on_m.powi(3));

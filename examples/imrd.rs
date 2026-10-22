@@ -26,7 +26,7 @@ fn main() {
             .iter()
             .map(|&f| {
                 if f < f_lower || f > f_max {
-                    return Complex::<f64>::new(0.0, 0.0);
+                    Complex::<f64>::new(0.0, 0.0)
                 } else {
                     imrd.waveform_single_frequency(f, 0.1)
                 }

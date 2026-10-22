@@ -1,0 +1,742 @@
+//! IMRPhenomXPNR against LALSimulation 6.2.0 with the fix of lalsuite
+//! merge request !2593.
+//!
+//! The model includes the fix, which lalsimulation 6.2.0 does not, so the
+//! reference data (suites `imrphenomxpnr_parityfix`,
+//! `imrphenomxpnr_parityfix_uniform`, `imrphenomxpnr_parityfix_modes` and
+//! `imrphenomxpnr_parityfix_sequence_modes`) are computed by
+//! `scripts/generate_reference_data.py` (with `OMP_NUM_THREADS=1`) with
+//! lalsimulation 6.2.0 plus the fix (`git diff 64d2004def^1 64d2004def --
+//! lalsimulation/lib` of lalsuite, built by
+//! `scripts/build_patched_lalsimulation.sh`; the build is recorded in each
+//! file as `lalsimulation_build`). The binaries of `imrphenomxpnr_parityfix`
+//! include the cases in which LAL switches parts of the PNR machinery off
+//! or changes the Euler angles (in-plane spins below `1e-7` and `1e-6`,
+//! SpinTaylor and MSA failures, the re-integration of the SpinTaylor
+//! angles, the transition and outer regions of the calibration, no
+//! merger-ringdown `beta`, ...).
+mod common;
+
+use num_complex::Complex;
+use serde::Deserialize;
+use waveformrs::imrphenomx::{IMRPhenomXError, IMRPhenomXPNR, PrecessingBinary};
+use waveformrs::{
+    choose_fd_model, choose_fd_modes, Approximant, Binary, Error, FrequencyDomainModel,
+    FrequencyModes, WaveformOptions,
+};
+
+type C64 = Complex<f64>;
+
+/// The co-precessing modes `(l, |m'|)` of a LAL mode array.
+fn coprecessing(mode_array: &[(u32, i32)]) -> Vec<(u32, u32)> {
+    let mut modes: Vec<(u32, u32)> = mode_array
+        .iter()
+        .map(|&(ell, emm)| (ell, emm.unsigned_abs()))
+        .collect();
+    modes.sort_unstable();
+    modes.dedup();
+    modes
+}
+
+fn model_of(case: &common::Case) -> IMRPhenomXPNR {
+    let binary = PrecessingBinary {
+        mass_1: case.mass_1,
+        mass_2: case.mass_2,
+        spin_1: case.spin_1,
+        spin_2: case.spin_2,
+        luminosity_distance: case.luminosity_distance,
+        inclination: case.inclination,
+        phi_ref: case.phi_ref,
+        f_ref: case.f_ref,
+    };
+    let model = IMRPhenomXPNR::new(&binary).unwrap();
+    if case.mode_array.is_empty() {
+        model
+    } else {
+        model
+            .with_mode_array(&coprecessing(&case.mode_array))
+            .unwrap()
+    }
+}
+
+/// The prefix of the reference suites (lalsimulation 6.2.0 with the fix of
+/// lalsuite !2593).
+const SUITE: &str = "imrphenomxpnr_parityfix";
+
+/// The model averages the antisymmetric amplitude ratio as Ghosh et al.
+/// 2024 describe (Eq. 17 of arXiv:2310.16980), not in place and weighted
+/// by the frequency steps as LAL does, which moves it from LAL by up to
+/// ~2e-3 on uniform grids and ~7e-3 on the non-uniform grids of the
+/// reference data (docs/lal-quirks.md). These are about three times the
+/// largest differences; the unit tests in `src/imrphenomx/xpnr` compare the
+/// model with LAL's average at the strict tolerances.
+/// `(relative error, mismatch)` on frequency sequences.
+const PAPER_AVERAGE_SEQUENCE: (f64, f64) = (2e-2, 1e-3);
+/// The same on uniform grids.
+const PAPER_AVERAGE_UNIFORM: (f64, f64) = (6e-3, 1e-5);
+
+/// `SimInspiralChooseFDWaveformSequence(..., IMRPhenomXPNR, ...)`.
+#[test]
+fn imrphenomxpnr_matches_patched_lalsimulation() {
+    let (rel, mm) = PAPER_AVERAGE_SEQUENCE;
+    common::check_all(SUITE, rel, mm, |case| {
+        model_of(case).polarizations(&case.frequencies).unwrap()
+    });
+}
+
+/// `SimInspiralChooseFDWaveform(..., IMRPhenomXPNR, ...)` on uniform grids,
+/// multibanding off.
+#[test]
+fn imrphenomxpnr_uniform_matches_patched_lalsimulation() {
+    let (rel, mm) = PAPER_AVERAGE_UNIFORM;
+    common::check_all(&format!("{SUITE}_uniform"), rel, mm, |case| {
+        model_of(case)
+            .polarizations_uniform(case.frequencies[1], case.f_min, case.f_max)
+            .unwrap()
+    });
+}
+
+/// The common interface gives the same polarizations as the model, with
+/// the default options and with LAL 6.2.0's defaults (which only concern
+/// the other models).
+#[test]
+fn imrphenomxpnr_through_choose_fd_model() {
+    let reference = common::load(SUITE);
+    for case in reference.cases.iter().take(6) {
+        let binary = Binary {
+            mass_1: case.mass_1,
+            mass_2: case.mass_2,
+            spin_1: case.spin_1,
+            spin_2: case.spin_2,
+            luminosity_distance: case.luminosity_distance,
+            inclination: case.inclination,
+            phi_ref: case.phi_ref,
+            f_ref: case.f_ref,
+        };
+        let (hp_model, hc_model) = model_of(case).polarizations(&case.frequencies).unwrap();
+        for options in [
+            WaveformOptions::default(),
+            WaveformOptions::lalsimulation_defaults(),
+        ] {
+            let model = choose_fd_model(Approximant::IMRPhenomXPNR, &binary, &options).unwrap();
+            assert_eq!(model.approximant(), Approximant::IMRPhenomXPNR);
+            let (hp, hc) = model.polarizations(&case.frequencies).unwrap();
+            assert_eq!(hp, hp_model);
+            assert_eq!(hc, hc_model);
+        }
+    }
+    assert_eq!(
+        "IMRPhenomXPNR".parse::<Approximant>().unwrap(),
+        Approximant::IMRPhenomXPNR
+    );
+    assert!(Approximant::IMRPhenomXPNR.is_precessing());
+    assert!(Approximant::IMRPhenomXPNR.is_frequency_domain());
+}
+
+#[derive(Deserialize)]
+struct ModesFile {
+    lalsimulation_version: String,
+    cases: Vec<ModesCase>,
+}
+
+#[derive(Deserialize)]
+struct ModesCase {
+    mass_1: f64,
+    mass_2: f64,
+    spin_1: [f64; 3],
+    spin_2: [f64; 3],
+    luminosity_distance: f64,
+    inclination: f64,
+    phi_ref: f64,
+    f_min: f64,
+    f_ref: f64,
+    #[serde(default)]
+    delta_f: f64,
+    f_max: f64,
+    #[serde(default)]
+    mode_array: Vec<(u32, i32)>,
+    /// Uniform grids: every `fd_modes_stride`-th sample of the `length`
+    /// samples of each half.
+    #[serde(default)]
+    fd_modes_stride: usize,
+    #[serde(default)]
+    length: usize,
+    /// Frequency sequences.
+    #[serde(default)]
+    frequencies: Vec<f64>,
+    modes: Vec<LalMode>,
+}
+
+#[derive(Deserialize)]
+struct LalMode {
+    ell: u32,
+    emm: i32,
+    positive_real: Vec<f64>,
+    positive_imag: Vec<f64>,
+    negative_real: Vec<f64>,
+    negative_imag: Vec<f64>,
+}
+
+impl ModesCase {
+    fn binary(&self) -> Binary {
+        Binary {
+            mass_1: self.mass_1,
+            mass_2: self.mass_2,
+            spin_1: self.spin_1,
+            spin_2: self.spin_2,
+            luminosity_distance: self.luminosity_distance,
+            inclination: self.inclination,
+            phi_ref: self.phi_ref,
+            f_ref: self.f_ref,
+        }
+    }
+
+    fn options(&self) -> WaveformOptions {
+        let options = WaveformOptions::default();
+        if self.mode_array.is_empty() {
+            options
+        } else {
+            options.with_mode_array(&self.mode_array)
+        }
+    }
+
+    fn label(&self) -> String {
+        format!(
+            "m1={} m2={} s1={:?} s2={:?} f_ref={} modes={:?}",
+            self.mass_1, self.mass_2, self.spin_1, self.spin_2, self.f_ref, self.mode_array
+        )
+    }
+}
+
+fn load_modes(name: &str) -> ModesFile {
+    let path = common::data_path(name);
+    serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap()
+}
+
+fn zip(re: &[f64], im: &[f64]) -> Vec<C64> {
+    re.iter().zip(im).map(|(&r, &i)| C64::new(r, i)).collect()
+}
+
+/// Compare every mode with LAL's; `pick` selects the samples LAL stores.
+fn compare_modes(
+    case: &ModesCase,
+    modes: &FrequencyModes,
+    pick: impl Fn(&[C64]) -> Vec<C64>,
+    failures: &mut Vec<String>,
+) {
+    let mut lal: Vec<(u32, i32)> = case.modes.iter().map(|m| (m.ell, m.emm)).collect();
+    let mut ours: Vec<(u32, i32)> = modes.modes.iter().map(|m| (m.ell, m.m)).collect();
+    lal.sort_unstable();
+    ours.sort_unstable();
+    assert_eq!(ours, lal, "mode list of {}", case.label());
+    for mode in &case.modes {
+        let ours = modes.mode(mode.ell, mode.emm).unwrap();
+        let mut truth = zip(&mode.positive_real, &mode.positive_imag);
+        truth.extend(zip(&mode.negative_real, &mode.negative_imag));
+        let mut test = pick(&ours.positive);
+        test.extend(pick(&ours.negative));
+        let grid: Vec<f64> = (0..truth.len()).map(|i| i as f64).collect();
+        let result = common::compare(&grid, &test, &truth);
+        println!(
+            "({},{}): max rel err {:.3e}, mismatch {:.3e} | {}",
+            mode.ell,
+            mode.emm,
+            result.max_relative_error,
+            result.mismatch,
+            case.label()
+        );
+        // the (3,+-2) mode of IMRPhenomXHM, spread to every l = 3 mode by
+        // the twisting up, amplifies rounding
+        let suite = if mode.ell == 3 {
+            "imrphenomxpnr_parityfix_modes_l3"
+        } else {
+            "imrphenomxpnr_parityfix_modes"
+        };
+        let (rel, mm) = common::tolerances(suite, PAPER_AVERAGE_SEQUENCE);
+        if !(result.max_relative_error <= rel && result.mismatch <= mm) {
+            failures.push(format!(
+                "({},{}) {result:?} {}",
+                mode.ell,
+                mode.emm,
+                case.label()
+            ));
+        }
+    }
+}
+
+/// `choose_fd_modes` against `SimInspiralChooseFDModes(..., IMRPhenomXPNR)`.
+#[test]
+fn imrphenomxpnr_choose_fd_modes_matches_patched_lalsimulation() {
+    let reference = load_modes(&format!("{SUITE}_modes"));
+    let mut failures = Vec::new();
+    for case in &reference.cases {
+        let modes = choose_fd_modes(
+            Approximant::IMRPhenomXPNR,
+            &case.binary(),
+            case.delta_f,
+            case.f_min,
+            case.f_max,
+            &case.options(),
+        )
+        .unwrap();
+        assert_eq!(modes.frequencies.len(), case.length, "{}", case.label());
+        let stride = case.fd_modes_stride;
+        compare_modes(
+            case,
+            &modes,
+            |h| h.iter().step_by(stride).copied().collect(),
+            &mut failures,
+        );
+    }
+    assert!(
+        failures.is_empty(),
+        "modes differ from lalsimulation {}:\n{}",
+        reference.lalsimulation_version,
+        failures.join("\n")
+    );
+}
+
+/// `FrequencyDomainModel::modes` against
+/// `SimIMRPhenomXPHMFrequencySequenceOneMode` with the flags of
+/// IMRPhenomXPNR.
+#[test]
+fn imrphenomxpnr_sequence_modes_match_patched_lalsimulation() {
+    let reference = load_modes(&format!("{SUITE}_sequence_modes"));
+    let mut failures = Vec::new();
+    for case in &reference.cases {
+        let model =
+            choose_fd_model(Approximant::IMRPhenomXPNR, &case.binary(), &case.options()).unwrap();
+        let modes = model.modes(&case.frequencies).unwrap();
+        assert_eq!(modes.frequencies, case.frequencies);
+        compare_modes(case, &modes, |h| h.to_vec(), &mut failures);
+    }
+    assert!(
+        failures.is_empty(),
+        "modes differ from lalsimulation {}:\n{}",
+        reference.lalsimulation_version,
+        failures.join("\n")
+    );
+}
+
+fn generic_binary() -> PrecessingBinary {
+    PrecessingBinary {
+        mass_1: 36.0,
+        mass_2: 29.0,
+        spin_1: [0.4, 0.2, 0.3],
+        spin_2: [-0.2, 0.3, -0.1],
+        luminosity_distance: 500.0,
+        inclination: 0.7,
+        phi_ref: 1.2,
+        f_ref: 25.0,
+    }
+}
+
+fn max_relative_difference(a: &[C64], b: &[C64]) -> f64 {
+    let scale = b.iter().map(|x| x.norm()).fold(0.0, f64::max);
+    a.iter()
+        .zip(b)
+        .map(|(x, y)| (x - y).norm())
+        .fold(0.0, f64::max)
+        / scale
+}
+
+/// With a mode array every J-frame mode uses the angles of the
+/// polarizations, so the modes give back the polarizations to rounding;
+/// without one each J-frame mode has its own range of SpinTaylor angles,
+/// as in LAL.
+#[test]
+fn modes_reproduce_the_polarizations() {
+    let frequencies: Vec<f64> = (0..400).map(|i| 20.0 * 1.008f64.powi(i)).collect();
+    let all = [(2, 2), (2, 1), (3, 3), (3, 2), (4, 4)];
+    for (model, tolerance) in [
+        (
+            IMRPhenomXPNR::new(&generic_binary())
+                .unwrap()
+                .with_mode_array(&all)
+                .unwrap(),
+            1e-12,
+        ),
+        (IMRPhenomXPNR::new(&generic_binary()).unwrap(), 1e-4),
+    ] {
+        let (hp, hc) = model.polarizations(&frequencies).unwrap();
+        let modes = FrequencyDomainModel::modes(&model, &frequencies).unwrap();
+        let (hp_modes, hc_modes) = modes.polarizations();
+        let error =
+            max_relative_difference(&hp_modes, &hp).max(max_relative_difference(&hc_modes, &hc));
+        println!("modes -> polarizations: {error:.3e}");
+        assert!(error < tolerance, "{error:e}");
+    }
+}
+
+/// Without version fallbacks the model fails where LAL leaves the PNR
+/// angles with the SpinTaylor angles.
+#[test]
+fn version_fallbacks_can_be_switched_off() {
+    let frequencies: Vec<f64> = (0..100).map(|i| 20.0 + 5.0 * i as f64).collect();
+    let strict = |binary: PrecessingBinary| {
+        IMRPhenomXPNR::new(&binary)
+            .unwrap()
+            .with_version_fallback(false)
+    };
+    // the generic binary keeps the SpinTaylor angles
+    let model = strict(generic_binary());
+    assert!(!model.version_fallback());
+    let (hp, _) = model.polarizations(&frequencies).unwrap();
+    let (reference, _) = IMRPhenomXPNR::new(&generic_binary())
+        .unwrap()
+        .polarizations(&frequencies)
+        .unwrap();
+    assert_eq!(hp, reference);
+    // negligible in-plane spins (PNR off, NNLO angles)
+    for spin_1 in [[0.0, 0.0, 0.5], [5e-7, 0.0, 0.5]] {
+        let binary = PrecessingBinary {
+            spin_1,
+            spin_2: [0.0, 0.0, -0.3],
+            ..generic_binary()
+        };
+        assert!(IMRPhenomXPNR::new(&binary)
+            .unwrap()
+            .polarizations(&frequencies)
+            .is_ok());
+        assert!(matches!(
+            strict(binary).polarizations(&frequencies),
+            Err(IMRPhenomXError::PrecessionVersionUnavailable {
+                requested: 330,
+                fallback: 102,
+                ..
+            })
+        ));
+        assert!(matches!(
+            FrequencyDomainModel::modes(&strict(binary), &frequencies),
+            Err(Error::IMRPhenomX(
+                IMRPhenomXError::PrecessionVersionUnavailable { .. }
+            ))
+        ));
+    }
+    // the SpinTaylor integration fails (MSA angles)
+    let heavy = PrecessingBinary {
+        mass_1: 250.0,
+        mass_2: 30.0,
+        spin_1: [0.7, 0.3, -0.4],
+        spin_2: [0.0, -0.5, 0.5],
+        f_ref: 25.0,
+        ..generic_binary()
+    };
+    let heavy_frequencies: Vec<f64> = (0..100).map(|i| 10.0 + 2.0 * i as f64).collect();
+    assert!(matches!(
+        strict(heavy).polarizations(&heavy_frequencies),
+        Err(IMRPhenomXError::PrecessionVersionUnavailable {
+            requested: 330,
+            fallback: 223,
+            ..
+        })
+    ));
+    // through the common interface
+    let options = WaveformOptions::default().with_version_fallback(false);
+    let model = choose_fd_model(Approximant::IMRPhenomXPNR, &heavy, &options).unwrap();
+    assert!(matches!(
+        model.polarizations(&heavy_frequencies),
+        Err(Error::IMRPhenomX(
+            IMRPhenomXError::PrecessionVersionUnavailable { .. }
+        ))
+    ));
+}
+
+/// The errors LAL raises: the reference frequency outside the grid, and a
+/// PNR `beta` that cannot be evaluated at the reference frequency.
+#[test]
+fn errors_where_lal_fails() {
+    let model = IMRPhenomXPNR::new(&generic_binary()).unwrap();
+    // f_ref = 25 Hz below the first frequency
+    let frequencies: Vec<f64> = (0..100).map(|i| 30.0 + 5.0 * i as f64).collect();
+    assert!(matches!(
+        model.polarizations(&frequencies),
+        Err(IMRPhenomXError::InvalidFrequencies(_))
+    ));
+    assert!(model.polarizations_uniform(1.0, 30.0, 0.0).is_err());
+    // gsl_spline_eval for beta returned invalid value
+    let binary = PrecessingBinary {
+        mass_1: 321.94004027129876,
+        mass_2: 128.53563638776637,
+        spin_1: [0.02622700018625369, 0.23401981134468539, 0.5996610543370785],
+        spin_2: [0.0, 0.0, 0.0],
+        f_ref: 40.29510765704967,
+        ..generic_binary()
+    };
+    let frequencies: Vec<f64> = (0..200)
+        .map(|i| 30.0 * (135.20737561269482f64 / 30.0).powf(i as f64 / 199.0))
+        .collect();
+    assert!(matches!(
+        IMRPhenomXPNR::new(&binary)
+            .unwrap()
+            .polarizations(&frequencies),
+        Err(IMRPhenomXError::PnrAngles(_))
+    ));
+    // modes outside those of IMRPhenomXPHM
+    assert!(IMRPhenomXPNR::new(&generic_binary())
+        .unwrap()
+        .with_mode_array(&[(5, 5)])
+        .is_err());
+}
+
+/// The mirror image of `binary` in the orbital plane at the reference
+/// frequency: the in-plane spin components reversed (the spins are axial
+/// vectors), seen from the mirrored direction `pi - inclination`.
+fn mirror(binary: &PrecessingBinary) -> PrecessingBinary {
+    let flip = |s: [f64; 3]| [-s[0], -s[1], s[2]];
+    PrecessingBinary {
+        spin_1: flip(binary.spin_1),
+        spin_2: flip(binary.spin_2),
+        inclination: std::f64::consts::PI - binary.inclination,
+        ..*binary
+    }
+}
+
+/// The largest violation of the mirror symmetry, `max |h_+' - h_+|` and
+/// `max |h_x' + h_x|` relative to the largest `|h|`.
+fn mirror_violation(
+    model: impl Fn(&PrecessingBinary) -> (Vec<C64>, Vec<C64>),
+    binary: &PrecessingBinary,
+) -> f64 {
+    let (hp, hc) = model(binary);
+    let (hp_m, hc_m) = model(&mirror(binary));
+    let scale = hp.iter().chain(&hc).map(|h| h.norm()).fold(0.0, f64::max);
+    let plus = hp.iter().zip(&hp_m).map(|(a, b)| (a - b).norm());
+    let cross = hc.iter().zip(&hc_m).map(|(a, b)| (a + b).norm());
+    plus.chain(cross).fold(0.0, f64::max) / scale
+}
+
+/// Reflection symmetry: the waveform of the mirror image of a binary (in
+/// the orbital plane at the reference frequency) seen from the mirrored
+/// direction is `(h_+, -h_x)` of the binary. With the fix of lalsuite !2593
+/// IMRPhenomXPNR satisfies it to rounding (in LALSimulation 6.2.0 the phase
+/// of the antisymmetric (2,2) mode depends on the line of sight and does not
+/// change sign with the in-plane spins, which breaks it at the level of the
+/// antisymmetric mode).
+#[test]
+fn imrphenomxpnr_is_mirror_symmetric() {
+    let binary = |mass_1, mass_2, spin_1, spin_2, inclination, phi_ref, f_ref| PrecessingBinary {
+        mass_1,
+        mass_2,
+        spin_1,
+        spin_2,
+        luminosity_distance: 500.0,
+        inclination,
+        phi_ref,
+        f_ref,
+    };
+    let binaries = [
+        generic_binary(),
+        binary(
+            60.0,
+            15.0,
+            [0.6, -0.3, 0.5],
+            [0.1, 0.1, 0.0],
+            2.3,
+            4.0,
+            20.0,
+        ),
+        binary(40.0, 4.0, [0.8, 0.0, 0.5], [0.0, 0.0, 0.0], 1.2, 0.9, 20.0),
+        binary(
+            12.0,
+            6.0,
+            [0.2, 0.7, -0.1],
+            [0.3, -0.3, 0.6],
+            0.3,
+            5.5,
+            40.0,
+        ),
+        // the transition region of the PNR angles (merged alpha) and the
+        // PN angles outside the calibration region
+        binary(90.0, 10.0, [0.5, 0.2, 0.1], [0.1, 0.0, 0.2], 1.0, 2.0, 15.0),
+        binary(
+            130.0,
+            10.0,
+            [0.5, 0.2, 0.1],
+            [0.1, 0.0, 0.2],
+            2.0,
+            1.0,
+            12.0,
+        ),
+        // the MSA angles inside PNR (the SpinTaylor integration fails)
+        binary(
+            250.0,
+            30.0,
+            [0.7, 0.3, -0.4],
+            [0.0, -0.5, 0.5],
+            0.8,
+            3.0,
+            25.0,
+        ),
+    ];
+    for binary in &binaries {
+        let f_min = if binary.mass_1 > 80.0 { 10.0 } else { 20.0 };
+        let f_max = 0.3 / (binary.mass_1 + binary.mass_2) / 4.925490947641267e-6;
+        let frequencies: Vec<f64> = (0..300)
+            .map(|i| f_min * (f_max / f_min).powf(i as f64 / 299.0))
+            .collect();
+        let violation = mirror_violation(
+            |b| {
+                IMRPhenomXPNR::new(b)
+                    .unwrap()
+                    .polarizations(&frequencies)
+                    .unwrap()
+            },
+            binary,
+        );
+        println!("mirror violation {violation:.3e} | {binary:?}");
+        assert!(violation < 1e-10, "{violation:e} {binary:?}");
+    }
+    // on a uniform grid as well
+    let uniform = |b: &PrecessingBinary| {
+        IMRPhenomXPNR::new(b)
+            .unwrap()
+            .polarizations_uniform(0.5, 20.0, 512.0)
+            .unwrap()
+    };
+    assert!(mirror_violation(uniform, &generic_binary()) < 1e-10);
+}
+
+/// `np.unwrap(np.angle(h))`.
+fn unwrapped_phase(h: &[C64]) -> Vec<f64> {
+    use std::f64::consts::PI;
+    let mut out = Vec::with_capacity(h.len());
+    let mut correction = 0.0;
+    let mut previous = 0.0;
+    for (i, z) in h.iter().enumerate() {
+        let p = z.im.atan2(z.re);
+        if i > 0 {
+            let dd: f64 = p - previous;
+            // numpy: ddmod = mod(dd + pi, 2 pi) - pi, -pi -> pi for dd > 0
+            let mut ddmod = (dd + PI).rem_euclid(2.0 * PI) - PI;
+            if ddmod == -PI && dd > 0.0 {
+                ddmod = PI;
+            }
+            if dd.abs() >= PI {
+                correction += ddmod - dd;
+            }
+        }
+        previous = p;
+        out.push(p + correction);
+    }
+    out
+}
+
+/// `gen_test_data(0.5, IMRPhenomXPNR, mode_array)` of LALSimulation's
+/// `test/python/test_phenomX.py` with multibanding off: the root sum of
+/// squares of the differences of the amplitudes and unwrapped phases of
+/// `h_+` and `h_x` between `m2 = 30` and `m2 = 20` (`m1 = 50`, `chi1x =
+/// 0.5`, 1 m, inclination `pi / 3`, `delta_f = 0.25`, 30 to 512 Hz).
+fn lal_unit_test_statistics(mode_array: &[(u32, u32)]) -> [f64; 4] {
+    let waveforms: Vec<(Vec<C64>, Vec<C64>)> = [30.0, 20.0]
+        .iter()
+        .map(|&mass_2| {
+            let binary = PrecessingBinary {
+                mass_1: 50.0,
+                mass_2,
+                spin_1: [0.5, 0.0, 0.0],
+                spin_2: [0.0, 0.0, 0.0],
+                // 1 m (LAL_PC_SI = 3.085677581491367e16 m)
+                luminosity_distance: 1.0 / (1e6 * 3.085677581491367e16),
+                inclination: std::f64::consts::PI / 3.0,
+                phi_ref: 0.0,
+                f_ref: 30.0,
+            };
+            IMRPhenomXPNR::new(&binary)
+                .unwrap()
+                .with_mode_array(mode_array)
+                .unwrap()
+                .polarizations_uniform(0.25, 30.0, 512.0)
+                .unwrap()
+        })
+        .collect();
+    let rss = |a: &[f64], b: &[f64]| {
+        a.iter()
+            .zip(b)
+            .map(|(x, y)| (x - y) * (x - y))
+            .sum::<f64>()
+            .sqrt()
+    };
+    let amplitude = |h: &[C64]| h.iter().map(|z| z.norm()).collect::<Vec<f64>>();
+    let ((hp1, hc1), (hp2, hc2)) = (&waveforms[0], &waveforms[1]);
+    [
+        rss(&amplitude(hp1), &amplitude(hp2)),
+        rss(&unwrapped_phase(hp1), &unwrapped_phase(hp2)),
+        rss(&amplitude(hc1), &amplitude(hc2)),
+        rss(&unwrapped_phase(hc1), &unwrapped_phase(hc2)),
+    ]
+}
+
+/// The IMRPhenomXPNR unit test of LALSimulation (`test_IMRPhenomXPNR` in
+/// `test/python/test_phenomX.py`), whose expected values lalsuite !2593
+/// updated. LAL's test uses `SimInspiralChooseFDWaveform` with the default
+/// multibanding, which the crate does not implement; with multibanding off
+/// the statistics agree with those of lalsimulation 6.2.0 with the fix
+/// (built by `scripts/build_patched_lalsimulation.sh`) to rounding.
+/// Multibanding changes them by up to 5e-4 (relative), mostly through the
+/// last sample (f = f_max), which it leaves 1000 times smaller and with an
+/// unrelated phase (whose unwrapping decides the `h_+` phase statistic), so
+/// the expected values of lalsuite master are only reproduced within LAL's
+/// tolerances (1e-3, and 3e-3 for the (3,2) mode).
+#[test]
+fn lal_unit_test_of_lalsuite_master() {
+    /// (mode array, lalsimulation with the fix without multibanding,
+    /// expected values of LAL's test with multibanding, LAL's rtol)
+    type UnitTestCase<'a> = (&'a [(u32, u32)], [f64; 4], [f64; 4], f64);
+    let main_modes = [(2, 2), (2, 1), (3, 3), (4, 4)];
+    let cases: [UnitTestCase; 2] = [
+        (
+            &main_modes,
+            [
+                1338.1603543643264,
+                327.03926275719857,
+                952.8837797818983,
+                327.19131047303665,
+            ],
+            // lalsuite master (64d2004def)
+            [
+                1338.2478456098647,
+                327.1408139713271,
+                952.6583292722432,
+                327.1410221109231,
+            ],
+            1e-3,
+        ),
+        (
+            &[(3, 2)],
+            [
+                47.98913671655772,
+                235.99978375411897,
+                21.637113689007382,
+                232.01141582225225,
+            ],
+            [
+                47.99739377058873,
+                235.97023957459098,
+                21.64711722483007,
+                231.9851025793764,
+            ],
+            3e-3,
+        ),
+    ];
+    for (modes, no_multibanding, expected, rtol) in cases {
+        let statistics = lal_unit_test_statistics(modes);
+        println!("{modes:?}: {statistics:?}");
+        for ((value, lal), expected) in statistics.iter().zip(no_multibanding).zip(expected) {
+            // the (3,2) mode amplifies rounding (tests/common)
+            let (tolerance, rtol) = if modes == [(3, 2)] {
+                (2e-2, rtol + 2e-2)
+            } else {
+                (1e-3, rtol + 1e-3)
+            };
+            assert!(
+                (value / lal - 1.0).abs() < tolerance,
+                "{modes:?}: {value} vs {lal}"
+            );
+            assert!(
+                (value / expected - 1.0).abs() < rtol,
+                "{modes:?}: {value} vs LAL's expected {expected}"
+            );
+        }
+    }
+}

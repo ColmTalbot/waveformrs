@@ -1,0 +1,123 @@
+{
+ "lalsimulation_version": "6.2.0",
+ "n_draws": 300,
+ "n_frequencies": 8033,
+ "grid": {
+  "f_min": 20.0,
+  "f_max": 1024.0,
+  "delta_f": 0.125
+ },
+ "lal_python_call_overhead": 1.7904164269566535e-06,
+ "rust": {
+  "TaylorF2": {
+   "seconds": 0.00023204750000000002,
+   "failures": 0,
+   "grid_seconds": 6.010680333333333e-05
+  },
+  "IMRPhenomD": {
+   "seconds": 0.00018828389000000002,
+   "failures": 0,
+   "grid_seconds": 0.00011569611
+  },
+  "IMRPhenomXAS": {
+   "seconds": 0.00017071222333333333,
+   "failures": 0,
+   "grid_seconds": 9.957541666666667e-05
+  },
+  "IMRPhenomXHM": {
+   "seconds": 0.0013839316666666667,
+   "failures": 0,
+   "grid_seconds": 0.0010145752766666666
+  },
+  "IMRPhenomXP (102)": {
+   "seconds": 0.0005940329166666666,
+   "failures": 0,
+   "grid_seconds": 0.00017729055666666668
+  },
+  "IMRPhenomXP (223)": {
+   "seconds": 0.0018531738866666666,
+   "failures": 0,
+   "grid_seconds": 0.00101386278
+  },
+  "IMRPhenomXP (320)": {
+   "seconds": 0.0011763529166666667,
+   "failures": 0,
+   "grid_seconds": 0.0008042806933333333
+  },
+  "IMRPhenomXPHM (102)": {
+   "seconds": 0.0033709141666666666,
+   "failures": 0,
+   "grid_seconds": 0.00096286097
+  },
+  "IMRPhenomXPHM (223)": {
+   "seconds": 0.008192488473333332,
+   "failures": 0,
+   "grid_seconds": 0.00340966861
+  },
+  "IMRPhenomXPHM (320)": {
+   "seconds": 0.00465127986,
+   "failures": 0,
+   "grid_seconds": 0.0024728425
+  },
+  "IMRPhenomXPNR": {
+   "seconds": 0.007015939026666667,
+   "failures": 0,
+   "grid_seconds": 0.00400883778
+  },
+  "NRSur7dq4": {
+   "seconds": 0.0010072345833333333,
+   "failures": 0,
+   "grid_seconds": 0.0010029687500000002
+  }
+ },
+ "lal": {
+  "TaylorF2": {
+   "seconds": 0.00023656360960255067,
+   "failures": 0
+  },
+  "IMRPhenomD": {
+   "seconds": 0.0003921500003586213,
+   "failures": 0
+  },
+  "IMRPhenomXAS": {
+   "seconds": 0.0003535454176987211,
+   "failures": 0
+  },
+  "IMRPhenomXHM": {
+   "seconds": 0.0023020387503008047,
+   "failures": 0
+  },
+  "IMRPhenomXP (102)": {
+   "seconds": 0.001111784859870871,
+   "failures": 0
+  },
+  "IMRPhenomXP (223)": {
+   "seconds": 0.0025598106967906157,
+   "failures": 0
+  },
+  "IMRPhenomXP (320)": {
+   "seconds": 0.0033702363896494112,
+   "failures": 0
+  },
+  "IMRPhenomXPHM (102)": {
+   "seconds": 0.00754301389058431,
+   "failures": 0
+  },
+  "IMRPhenomXPHM (223)": {
+   "seconds": 0.014561183193388085,
+   "failures": 0
+  },
+  "IMRPhenomXPHM (320)": {
+   "seconds": 0.012660334863079091,
+   "failures": 0
+  },
+  "IMRPhenomXPNR": {
+   "seconds": 0.015765788193481664,
+   "failures": 0
+  },
+  "NRSur7dq4": {
+   "seconds": 0.005588957639411092,
+   "failures": 0
+  }
+ }
+}

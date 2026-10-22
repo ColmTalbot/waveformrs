@@ -1,0 +1,7 @@
+/target
+# the extension module that `maturin develop` puts next to the sources
+/python/waveformrs/*.so
+/python/waveformrs/*.pyd
+__pycache__/
+.pytest_cache/
+/dist
