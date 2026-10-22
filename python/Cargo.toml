@@ -1,6 +1,6 @@
 [package]
 name = "waveformrs-python"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 description = "Python bindings of waveformrs"
 license = "GPL-3.0-or-later"
@@ -14,7 +14,7 @@ name = "_waveformrs"
 crate-type = ["cdylib"]
 
 [dependencies]
-waveformrs = { path = ".." }
+waveformrs = { path = "..", version = "0.2.0" }
 num-complex = "0.4"
 numpy = "0.29"
 # The stable ABI of Python 3.9 and later: one wheel per platform.

@@ -15,7 +15,13 @@ many binaries over threads and write straight into numpy-owned memory.
 
 ## Installation
 
-From this directory (`python/`), in the environment where the package should
+Wheels for Linux and macOS are on PyPI:
+
+```sh
+pip install waveformrs
+```
+
+To build from source, from this directory (`python/`), in the environment where the package should
 go (a virtualenv or an activated conda environment; for an environment that
 is not activated, set `CONDA_PREFIX` to it):
 

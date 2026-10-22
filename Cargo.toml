@@ -1,7 +1,12 @@
 [package]
 name = "waveformrs"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
+description = "Gravitational-wave models that reproduce LALSimulation"
+repository = "https://github.com/ColmTalbot/waveformrs"
+readme = "README.md"
+keywords = ["gravitational-waves", "astrophysics", "lalsimulation", "waveform"]
+categories = ["science"]
 # Parts are translated from LALSuite and GSL: see NOTICE.md.
 license = "GPL-3.0-or-later"
 # The reference data, the report and the scripts stay in the repository:
@@ -10,8 +15,8 @@ license = "GPL-3.0-or-later"
 exclude = ["/tests/data", "/report", "/scripts", "/lal_data"]
 
 [dependencies]
-num-complex = "*"
-once_cell = "*"
+num-complex = "0.4"
+once_cell = "1"
 rustfft = { version = "6.2", optional = true }
 
 [features]

@@ -56,7 +56,16 @@ Time domain:
   [python/README.md](python/README.md).
 - **Platforms.** Tested on macOS and Linux for every pull request on GitHub.
 
-## Getting started
+## Installation
+
+The crate is on crates.io and the Python package on PyPI:
+
+```sh
+cargo add waveformrs           # the Rust crate
+pip install waveformrs         # the Python package
+```
+
+## Getting started from a checkout
 
 ```sh
 cargo test --release           # the Rust crate and its tests

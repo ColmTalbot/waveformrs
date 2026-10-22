@@ -1,0 +1,167 @@
+# Publish a release: push a tag vX.Y.Z matching the version in Cargo.toml and
+# python/Cargo.toml. The full CI runs first; then the crate goes to
+# crates.io, the sdist and abi3 wheels to PyPI, and the changelog section and
+# the distributions to a GitHub release.
+#
+# Needs, in the repository settings:
+# - the secret CARGO_REGISTRY_TOKEN (a crates.io token with publish-update
+#   scope; publish-new for the first release) in the environment crates-io;
+# - a PyPI trusted publisher for this repository, workflow release.yml and
+#   environment pypi.
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  # the toolchain of docker/Dockerfile and ci.yml
+  RUST_TOOLCHAIN: 1.90.0
+
+jobs:
+  version:
+    name: tag matches the crate versions
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          tag="${GITHUB_REF_NAME#v}"
+          for manifest in Cargo.toml python/Cargo.toml; do
+            version=$(sed -n 's/^version = "\(.*\)"$/\1/p' "$manifest" | head -n 1)
+            if [ "$version" != "$tag" ]; then
+              echo "::error file=$manifest::version $version does not match the tag $GITHUB_REF_NAME"
+              exit 1
+            fi
+          done
+          if ! grep -q "^## $tag " CHANGELOG.md; then
+            echo "::error file=CHANGELOG.md::no section '## $tag (date)'"
+            exit 1
+          fi
+
+  ci:
+    needs: version
+    uses: ./.github/workflows/ci.yml
+
+  crate:
+    name: package the crate
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+      - run: cargo publish --dry-run --locked
+
+  sdist:
+    name: Python sdist
+    needs: version
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: PyO3/maturin-action@v1
+        with:
+          command: sdist
+          args: --out dist
+          working-directory: python
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-sdist
+          path: python/dist
+
+  wheels:
+    name: Python wheel (${{ matrix.target }}, ${{ matrix.os }})
+    needs: version
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, target: x86_64, smoke-test: true }
+          - { os: ubuntu-24.04-arm, target: aarch64, smoke-test: true }
+          - { os: macos-latest, target: aarch64, smoke-test: true }
+          # cross-compiled on Apple silicon
+          - { os: macos-latest, target: x86_64, smoke-test: false }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: PyO3/maturin-action@v1
+        with:
+          command: build
+          target: ${{ matrix.target }}
+          args: --release --locked --out dist
+          manylinux: auto
+          rust-toolchain: ${{ env.RUST_TOOLCHAIN }}
+          working-directory: python
+      - name: install and import the wheel
+        if: matrix.smoke-test
+        run: |
+          python -m pip install python/dist/*.whl
+          cd "$RUNNER_TEMP"
+          python -c "import waveformrs; print(waveformrs.__version__)"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist-wheel-${{ matrix.os }}-${{ matrix.target }}
+          path: python/dist
+
+  publish-crate:
+    name: publish to crates.io
+    needs: [ci, crate, sdist, wheels]
+    runs-on: ubuntu-latest
+    environment: crates-io
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+      - run: cargo publish --locked
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+
+  publish-pypi:
+    name: publish to PyPI
+    needs: [ci, crate, sdist, wheels]
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/waveformrs/${{ github.ref_name }}
+    permissions:
+      # trusted publishing
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: dist-*
+          merge-multiple: true
+          path: dist
+      - uses: pypa/gh-action-pypi-publish@release/v1
+
+  github-release:
+    name: GitHub release
+    needs: [publish-crate, publish-pypi]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: dist-*
+          merge-multiple: true
+          path: dist
+      - name: release notes from CHANGELOG.md
+        run: |
+          awk -v tag="${GITHUB_REF_NAME#v}" '
+            index($0, "## " tag " ") == 1 { found = 1; next }
+            found && /^## / { exit }
+            found { print }
+          ' CHANGELOG.md > "$RUNNER_TEMP/notes.md"
+      - run: gh release create "$GITHUB_REF_NAME" dist/* --title "$GITHUB_REF_NAME" --notes-file "$RUNNER_TEMP/notes.md" --verify-tag
+        env:
+          GH_TOKEN: ${{ github.token }}

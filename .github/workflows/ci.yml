@@ -9,6 +9,8 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+  # run by release.yml before it publishes
+  workflow_call:
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}

@@ -20,6 +20,10 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Physics",
 ]
 
+[project.urls]
+Repository = "https://github.com/ColmTalbot/waveformrs"
+Changelog = "https://github.com/ColmTalbot/waveformrs/blob/main/CHANGELOG.md"
+
 [project.optional-dependencies]
 # the comparisons with LALSimulation also need python-lalsimulation 6.2.0
 # (conda-forge) or lalsuite (PyPI)

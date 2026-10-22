@@ -2,7 +2,21 @@
 
 All notable changes to `waveformrs` are recorded here.
 
-## Unreleased
+## 0.2.0 (2026-10-21)
+
+The first release published to crates.io and PyPI.
+
+### Release
+
+- **Releases are published from GitHub Actions** (`.github/workflows/release.yml`).
+  Pushing a tag `vX.Y.Z` that matches the version in `Cargo.toml` and
+  `python/Cargo.toml` runs the full CI, then publishes the crate to
+  crates.io, the Python sdist and abi3 wheels (Linux x86_64 and aarch64,
+  macOS x86_64 and arm64) to PyPI, and a GitHub release with the
+  changelog section and the built distributions. The crate's dependencies
+  now have version requirements (`num-complex = "0.4"`, `once_cell = "1"`)
+  instead of `*`, which crates.io rejects, and `Cargo.toml` carries the
+  description, repository and keywords crates.io shows.
 
 ### License
 
