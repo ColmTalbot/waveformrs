@@ -40,6 +40,15 @@ fn fit_x(q: f64, y: &State, sp: f64, cp: f64) -> [f64; 7] {
     ]
 }
 
+/// Half the width, as a fraction of the interval between nodes, of the
+/// window around the middle of the interval in which the dynamics from its
+/// two nodes are blended with `continuous` dynamics.
+const BLEND: f64 = 0.1;
+
+/// The fraction of the neighbouring intervals over which the corners of the
+/// interpolation of `t_ref` are rounded off with `continuous` dynamics.
+const CORNER: f64 = 0.1;
+
 /// `PrecessingNRSur_normalize_y`: keep the quaternion a unit quaternion and
 /// the spin magnitudes constant.
 #[inline]
@@ -266,11 +275,14 @@ impl<'d> Dynamics<'d> {
     /// fit (evaluated with the reference state `y0` at every node) equals
     /// `omega_ref`, by linear interpolation between nodes. `omega` caches
     /// the fit at the nodes for this `y0` (NaN when not yet evaluated).
+    /// With `smooth`, the corners of the interpolation at the nodes are
+    /// rounded off, so that `t_ref` has a continuous derivative.
     pub(crate) fn t_ref(
         &self,
         omega_ref: f64,
         y0: &State,
         omega: &mut [f64],
+        smooth: bool,
     ) -> Result<f64, NRSurError> {
         if omega_ref.abs() < 1e-10 {
             // LAL warns that omega_ref = 0 selects the start of the surrogate.
@@ -314,11 +326,86 @@ impl<'d> Dynamics<'d> {
         }
         let t_min = self.t(imax - 1);
         let t_max = self.t(imax);
-        Ok(fma(
+        let linear = fma(
             t_min,
             omega_max - omega_ref,
             t_max * (omega_ref - omega_min),
-        ) / (omega_max - omega_min))
+        ) / (omega_max - omega_min);
+        if !smooth {
+            return Ok(linear);
+        }
+        // The linear interpolation has a corner at every node, so t_ref has
+        // a kink as omega_ref crosses one. Round the corner off within
+        // CORNER of the shorter neighbouring interval (in omega): add to
+        // the line before the node the change of slope times h G(z), with
+        // G'' a smooth bump on z in [-1, 1] integrating to one, so that the
+        // curve joins the lines with continuous first and second
+        // derivatives.
+        let corner = |k: usize, omega_k: f64, omega_before: f64, omega_after: f64| {
+            let h = CORNER * (omega_k - omega_before).min(omega_after - omega_k);
+            if h.is_nan() || h <= 0.0 || (omega_ref - omega_k).abs() >= h {
+                return None;
+            }
+            let t_k = self.t(k);
+            let slope_before = (t_k - self.t(k - 1)) / (omega_k - omega_before);
+            let slope_after = (self.t(k + 1) - t_k) / (omega_after - omega_k);
+            let z = (omega_ref - omega_k) / h;
+            let z2 = z * z;
+            // G(z) = int_{-1}^z int_{-1}^y (15/16)(1 - x^2)^2 dx dy
+            let g = 0.5 * (z + 1.0)
+                + 15.0 / 16.0 * (z2 * (0.5 + z2 * (-1.0 / 6.0 + z2 / 30.0)) - 11.0 / 30.0);
+            Some(t_k + slope_before * (omega_ref - omega_k) + (slope_after - slope_before) * h * g)
+        };
+        // the corner at the lower node (imax - 1) or the upper node (imax)
+        if imax >= 2 {
+            let omega_before = omega_at(imax - 2);
+            if let Some(t) = corner(imax - 1, omega_min, omega_before, omega_max) {
+                return Ok(t);
+            }
+        }
+        if imax + 1 < n {
+            let omega_after = omega_at(imax + 1);
+            if let Some(t) = corner(imax, omega_max, omega_min, omega_after) {
+                return Ok(t);
+            }
+        }
+        Ok(linear)
+    }
+
+    /// The dynamics nodes either side of `t_ref`, `(imin, imax)` with
+    /// `imax = imin + 1` (bisection, as LAL).
+    fn bracket(&self, t_ref: f64) -> (usize, usize) {
+        let mut imin = 0;
+        let mut imax = self.n_nodes() - 1;
+        while imax - imin > 1 {
+            let i0 = (imax + imin) / 2;
+            if self.t(i0) > t_ref {
+                imax = i0;
+            } else {
+                imin = i0;
+            }
+        }
+        (imin, imax)
+    }
+
+    /// The state at node `i` from the state `y_ref` at `t_ref`, by one Euler
+    /// step (as LAL).
+    fn step_to_node(
+        &self,
+        i: usize,
+        t_ref: f64,
+        y_ref: &State,
+        norm_a: f64,
+        norm_b: f64,
+    ) -> Result<State, NRSurError> {
+        let dt = self.t(i) - t_ref;
+        let dydt = self.deriv_time(t_ref, y_ref)?;
+        let mut y = *y_ref;
+        for j in 0..N_STATE {
+            y[j] = fma(dt, dydt[j], y[j]);
+        }
+        normalize_y(norm_a, norm_b, &mut y);
+        Ok(y)
     }
 
     /// `PrecessingNRSur_initialize_at_dynamics_node`: step from `t_ref` to
@@ -330,38 +417,41 @@ impl<'d> Dynamics<'d> {
         norm_a: f64,
         norm_b: f64,
     ) -> Result<(usize, State), NRSurError> {
-        let mut imin = 0;
-        let mut imax = self.n_nodes() - 1;
-        let mut tmin = self.t(imin);
-        let mut tmax = self.t(imax);
-        while imax - imin > 1 {
-            let i0 = (imax + imin) / 2;
-            let t0 = self.t(i0);
-            if t0 > t_ref {
-                imax = i0;
-                tmax = t0;
-            } else {
-                imin = i0;
-                tmin = t0;
-            }
-        }
-        let (i0, dt) = if (t_ref - tmin).abs() < (tmax - t_ref).abs() {
-            (imin, tmin - t_ref)
+        let (imin, imax) = self.bracket(t_ref);
+        let (tmin, tmax) = (self.t(imin), self.t(imax));
+        let i0 = if (t_ref - tmin).abs() < (tmax - t_ref).abs() {
+            imin
         } else {
-            (imax, tmax - t_ref)
+            imax
         };
-        let dydt = self.deriv_time(t_ref, y_ref)?;
-        let mut y = *y_ref;
-        for j in 0..N_STATE {
-            y[j] = fma(dt, dydt[j], y[j]);
-        }
-        normalize_y(norm_a, norm_b, &mut y);
-        Ok((i0, y))
+        Ok((i0, self.step_to_node(i0, t_ref, y_ref, norm_a, norm_b)?))
+    }
+
+    /// The dynamics at every node from the state `y_i0` at node `i0`:
+    /// three RK4 steps, then Adams-Bashforth steps both ways.
+    fn integrate_from_node(
+        &self,
+        out: &mut [State],
+        i0: usize,
+        y_i0: State,
+        norm_a: f64,
+        norm_b: f64,
+    ) -> Result<(), NRSurError> {
+        out[i0] = y_i0;
+        let (i_start, time_steps, dydt) = if i0 == 0 {
+            self.initialize_rk4_half_nodes(out, norm_a, norm_b)
+        } else {
+            self.initialize_rk4(out, norm_a, norm_b, i0)?
+        };
+        self.integrate_ab4(out, &time_steps, &dydt, norm_a, norm_b, i_start);
+        Ok(())
     }
 
     /// `PrecessingNRSur_IntegrateDynamics`: the state at every dynamics node,
     /// written to `out` (length `n_nodes`), from the state at the reference
-    /// frequency `omega_ref`. `omega_cache` is as for [`Self::t_ref`].
+    /// frequency `omega_ref`. `omega_cache` is as for [`Self::t_ref`]. With
+    /// `continuous`, the dynamics change continuously with the parameters
+    /// (see the comment in the body).
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn integrate(
         &self,
@@ -371,6 +461,7 @@ impl<'d> Dynamics<'d> {
         init_orbphase: f64,
         init_quat: &[f64; 4],
         unlimited_extrapolation: bool,
+        continuous: bool,
         omega_cache: &mut [f64],
         out: &mut [State],
     ) -> Result<(), NRSurError> {
@@ -412,16 +503,39 @@ impl<'d> Dynamics<'d> {
         y0[4] = init_orbphase;
         y0[5..8].copy_from_slice(chi_a0);
         y0[8..11].copy_from_slice(chi_b0);
-        let t_ref = self.t_ref(omega_ref, &y0, omega_cache)?;
-        let (i0, y_i0) = self.initialize_at_node(t_ref, &y0, norm_a, norm_b)?;
-        out[i0] = y_i0;
-
-        let (i_start, time_steps, dydt) = if i0 == 0 {
-            self.initialize_rk4_half_nodes(out, norm_a, norm_b)
-        } else {
-            self.initialize_rk4(out, norm_a, norm_b, i0)?
-        };
-        self.integrate_ab4(out, &time_steps, &dydt, norm_a, norm_b, i_start);
+        let t_ref = self.t_ref(omega_ref, &y0, omega_cache, continuous)?;
+        if !continuous {
+            let (i0, y_i0) = self.initialize_at_node(t_ref, &y0, norm_a, norm_b)?;
+            return self.integrate_from_node(out, i0, y_i0, norm_a, norm_b);
+        }
+        // LAL starts the integration from the node nearest to t_ref, and the
+        // integration error depends on that node: the dynamics jump when
+        // t_ref crosses the middle of an interval. Instead, within BLEND of
+        // the middle, integrate from both nodes of the interval and blend
+        // the two solutions with a weight going smoothly from one to the
+        // other. Elsewhere the dynamics are LAL's.
+        let (imin, imax) = self.bracket(t_ref);
+        let s = (t_ref - self.t(imin)) / (self.t(imax) - self.t(imin));
+        let x = ((s - 0.5 + BLEND) / (2.0 * BLEND)).clamp(0.0, 1.0);
+        // with continuous first and second derivatives
+        let w = x * x * x * (10.0 + x * (6.0 * x - 15.0));
+        let y_min = self.step_to_node(imin, t_ref, &y0, norm_a, norm_b)?;
+        if w == 0.0 {
+            return self.integrate_from_node(out, imin, y_min, norm_a, norm_b);
+        }
+        let y_max = self.step_to_node(imax, t_ref, &y0, norm_a, norm_b)?;
+        if w == 1.0 {
+            return self.integrate_from_node(out, imax, y_max, norm_a, norm_b);
+        }
+        self.integrate_from_node(out, imin, y_min, norm_a, norm_b)?;
+        let mut other = vec![[0.0; N_STATE]; out.len()];
+        self.integrate_from_node(&mut other, imax, y_max, norm_a, norm_b)?;
+        for (y, z) in out.iter_mut().zip(&other) {
+            for (a, b) in y.iter_mut().zip(z) {
+                *a = fma(w, b - *a, *a);
+            }
+            normalize_y(norm_a, norm_b, y);
+        }
         Ok(())
     }
 

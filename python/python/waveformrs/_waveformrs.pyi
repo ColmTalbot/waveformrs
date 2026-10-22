@@ -18,14 +18,18 @@ ComplexArray = npt.NDArray[np.complex128]
 RealArray = npt.NDArray[np.float64]
 Mode = Tuple[int, int]
 Spin = Union[Sequence[float], npt.ArrayLike]
-PrecessionVersion = Union[Literal[102, 223, 320], Literal["NNLO", "MSA", "SpinTaylor"], int, str]
+PrecessionVersion = Union[
+    Literal[102, 223, 320], Literal["NNLO", "MSA", "SpinTaylor", "SpinTaylorContinuous"], int, str
+]
 
 class WaveformOptions:
     """The settings of LALSimulation's ``LALDict`` that the models take.
 
     * ``precession_version``: LAL's ``PhenomXPrecVersion`` of IMRPhenomXP/XPHM:
       102 (``"NNLO"``), 223 (``"MSA"``) or 320 (``"SpinTaylor"``, the default
-      here; LALSimulation 6.2.0 uses 223, see :meth:`lalsimulation_defaults`).
+      here; LALSimulation 6.2.0 uses 223, see :meth:`lalsimulation_defaults`),
+      or ``"SpinTaylorContinuous"``, the SpinTaylor angles without their
+      jumps in the masses and spins.
     * ``mode_array``: LAL's ``ModeArray`` (``(l, m)`` pairs) or ``None`` for
       all modes.
     * ``version_fallback``: whether IMRPhenomXP/XPHM/XPNR may change the
@@ -33,6 +37,8 @@ class WaveformOptions:
     * ``lambda_1``, ``lambda_2``: LAL's ``lambda1``, ``lambda2``, the tidal
       deformabilities of the bodies of ``mass_1`` and ``mass_2`` (default 0)
       of the NRTidal approximants; the others reject non-zero values.
+    * ``nrsur_continuous``: make NRSur7dq4 change continuously with the
+      parameters (default ``False``, which reproduces LAL).
     """
 
     def __init__(
@@ -43,6 +49,7 @@ class WaveformOptions:
         version_fallback: bool = True,
         lambda_1: float = 0.0,
         lambda_2: float = 0.0,
+        nrsur_continuous: bool = False,
         **options: Any,
     ) -> None: ...
     @staticmethod
@@ -51,7 +58,7 @@ class WaveformOptions:
     def replace(self, **options: Any) -> WaveformOptions:
         """A copy with the given options changed."""
     @property
-    def precession_version(self) -> int: ...
+    def precession_version(self) -> Union[int, str]: ...
     @property
     def mode_array(self) -> Optional[List[Mode]]: ...
     @property
@@ -60,6 +67,8 @@ class WaveformOptions:
     def lambda_1(self) -> float: ...
     @property
     def lambda_2(self) -> float: ...
+    @property
+    def nrsur_continuous(self) -> bool: ...
     def __eq__(self, other: object) -> bool: ...
 
 class FrequencyGrid:

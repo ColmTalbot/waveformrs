@@ -42,12 +42,13 @@ pub const BINARY_NAMES: [&str; 8] = [
 ];
 
 /// The options that can be given as keyword arguments.
-pub const OPTION_NAMES: [&str; 5] = [
+pub const OPTION_NAMES: [&str; 6] = [
     "precession_version",
     "mode_array",
     "version_fallback",
     "lambda_1",
     "lambda_2",
+    "nrsur_continuous",
 ];
 
 /// Set the option `name` of `options` to `value`; `Ok(false)` if `name` is
@@ -73,6 +74,7 @@ fn apply_option(
             }
         }
         "version_fallback" => current.with_version_fallback(extract_bool(value, name)?),
+        "nrsur_continuous" => current.with_nrsur_continuous(extract_bool(value, name)?),
         "lambda_1" => {
             let lambda_2 = current.lambda_2;
             current.with_tidal_deformabilities(extract_f64(value, name)?, lambda_2)
@@ -98,11 +100,7 @@ fn option_items<'py>(
     Ok(vec![
         (
             "precession_version",
-            options
-                .precession_version
-                .lal_flag()
-                .into_pyobject(py)?
-                .into_any(),
+            precession_version_object(py, options.precession_version)?,
         ),
         (
             "mode_array",
@@ -118,7 +116,29 @@ fn option_items<'py>(
         ),
         ("lambda_1", options.lambda_1.into_pyobject(py)?.into_any()),
         ("lambda_2", options.lambda_2.into_pyobject(py)?.into_any()),
+        (
+            "nrsur_continuous",
+            options
+                .nrsur_continuous
+                .into_pyobject(py)?
+                .to_owned()
+                .into_any(),
+        ),
     ])
+}
+
+/// A precession version for Python: LAL's `PhenomXPrecVersion`, or the name
+/// `"SpinTaylorContinuous"`, which has no LAL number.
+fn precession_version_object(
+    py: Python<'_>,
+    version: PrecessionVersion,
+) -> PyResult<Bound<'_, PyAny>> {
+    Ok(match version {
+        PrecessionVersion::SpinTaylorContinuous => {
+            "SpinTaylorContinuous".into_pyobject(py)?.into_any()
+        }
+        version => version.lal_flag().into_pyobject(py)?.into_any(),
+    })
 }
 
 /// A precession version from LAL's `PhenomXPrecVersion` (102, 223, 320) or
@@ -324,6 +344,9 @@ pub fn parse_request(kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<(Binary, Wa
 ///   in the masses and spins (reported as 320).
 /// * ``mode_array``: LAL's ``ModeArray``, a sequence of ``(l, m)`` pairs, or
 ///   ``None`` for all modes of the model.
+/// * ``nrsur_continuous``: make NRSur7dq4 change continuously with the
+///   parameters (``False``, the default, reproduces LAL, whose surrogate
+///   jumps slightly as the parameters move).
 /// * ``version_fallback``: whether IMRPhenomXP/XPHM/XPNR may change the
 ///   precession version automatically as LALSimulation does (default
 ///   ``True``); with ``False`` they raise ``PrecessionVersionUnavailableError``
@@ -350,7 +373,7 @@ impl PyWaveformOptions {
     #[pyo3(
         signature = (**kwargs),
         text_signature = "(*, precession_version=320, mode_array=None, version_fallback=True, \
-                          lambda_1=0.0, lambda_2=0.0)"
+                          lambda_1=0.0, lambda_2=0.0, nrsur_continuous=False)"
     )]
     fn new(kwargs: Option<&Bound<'_, PyDict>>) -> PyResult<Self> {
         let keywords = match kwargs {
@@ -389,10 +412,17 @@ impl PyWaveformOptions {
         })
     }
 
-    /// LAL's ``PhenomXPrecVersion`` of the Euler angles (102, 223 or 320).
+    /// LAL's ``PhenomXPrecVersion`` of the Euler angles (102, 223 or 320),
+    /// or ``"SpinTaylorContinuous"``.
     #[getter]
-    fn precession_version(&self) -> u32 {
-        self.inner.precession_version.lal_flag()
+    fn precession_version<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyAny>> {
+        precession_version_object(py, self.inner.precession_version)
+    }
+
+    /// Whether NRSur7dq4 changes continuously with the parameters.
+    #[getter]
+    fn nrsur_continuous(&self) -> bool {
+        self.inner.nrsur_continuous
     }
 
     /// The mode array as a list of ``(l, m)``, or ``None`` for all modes.

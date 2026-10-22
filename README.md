@@ -37,7 +37,9 @@ Time domain:
 
 - **NRSur7dq4**: numerical-relativity surrogate for precessing binaries. It
   needs the surrogate data file from LALSuite's data repository. It can be
-  sampled on any time grid, such as each detector's own samples.
+  sampled on any time grid, such as each detector's own samples, and made
+  to change smoothly with the masses and spins (LAL's version jumps in
+  small steps).
 
 ## Features
 

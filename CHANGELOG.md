@@ -32,6 +32,26 @@ All notable changes to `waveformrs` are recorded here.
   systematic offset in the likelihood. 320 is unchanged and still the
   default.
 
+- **NRSur7dq4 without discontinuities**: `NRSur7dq4::with_continuous`
+  (`WaveformOptions::nrsur_continuous`, `nrsur_continuous=True` in Python).
+  LAL's surrogate changes discontinuously with the parameters:
+  - it integrates the dynamics from the node nearest to the reference
+    frequency, so it jumps (by up to ~4e-4 of the waveform) when the
+    reference time moves past the middle of an interval between nodes;
+  - it ends abruptly ~100 M after the peak, so a sample jumps when the end
+    moves past it;
+  - its reference time is interpolated linearly between nodes, so it has
+    a kink at every node;
+  - its epoch is rounded to the nanosecond, a time shift that moves in
+    steps with the masses.
+  The option blends the dynamics from the two nodes near the middle of an
+  interval, tapers the last 10 M, rounds the corners of the
+  interpolation and keeps the epoch exact. It is LAL's surrogate wherever
+  none of these applies, at the same cost. Off by default.
+- Python: `WaveformOptions.precession_version` is `"SpinTaylorContinuous"`
+  (rather than 320) for the continuous SpinTaylor angles, so that options
+  survive pickling and `as_dict`.
+
 ## 0.2.0 (2026-10-21)
 
 The first release published to crates.io and PyPI.
