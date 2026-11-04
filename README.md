@@ -71,6 +71,66 @@ cargo add waveformrs           # the Rust crate
 pip install waveformrs         # the Python package
 ```
 
+## Usage
+
+IMRPhenomXPNR in the frequency domain and NRSur7dq4 in the time domain, for
+the same binary. NRSur7dq4 needs its data file, `NRSur7dq4_v1.0.h5` from
+[zenodo.org/records/14999310](https://zenodo.org/records/14999310): set
+`NRSUR7DQ4_DATA` to the file or `LAL_DATA_PATH` to its directory.
+
+In Rust:
+
+```rust
+use waveformrs::{
+    choose_fd_model, choose_td_model, Approximant, Binary, FrequencyDomainModel, WaveformOptions,
+};
+
+let binary = Binary {
+    mass_1: 36.0,                // solar masses
+    mass_2: 29.0,
+    spin_1: [0.4, 0.2, 0.3],     // dimensionless, at f_ref
+    spin_2: [-0.2, 0.3, -0.1],
+    luminosity_distance: 500.0,  // Mpc
+    inclination: 0.7,            // rad
+    phi_ref: 1.2,                // rad
+    f_ref: 20.0,                 // Hz
+};
+let options = WaveformOptions::default();
+
+// IMRPhenomXPNR at the frequencies of your choice (Hz)
+let frequencies: Vec<f64> = (160..=8192).map(|k| k as f64 / 8.0).collect();
+let model = choose_fd_model(Approximant::IMRPhenomXPNR, &binary, &options)?;
+let (hplus, hcross) = model.polarizations(&frequencies)?;
+
+// NRSur7dq4 sampled at 4096 Hz from 20 Hz
+let model = choose_td_model(Approximant::NRSur7dq4, &binary, &options)?;
+let h = model.polarizations(1.0 / 4096.0, 20.0)?;
+// h.hplus, h.hcross; h.epoch is the time of the first sample from the peak
+```
+
+In Python:
+
+```python
+import numpy as np
+import waveformrs as wf
+
+binary = dict(
+    mass_1=36.0, mass_2=29.0,
+    spin_1=(0.4, 0.2, 0.3), spin_2=(-0.2, 0.3, -0.1),
+    luminosity_distance=500.0, inclination=0.7, phi_ref=1.2, f_ref=20.0,
+)
+
+frequencies = np.arange(160, 8193) / 8.0
+hplus, hcross = wf.polarizations("IMRPhenomXPNR", frequencies, **binary)
+
+h = wf.td_polarizations("NRSur7dq4", 1 / 4096, 20.0, **binary)
+hplus, hcross = h
+h.times                         # seconds from the peak
+```
+
+Each model takes options matching LALSimulation's, such as
+`nrsur_continuous` for the smoothly changing NRSur7dq4.
+
 ## Getting started from a checkout
 
 ```sh
